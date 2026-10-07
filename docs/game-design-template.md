@@ -2,8 +2,8 @@
 
 > 게임 id: `__GAME_ID__` · 폴더: `src/games/__GAME_ID__/` · 상태: 기획
 >
-> 이 기획서를 먼저 채우고 사용자(선생님)와 확인한 뒤에 구현한다.
-> 채우는 예시: [docs/games/sample-divisor-sort.md](sample-divisor-sort.md)
+> 이 기획서(spec.md)를 먼저 채우고 사용자(선생님)의 승인을 받은 뒤에 구현한다.
+> 채우는 예시: [docs/games/sample-divisor-sort/spec.md](../sample-divisor-sort/spec.md)
 
 ## 1. 기본 정보
 

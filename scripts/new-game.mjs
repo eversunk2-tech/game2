@@ -3,7 +3,7 @@
  *   npm run new -- fraction-factory "분수 공장"
  *
  *   src/games/_template/        →  src/games/fraction-factory/
- *   docs/game-design-template.md →  docs/games/fraction-factory.md
+ *   docs/game-design-template.md →  docs/games/fraction-factory/spec.md
  */
 import { access, cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -45,7 +45,7 @@ export async function createGame({ rootDir = ROOT, id, title = id }) {
   await cp(path.join(gamesDir, '_template'), dir, { recursive: true });
   await fillDir(dir, { id, title });
 
-  const doc = path.join(rootDir, 'docs/games', `${id}.md`);
+  const doc = path.join(rootDir, 'docs/games', id, 'spec.md');
   if (!(await exists(doc))) {
     const template = await readFile(path.join(rootDir, 'docs/game-design-template.md'), 'utf8');
     await mkdir(path.dirname(doc), { recursive: true });

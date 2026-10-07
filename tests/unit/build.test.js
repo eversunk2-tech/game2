@@ -56,7 +56,7 @@ test('템플릿으로 만든 새 게임은 바로 빌드된다', async () => {
   const meta = JSON.parse(await readFile(path.join(rootDir, 'src/games/test-game/game.json'), 'utf8'));
   assert.equal(meta.id, 'test-game');
   assert.equal(meta.title, title);
-  const doc = await readFile(path.join(rootDir, 'docs/games/test-game.md'), 'utf8');
+  const doc = await readFile(path.join(rootDir, 'docs/games/test-game/spec.md'), 'utf8');
   assert.match(doc, /테스트 "게임" <1>/);
   assert.doesNotMatch(doc, /__GAME_(ID|TITLE)__/);
 

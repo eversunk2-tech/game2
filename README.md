@@ -34,7 +34,7 @@ npm run test:e2e   # 빌드 + 브라우저 테스트
 npm run new -- fraction-factory "분수 공장"
 ```
 
-1. `docs/games/fraction-factory.md` 기획서를 채웁니다 (학습 목표, 오개념, 단계, 평가 요소).
+1. `docs/games/fraction-factory/spec.md` 기획서를 채우고 승인을 받습니다 (작업 순서는 [CLAUDE.md](CLAUDE.md)).
 2. `src/games/fraction-factory/game.json`에 교과·학년·단원을 씁니다.
 3. `main.js`와 `logic.js`를 기획서대로 구현합니다. ([엔진 사용법](docs/engine.md))
 4. `npm test && npm run test:e2e`가 통과하면 끝.
@@ -46,7 +46,8 @@ docs/
   proposal.md               기획 제안 (인수인계 문서)
   game-design-template.md   게임 기획서 템플릿
   engine.md                 공통 엔진 사용법
-  games/<id>.md             게임별 기획서
+  games/<id>/               게임별 spec.md(기획), review.md(검증)
+  dev-guide.md              기술 규칙 (서브에이전트용)
 src/
   shared/                   공통 엔진 (core: 로직, ui: 화면, styles: CSS)
   games/<id>/               게임 하나 = 폴더 하나
