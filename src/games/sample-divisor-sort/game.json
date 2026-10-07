@@ -1,0 +1,12 @@
+{
+  "id": "sample-divisor-sort",
+  "title": "약수·배수 분류 (예시)",
+  "summary": "수 카드를 알맞은 상자에 넣으며 약수, 배수, 공약수를 구분해요. 공통 엔진 사용법을 보여 주는 예시 게임이에요.",
+  "subject": "수학",
+  "grades": [5],
+  "units": ["5-1 약수와 배수"],
+  "standards": [],
+  "playMinutes": 10,
+  "mode": "개인",
+  "status": "예시"
+}

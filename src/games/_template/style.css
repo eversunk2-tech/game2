@@ -1,0 +1,4 @@
+/* 이 게임에만 쓰는 스타일. 색·간격은 base.css의 변수(var(--primary) 등)를 쓴다. */
+.question { font-size: 1.6rem; font-weight: 800; text-align: center; padding: 24px; }
+.choices { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.choices .btn { min-width: 140px; }
