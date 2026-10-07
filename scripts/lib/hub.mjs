@@ -66,6 +66,7 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
       <li><code>?stage=단계-id</code> 그 단계로 바로 시작</li>
       <li><code>?sound=off</code> 소리 끄고 시작</li>
       <li><code>?seed=1</code> 모두 같은 문제 순서로 시작</li>
+      <li><code>?lesson=차시-id</code> 그 차시의 단계만 보이기 (차시 묶음이 있는 게임)</li>
     </ul>
     <p>학생 기록은 그 기기의 브라우저에만 남고 어디에도 전송되지 않아요.</p>
   </footer>

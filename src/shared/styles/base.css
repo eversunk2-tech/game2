@@ -143,6 +143,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .stage-title { font-size: 1.25rem; font-weight: 800; }
 .stage-goal { font-size: 0.95rem; color: var(--text-muted); }
 .stage-lock { font-size: 0.9rem; }
+/* 차시 묶음 (createGameApp의 lessons) */
+.lesson-group { display: flex; flex-direction: column; gap: 10px; }
+.lesson-title { margin: 0; font-size: 1.15rem; color: var(--primary-strong); }
 
 .stars { color: var(--star); letter-spacing: 2px; font-size: 1.3rem; line-height: 1; }
 .stars .off { color: var(--star-empty); }

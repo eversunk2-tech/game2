@@ -61,6 +61,7 @@ createGameApp({
   root: document.getElementById('app'),
   game: meta,                          // id, title 필수. subtitle로 처음 화면 윗줄을 바꿀 수 있다
   howTo: ['놀이 방법 1', '놀이 방법 2'], // 비우면 "놀이 방법" 버튼이 없다
+  // lessons: [{ id, title }],          // 선택: 차시 묶음 (아래 "차시 묶음")
   stages: [
     { id: 'stage-1', title: '1단계', goal: '학생이 할 일 한 문장' /* 게임이 쓰는 값은 자유롭게 추가 */ },
   ],
@@ -93,6 +94,32 @@ createGameApp({
 - 앞 단계를 별 1개 이상으로 마치면 다음 단계가 열린다.
 - 단계마다 가장 좋은 별 개수만 남는다.
 - 답 기록이 없는 게임(시뮬레이션 등)은 `finish({ stars })`로 직접 준다.
+- 차시 묶음(아래)을 쓰면 차시마다 첫 단계가 처음부터 열린다. (`createProgress({ stageIds, openIds })`의 `openIds`. 주지 않으면 첫 단계만 열린다)
+
+### 차시 묶음 (선택)
+
+단계가 많아 여러 차시에 나눠 쓰는 게임은 `lessons`로 단계를 묶는다. 쓰지 않는 게임은 지금과 똑같이 동작한다.
+
+```js
+createGameApp({
+  // …
+  lessons: [
+    { id: 'cube', title: '정육면체의 전개도' },
+    { id: 'cuboid', title: '직육면체의 전개도' },
+  ],
+  stages: [
+    { id: 'cube-judge', lesson: 'cube', title: '…' },   // 단계마다 lesson 필드
+    { id: 'cube-opposite', lesson: 'cube', title: '…' },
+    { id: 'cuboid-edge', lesson: 'cuboid', title: '…' },
+  ],
+});
+```
+
+- 단계 선택 화면에서 차시 제목(`h3`)별로 묶어 보인다. 단계 번호는 차시마다 1단계부터.
+- 차시마다 첫 단계는 처음부터 열려 있다. 그다음 단계는 같은 차시의 앞 단계를 마쳐야 열린다.
+- 결과 화면의 "다음 단계"는 같은 차시 안에서만 나온다. 차시의 끝 단계를 마치면 "이 차시를 마쳤어요!"와 "학습 기록 보기".
+- 주소에 `?lesson=<차시 id>`를 붙이면 그 차시의 단계만 보이고, 처음 화면 윗줄에 차시 제목이 나온다. 맞는 차시가 없으면 모든 차시를 보인다.
+- 모든 단계에 `lessons`에 있는 `lesson`이 있어야 한다(없으면 오류). 단계가 하나도 없는 차시는 보이지 않는다.
 
 ## 3. 화면 만들기: h()
 
@@ -175,6 +202,7 @@ ctx.rng.shuffle(list);  ctx.rng.sample(list, 3);  ctx.rng.int(1, 6);  ctx.rng.pi
 | `?stage=<단계 id>` | 그 단계로 바로 시작 |
 | `?sound=off` | 소리 끄고 시작 |
 | `?seed=<값>` | 모두 같은 문제 순서 |
+| `?lesson=<차시 id>` | 그 차시 묶음의 단계만 보이기 (게임이 `lessons`를 쓸 때. 예: `net-workshop.html?lesson=cube`) |
 
 옵션은 함께 쓸 수 있다: `fraction-factory.html?unlock=all&sound=off`
 

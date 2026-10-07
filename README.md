@@ -79,6 +79,7 @@ tests/e2e/                  브라우저 테스트 (Playwright)
 | `?stage=<단계 id>` | 그 단계로 바로 시작 |
 | `?sound=off` | 소리 끄고 시작 |
 | `?seed=1` | 모두 같은 문제 순서 |
+| `?lesson=<차시 id>` | 그 차시의 단계만 보이기 (차시 묶음이 있는 게임. 예: `net-workshop.html?lesson=cube`) |
 
 ## 설계 원칙
 

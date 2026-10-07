@@ -25,6 +25,29 @@ test('첫 단계만 열려 있고, 앞 단계를 마치면 다음이 열린다',
   assert.equal(p.isUnlocked('없는-단계'), false);
 });
 
+test('openIds의 단계는 처음부터 열리고, 그다음 단계는 앞 단계를 마쳐야 열린다', () => {
+  const lessonIds = ['a1', 'a2', 'b1', 'b2'];
+  const p = createProgress({ stageIds: lessonIds, openIds: ['a1', 'b1'] });
+  assert.equal(p.isUnlocked('a1'), true);
+  assert.equal(p.isUnlocked('a2'), false);
+  assert.equal(p.isUnlocked('b1'), true);
+  assert.equal(p.isUnlocked('b2'), false);
+  p.record('b1', 1);
+  assert.equal(p.isUnlocked('b2'), true);
+  assert.equal(p.isUnlocked('a2'), false);
+  assert.equal(p.isUnlocked('없는-단계'), false);
+});
+
+test('openIds를 주지 않으면(기본값) 예전과 똑같이 동작한다', () => {
+  const plain = createProgress({ stageIds: ids });
+  const empty = createProgress({ stageIds: ids, openIds: [] });
+  for (const p of [plain, empty]) {
+    assert.deepEqual(ids.map((id) => p.isUnlocked(id)), [true, false, false]);
+    p.record('s1', 2);
+    assert.deepEqual(ids.map((id) => p.isUnlocked(id)), [true, true, false]);
+  }
+});
+
 test('unlockAll이면 모두 열린다', () => {
   const p = createProgress({ stageIds: ids, unlockAll: true });
   assert.ok(ids.every((id) => p.isUnlocked(id)));

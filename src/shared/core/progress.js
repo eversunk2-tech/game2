@@ -1,6 +1,7 @@
 /**
  * 단계 진행 상황: 단계별 최고 별 개수, 단계 잠금 해제.
  * 앞 단계를 별 1개 이상으로 마치면 다음 단계가 열린다.
+ * openIds의 단계(차시 묶음마다 첫 단계)는 처음부터 열려 있다.
  */
 
 export const MAX_STARS = 3;
@@ -19,7 +20,8 @@ export function clampStars(stars) {
   return Math.min(MAX_STARS, Math.max(0, n));
 }
 
-export function createProgress({ stageIds, storage = null, unlockAll = false }) {
+export function createProgress({ stageIds, storage = null, unlockAll = false, openIds = [] }) {
+  const open = new Set(openIds);
   const loaded = storage?.get('stars', {});
   let stars = loaded && typeof loaded === 'object' ? { ...loaded } : {};
 
@@ -30,7 +32,7 @@ export function createProgress({ stageIds, storage = null, unlockAll = false }) 
   function isUnlocked(id) {
     const index = stageIds.indexOf(id);
     if (index < 0) return false;
-    if (unlockAll || index === 0) return true;
+    if (unlockAll || index === 0 || open.has(id)) return true;
     return isCleared(stageIds[index - 1]);
   }
 

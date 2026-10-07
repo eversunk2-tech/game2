@@ -28,14 +28,44 @@ import { createFeedback } from './feedback.js';
  *   ?stage=<id>   그 단계로 바로 시작
  *   ?sound=off    소리 끄고 시작
  *   ?seed=<값>    모두 같은 문제 순서로 시작
+ *   ?lesson=<id>  그 차시 묶음의 단계만 보이기 (게임이 lessons를 쓸 때)
  */
 export function readUrlOptions(search = globalThis.location?.search ?? '') {
   const params = new URLSearchParams(search);
   return {
     unlockAll: params.get('unlock') === 'all',
     stageId: params.get('stage'),
+    lessonId: params.get('lesson'),
     sound: params.get('sound') !== 'off',
     seed: params.get('seed'),
+  };
+}
+
+/**
+ * 차시 묶음(선택 기능). lessons가 없으면 단계 목록을 그대로 쓴다.
+ * lessons가 있으면 단계를 차시 순서로 묶고, 차시마다 첫 단계를 처음부터 연다.
+ * lessonId가 어떤 차시와 맞으면 그 차시의 단계만 쓴다(맞지 않으면 모든 차시).
+ */
+function planLessons(stages, lessons, lessonId) {
+  if (!Array.isArray(lessons) || lessons.length === 0) {
+    return { stages, groups: null, current: null, openIds: [] };
+  }
+  if (lessons.some((l) => !l?.id || !l?.title)) throw new Error('createGameApp: 차시마다 id와 title이 필요해요.');
+  const lessonIds = lessons.map((l) => l.id);
+  if (new Set(lessonIds).size !== lessonIds.length) throw new Error('createGameApp: 차시 id가 겹쳐요.');
+  const stray = stages.find((s) => !lessonIds.includes(s.lesson));
+  if (stray) throw new Error(`createGameApp: 단계 ${stray.id}의 lesson이 lessons에 없어요.`);
+
+  const groups = lessons
+    .map((lesson) => ({ lesson, stages: stages.filter((s) => s.lesson === lesson.id) }))
+    .filter((g) => g.stages.length > 0);
+  const current = lessonId ? groups.find((g) => g.lesson.id === lessonId) ?? null : null;
+  const shown = current ? [current] : groups;
+  return {
+    stages: shown.flatMap((g) => g.stages),
+    groups: shown,
+    current: current?.lesson ?? null,
+    openIds: shown.map((g) => g.stages[0].id),
   };
 }
 
@@ -79,16 +109,21 @@ async function copyText(text) {
   }
 }
 
-export function createGameApp({ root, game, stages, playStage, howTo = [], options = readUrlOptions() }) {
+export function createGameApp({ root, game, stages: allStages, playStage, howTo = [], lessons = null, options = readUrlOptions() }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
   if (!game?.id || !game?.title) throw new Error('createGameApp: game.id와 game.title이 필요해요.');
-  if (!Array.isArray(stages) || stages.length === 0) throw new Error('createGameApp: stages가 비어 있어요.');
+  if (!Array.isArray(allStages) || allStages.length === 0) throw new Error('createGameApp: stages가 비어 있어요.');
   if (typeof playStage !== 'function') throw new Error('createGameApp: playStage 함수가 필요해요.');
+  const allIds = allStages.map((s) => s.id);
+  if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
+
+  // 이번에 보이는 단계 (차시 묶음이면 차시 순서, ?lesson=이면 그 차시만)
+  const plan = planLessons(allStages, lessons, options.lessonId);
+  const { stages } = plan;
   const stageIds = stages.map((s) => s.id);
-  if (new Set(stageIds).size !== stageIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
 
   const storage = createStorage(game.id);
-  const progress = createProgress({ stageIds, storage, unlockAll: options.unlockAll });
+  const progress = createProgress({ stageIds, storage, unlockAll: options.unlockAll, openIds: plan.openIds });
   const log = createLearningLog({ storage });
   const sfx = createSfx({ storage, enabled: options.sound });
 
@@ -146,7 +181,7 @@ export function createGameApp({ root, game, stages, playStage, howTo = [], optio
     }, label);
 
   function titleScreen() {
-    const subtitle = game.subtitle ?? defaultSubtitle(game);
+    const subtitle = plan.current ? plan.current.title : game.subtitle ?? defaultSubtitle(game);
     return h('section', { class: 'screen screen-title' },
       subtitle && h('p', { class: 'eyebrow' }, subtitle),
       h('h1', { class: 'title-main' }, game.title),
@@ -170,29 +205,38 @@ export function createGameApp({ root, game, stages, playStage, howTo = [], optio
     );
   }
 
+  function stageGrid(list) {
+    return h('ol', { class: 'stage-grid' }, list.map((stage, i) => {
+      const unlocked = progress.isUnlocked(stage.id);
+      return h('li', null, h('button', {
+        type: 'button',
+        class: 'stage-card',
+        disabled: !unlocked,
+        onclick: () => {
+          sfx.play('click');
+          startStage(stage);
+        },
+      },
+        h('span', { class: 'stage-number' }, `${i + 1}단계`),
+        h('span', { class: 'stage-title' }, stage.title),
+        stage.goal && h('span', { class: 'stage-goal' }, stage.goal),
+        unlocked ? starsEl(progress.getStars(stage.id)) : h('span', { class: 'stage-lock' }, '🔒 앞 단계를 마치면 열려요'),
+      ));
+    }));
+  }
+
   function stageSelectScreen() {
     return h('section', { class: 'screen' },
       h('div', { class: 'screen-head' },
         h('h2', null, '단계를 골라요'),
         h('p', { class: 'muted' }, `모은 별 ${progress.totalStars()} / ${progress.maxStars}`),
       ),
-      h('ol', { class: 'stage-grid' }, stages.map((stage, i) => {
-        const unlocked = progress.isUnlocked(stage.id);
-        return h('li', null, h('button', {
-          type: 'button',
-          class: 'stage-card',
-          disabled: !unlocked,
-          onclick: () => {
-            sfx.play('click');
-            startStage(stage);
-          },
-        },
-          h('span', { class: 'stage-number' }, `${i + 1}단계`),
-          h('span', { class: 'stage-title' }, stage.title),
-          stage.goal && h('span', { class: 'stage-goal' }, stage.goal),
-          unlocked ? starsEl(progress.getStars(stage.id)) : h('span', { class: 'stage-lock' }, '🔒 앞 단계를 마치면 열려요'),
-        ));
-      })),
+      plan.groups
+        ? plan.groups.map((g) => h('section', { class: 'lesson-group', dataset: { lesson: g.lesson.id } },
+          h('h3', { class: 'lesson-title' }, g.lesson.title),
+          stageGrid(g.stages),
+        ))
+        : stageGrid(stages),
       h('div', { class: 'actions actions-start' }, button('처음 화면', () => show(titleScreen()))),
     );
   }
@@ -255,12 +299,15 @@ export function createGameApp({ root, game, stages, playStage, howTo = [], optio
   }
 
   function resultScreen(stage, record) {
-    const nextStage = stages[stageIds.indexOf(stage.id) + 1] ?? null;
+    let nextStage = stages[stageIds.indexOf(stage.id) + 1] ?? null;
+    // 차시 묶음이면 "다음 단계"는 같은 차시 안에서만
+    if (nextStage && plan.groups && nextStage.lesson !== stage.lesson) nextStage = null;
     const canGoNext = nextStage && progress.isUnlocked(nextStage.id);
     const isLast = !nextStage;
     const mistakes = countMistakes(record.answers);
     let title = '아쉬워요! 다시 해 볼까요?';
-    if (record.cleared) title = isLast ? '모든 단계를 마쳤어요!' : '단계 성공!';
+    if (record.cleared && isLast) title = plan.groups ? '이 차시를 마쳤어요!' : '모든 단계를 마쳤어요!';
+    else if (record.cleared) title = '단계 성공!';
 
     const stat = (label, value, sub) =>
       h('div', { class: 'stat' }, h('dt', null, label), h('dd', null, value), sub && h('dd', { class: 'stat-sub' }, sub));
