@@ -52,6 +52,11 @@ export function prepareCover(text) {
   const errors = [];
   if (!/^<svg\b[\s\S]*<\/svg>$/i.test(svg)) errors.push(`${COVER_FILE}는 <svg>…</svg> 하나여야 해요.`);
   if (/<(script|foreignObject|image|iframe|use)\b/i.test(svg)) errors.push(`${COVER_FILE}에 script·image·use·foreignObject는 쓸 수 없어요.`);
+  // <style>은 게임 모음 페이지 전체에 적용되고 @import로 바깥 파일을 부를 수 있다 → 쓰지 않는다(색은 속성으로 직접)
+  if (/<style\b/i.test(svg) || /@import\b/i.test(svg)) errors.push(`${COVER_FILE}에 <style>·@import는 쓸 수 없어요(색은 fill="#ffd86b"처럼 속성으로).`);
+  if (/\b(?:https?:)?\/\/[a-z0-9]/i.test(svg.replace(/\bxmlns(?::\w+)?\s*=\s*["'][^"']*["']/gi, ''))) {
+    errors.push(`${COVER_FILE}에 바깥 주소(http)는 쓸 수 없어요.`);
+  }
   if (/\son[a-z]+\s*=/i.test(svg)) errors.push(`${COVER_FILE}에 on… 이벤트 속성은 쓸 수 없어요.`);
   if (/\b(?:xlink:)?href\s*=|url\(|\bid\s*=/i.test(svg)) {
     errors.push(`${COVER_FILE}에 href·url()·id는 쓸 수 없어요(바깥 참조·다른 그림과 id 충돌 방지).`);

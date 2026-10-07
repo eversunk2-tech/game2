@@ -5,7 +5,7 @@
  *
  *   icon('sound')                  → <svg class="icon icon-sound">
  *   icon('check', { class: 'big' }) → 클래스 더하기
- *   starIcon(true)                 → 찬 별 (빈 별은 false)
+ *   starIcon(true)                 → 찬 별 (빈 별은 false). 테두리만 있는 별 아이콘은 icon('star')
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -42,6 +42,9 @@ export const ICONS = {
   arrow: [['path', { d: 'M5 12h13M13 6.5l5.5 5.5-5.5 5.5' }]],
   copy: [['rect', { x: 8, y: 8, width: 12, height: 12, rx: 2 }], ['path', { d: 'M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3' }]],
   home: [['path', { d: 'M4 11l8-7 8 7v9h-5v-6h-6v6H4z' }]],
+  // D2: 도장판·도감
+  rise: [['path', { d: 'M4 18l5.5-5.5 4 4L20 10' }], ['path', { d: 'M15 10h5v5' }]],
+  star: [['path', { d: 'M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.8l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z' }]],
 };
 
 export const STAR_PATH = 'M12 2.6l2.85 5.9 6.45.85-4.75 4.45 1.2 6.4L12 17.1l-5.75 3.1 1.2-6.4L2.7 9.35l6.45-.85z';

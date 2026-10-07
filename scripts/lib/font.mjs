@@ -109,18 +109,30 @@ export async function subsetDisplayFont(text, format = 'woff2') {
 }
 
 /**
+ * 글꼴에 없는 기호(한글 음절·ASCII·빈칸 밖). 제목·버튼처럼 제목 글꼴로 그리는 자리에 쓰면
+ * 그 글자만 기기 글꼴로 섞여 그려진다(예: 가운뎃점 U+00B7 → 제목 자리에는 U+318D 'ㆍ'를 쓴다).
+ */
+export function missingSymbols(text, cmap) {
+  return [...text].filter((ch) => {
+    const code = ch.codePointAt(0);
+    return code > 0x7e && !isHangulSyllable(ch) && !/\s/u.test(ch) && !cmap.has(code);
+  });
+}
+
+/**
  * 이 HTML에 쓰인 글자만 담은 @font-face CSS를 만든다.
- * → { css, chars(넣은 글자 수), bytes(woff2 크기), missing(글꼴에 없는 한글 음절) }
+ * → { css, chars(넣은 글자 수), bytes(woff2 크기), missing(글꼴에 없는 한글 음절), symbols(글꼴에 없는 기호, 알림용) }
  */
 export async function displayFontFace(html) {
   const { cmap } = await loadSource();
   const text = collectFontText(html);
   const kept = [...text].filter((ch) => cmap.has(ch.codePointAt(0)));
   const missing = [...text].filter((ch) => isHangulSyllable(ch) && !cmap.has(ch.codePointAt(0)));
+  const symbols = missingSymbols(text, cmap);
   const woff2 = await subsetDisplayFont(kept.join(''), 'woff2');
   const css = `/*! ${DISPLAY_FONT.notice} */@font-face{font-family:"${DISPLAY_FONT.family}";`
     + `src:url(data:font/woff2;base64,${Buffer.from(woff2).toString('base64')}) format("woff2");${FACE_RULES}}`;
-  return { css, chars: kept.length, bytes: woff2.length, missing };
+  return { css, chars: kept.length, bytes: woff2.length, missing, symbols };
 }
 
 /** 글꼴 CSS를 <head> 끝에 넣는다. */

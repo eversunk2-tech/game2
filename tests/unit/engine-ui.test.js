@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitTitleMark } from '../../src/shared/core/title-mark.js';
-import { gradeLabel, starHint, stageStates } from '../../src/shared/ui/app.js';
+import { createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
+import { defaultHighlights, gradeLabel, readUrlOptions, stageXpLine, starHint, stageStates, timeRecordText } from '../../src/shared/ui/app.js';
+import { SOUNDS } from '../../src/shared/ui/audio.js';
+import { CONFETTI_MAX, RESULT_MS, confettiSpecs, isLowFx } from '../../src/shared/ui/celebrate.js';
 import { anchorPlacement } from '../../src/shared/ui/feedback.js';
 import { ICONS, STAR_PATH } from '../../src/shared/ui/icons.js';
 
@@ -75,4 +78,63 @@ test('아이콘: 기획서 2-6절 이름이 모두 있고, 그림 요소 형식�
     }
   }
   assert.match(STAR_PATH, /^M12 /);
+});
+
+test('결과 "오늘의 솜씨" 기본 칸: 답 기록에서(처음에 맞힘·다시 일어서기·연속), 새로 찾음·설명은 있을 때만', () => {
+  const play = createPlayReward();
+  for (const a of [{ itemId: 1, correct: false }, { itemId: 1, correct: true }, { itemId: 2, correct: true }, { itemId: 3, correct: true }, { itemId: 4, correct: true }]) play.answer(a);
+  const list = defaultHighlights(play.summary());
+  assert.deepEqual(list.map((x) => [x.label, x.value, x.xp]), [
+    ['처음에 맞힘', '3 / 4', 6],
+    ['다시 일어서기', '2번', 2],
+    ['연속 최고', '3번', 1],
+  ]);
+  // 칸 점수 + 단계 완료·별 = 이번 판 점수
+  assert.equal(list.reduce((sum, x) => sum + x.xp, 0), play.xp());
+  play.discovered();
+  play.event('explain', { correct: true, itemId: 9 });
+  assert.deepEqual(defaultHighlights(play.summary()).map((x) => x.label), ['처음에 맞힘', '새로 찾음', '설명 맞힘', '다시 일어서기', '연속 최고']);
+  assert.deepEqual(defaultHighlights(createPlayReward().summary()), []); // 답 기록이 없는 게임
+});
+
+test('결과 점수 줄: 단계 완료·별 점수, 반복이면 안내, 늘 "빨리 푼 시간에는 점수가 없어요"', () => {
+  assert.equal(stageXpLine(stageXp({ prevStars: 0, stars: 2 })), '단계 완료 +5 · 별 2개 +4 · 빨리 푼 시간에는 점수가 없어요');
+  assert.equal(stageXpLine(stageXp({ prevStars: 0, stars: 3, challenge: true }), { challenge: true }), '도전 성공 +10 · 별 3개 +6 · 빨리 푼 시간에는 점수가 없어요');
+  assert.match(stageXpLine(stageXp({ prevStars: 3, stars: 3 })), /별이 처음 늘 때만/);
+});
+
+test('시간 재기 문장 (점수 없음, 내 기록과만 비교)', () => {
+  assert.equal(timeRecordText({ ms: 130_000, prevMs: null }), '내 기록 2분 10초 (첫 기록이에요)');
+  assert.equal(timeRecordText({ ms: 130_000, prevMs: 142_000 }), '내 기록 2분 10초 (지난번보다 12초 빨라요)');
+  assert.equal(timeRecordText({ ms: 150_000, prevMs: 130_000 }), '내 기록 2분 30초 (가장 좋은 기록은 2분 10초)');
+});
+
+test('?fx=low 또는 코어 2개 이하면 저사양 모드', () => {
+  assert.equal(readUrlOptions('?fx=low').fx, 'low');
+  assert.equal(readUrlOptions('').fx, null);
+  assert.equal(isLowFx({ fx: 'low', hardwareConcurrency: 8 }), true);
+  assert.equal(isLowFx({ fx: null, hardwareConcurrency: 2 }), true);
+  assert.equal(isLowFx({ fx: null, hardwareConcurrency: 4 }), false);
+  assert.equal(isLowFx({ fx: null, hardwareConcurrency: undefined }), false);
+});
+
+test('색종이: 한 번에 12개 이하, 2초 안에 끝나는 연출', () => {
+  assert.equal(CONFETTI_MAX, 12);
+  assert.ok(RESULT_MS <= 2000);
+  assert.equal(confettiSpecs(50).length, 12);
+  assert.equal(confettiSpecs(0).length, 0);
+  const specs = confettiSpecs(10, { width: 600, random: () => 0.5 });
+  assert.equal(specs.length, 10);
+  assert.ok(specs.every((p) => p.delay <= 200 && p.color >= 1 && p.color <= 8));
+  assert.ok(specs.every((p) => Math.abs(p.x) <= 300));
+});
+
+test('효과음: 기획서 4절 이름이 모두 있고, 음 길이가 짧다', () => {
+  for (const name of ['click', 'correct', 'wrong', 'clear', 'stamp', 'combo', 'discover', 'rankup', 'fold', 'unlock']) {
+    const parts = SOUNDS[name](3);
+    assert.ok(parts.length > 0, name);
+    for (const p of parts) assert.ok(p.t + p.d <= 0.8, `${name}: ${p.t + p.d}초`);
+  }
+  // combo: 연속 수가 늘면 음이 높아진다
+  assert.ok(SOUNDS.combo(2)[0].f > SOUNDS.combo(1)[0].f);
 });

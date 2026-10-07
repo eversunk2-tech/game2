@@ -79,12 +79,14 @@ function filters(games) {
 }
 
 // 이어 하기: 같은 주소(같은 출처)에서 게임의 별 기록(edu:<id>:stars)을 읽을 수 있을 때만 보인다.
+// 칭호(edu:<id>:rewards의 rank)가 있으면 "별 5개 · 탐험가"처럼 함께 보인다(읽기만 한다).
 // 거르기: 칩을 누르면 그 교과·학년 게임만 보인다.
 const SCRIPT = `(function(){
 try{var ls=window.localStorage;document.querySelectorAll('[data-progress]').forEach(function(el){
-var raw=ls.getItem('edu:'+el.getAttribute('data-progress')+':stars'),s=raw?JSON.parse(raw):{},n=0,k;for(k in s)n+=Number(s[k])||0;
+var id=el.getAttribute('data-progress'),raw=ls.getItem('edu:'+id+':stars'),s=raw?JSON.parse(raw):{},n=0,k;for(k in s)n+=Number(s[k])||0;
 var c=el.closest('.hub-card');if(!(n>0)){c.querySelector('.hub-fresh').hidden=false;return;}
-el.querySelector('.hub-stars').textContent='별 '+n+'개';el.hidden=false;c.querySelector('.go-text').textContent='이어 하기';});}catch(e){}
+var rank='';try{var r=JSON.parse(ls.getItem('edu:'+id+':rewards')||'null');if(r&&typeof r.rank==='string')rank=r.rank;}catch(e){}
+el.querySelector('.hub-stars').textContent='별 '+n+'개'+(rank?' · '+rank:'');el.hidden=false;c.querySelector('.go-text').textContent='이어 하기';});}catch(e){}
 var chips=document.querySelectorAll('.hub-filter .chip');chips.forEach(function(b){b.addEventListener('click',function(){
 chips.forEach(function(x){x.setAttribute('aria-pressed',String(x===b));});
 var kind=b.getAttribute('data-kind'),v=b.getAttribute('data-value');
@@ -140,6 +142,7 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
         <li><code>?stage=단계-id</code>그 단계로 바로 시작</li>
         <li><code>?seed=1</code>모두 같은 문제 순서</li>
         <li><code>?sound=off</code>소리 끄고 시작</li>
+        <li><code>?fx=low</code>효과 줄이기 (느린 기기)</li>
       </ul>
     </section>
     <section class="panel hub-privacy">${iconSvg('shield')}<p><b>학생 기록은 그 기기의 브라우저에만 남고 어디에도 전송되지 않아요.</b> 순위표·친구 비교가 없어요. 같은 기기를 함께 쓰면 게임의 학습 기록 화면에서 지울 수 있어요.</p></section>

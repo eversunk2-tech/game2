@@ -57,7 +57,14 @@ test('표지 cover.svg: 게임 모음에 그대로 넣을 수 있는 그림만 �
     '<svg><rect style="fill:url(#g)"/></svg>',
     '<svg><linearGradient id="g"/></svg>',
     '<div>그림 아님</div>',
+    // <style>은 게임 모음 전체에 적용되고 @import로 바깥 파일을 부를 수 있다 (D1 Review 3번)
+    '<svg><style>@import "https://example.com/a.css"; .hub-card{display:none}</style><rect/></svg>',
+    '<svg><style>rect{fill:#ffd86b}</style><rect/></svg>',
+    '<svg><text>@import url(x.css)</text></svg>',
+    '<svg><text>https://example.com</text></svg>',
   ]) assert.ok(prepareCover(bad).errors.length > 0, bad);
+  // SVG 이름공간(xmlns="http://www.w3.org/2000/svg")은 바깥 참조가 아니다
+  assert.deepEqual(prepareCover('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect/></svg>').errors, []);
 
   // 지금 게임의 표지는 모두 통과하고 loadGames가 읽어 둔다
   const games = await loadGames(GAMES_DIR);

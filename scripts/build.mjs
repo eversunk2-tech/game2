@@ -102,8 +102,15 @@ export function findExternalRefs(html) {
     const href = attr(m[0], 'href');
     if (href && !href.startsWith('data:')) problems.push(m[0]);
   }
-  for (const style of html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
-    for (const m of style[1].matchAll(/url\(\s*["']?(?!data:|#)([^"')\s]+)/gi)) problems.push(`url(${m[1]})`);
+  // <style> 블록(SVG 안 포함)과 style="" 속성: url()은 data:·#만, @import는 모두 바깥 참조로 본다
+  const styles = [
+    ...[...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]),
+    ...[...html.matchAll(/\sstyle\s*=\s*"([^"]*)"/gi)].map((m) => m[1]),
+    ...[...html.matchAll(/\sstyle\s*=\s*'([^']*)'/gi)].map((m) => m[1]),
+  ];
+  for (const css of styles) {
+    for (const m of css.matchAll(/url\(\s*["']?(?!data:|#)([^"')\s]+)/gi)) problems.push(`url(${m[1]})`);
+    for (const m of css.matchAll(/@import\s*(?:url\(\s*)?["']?([^"';)\s]*)/gi)) problems.push(`@import ${m[1]}`.trim());
   }
   return problems;
 }
@@ -139,7 +146,11 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
     await writeFile(file, out);
     const missing = font.missing.length ? `, 제목 글꼴에 없는 글자 ${font.missing.join('')}` : '';
     log(`  ✓ ${path.relative(rootDir, file)}  (${kb(bytes)}, 제목 글꼴 ${font.chars}자 ${kb(font.bytes)}${missing})`);
-    files.push({ name, bytes, fontChars: font.chars, fontBytes: font.bytes, missing: font.missing });
+    if (font.symbols.length) {
+      // 알림: 본문 글자에는 문제없지만 제목·버튼(제목 글꼴 자리)에 쓰면 기기 글꼴로 섞여 보인다
+      log(`    알림: 제목 글꼴에 없는 기호 ${font.symbols.join(' ')} — 제목·버튼 자리에는 쓰지 마세요(가운뎃점은 'ㆍ'로)`);
+    }
+    files.push({ name, bytes, fontChars: font.chars, fontBytes: font.bytes, missing: font.missing, symbols: font.symbols });
   }
 
   for (const game of games) {

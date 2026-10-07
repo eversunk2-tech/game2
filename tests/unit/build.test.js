@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import subsetFont from 'subset-font';
 import { MAX_FILE_BYTES, build, findExternalRefs } from '../../scripts/build.mjs';
-import { DISPLAY_FONT, collectFontText, isHangulSyllable, readCmap } from '../../scripts/lib/font.mjs';
+import { DISPLAY_FONT, collectFontText, isHangulSyllable, missingSymbols, readCmap } from '../../scripts/lib/font.mjs';
 import { loadGames } from '../../scripts/lib/games.mjs';
 import { FILTER_MIN_GAMES, renderHub } from '../../scripts/lib/hub.mjs';
 import { createGame } from '../../scripts/new-game.mjs';
@@ -111,6 +111,21 @@ test('바깥 파일 참조를 찾아낸다', () => {
   assert.equal(findExternalRefs('<link rel="stylesheet" href="a.css">').length, 1);
   assert.equal(findExternalRefs('<style>.a{background:url(./a.png)}</style>').length, 1);
   assert.deepEqual(findExternalRefs('<script>new URL(location.href)</script>'), []);
+  // <style> 안(SVG 표지 안 포함)의 @import와 style="" 속성의 url()도 잡는다 (D1 Review 3번)
+  assert.deepEqual(findExternalRefs('<svg><style>@import "https://example.com/a.css"; .x{}</style></svg>'), ['@import https://example.com/a.css']);
+  assert.equal(findExternalRefs('<style>@import url(https://example.com/a.css);</style>').length, 2);
+  assert.equal(findExternalRefs('<div style="background:url(https://example.com/a.png)"></div>').length, 1);
+  assert.deepEqual(findExternalRefs('<div style="--game-color: #2f6f5e"></div><style>.a{background:url(data:image/png;base64,AA)}</style>'), []);
+});
+
+test('제목 글꼴에 없는 기호를 알려 준다 (가운뎃점은 제목 자리에 쓰지 않는다)', async () => {
+  const ttf = await readFile(DISPLAY_FONT.file);
+  const cmap = readCmap(ttf);
+  assert.deepEqual(missingSymbols('약수·배수 ㆍ → ★ ✦ … abc 가', cmap), ['·', '✦', '…']);
+  assert.ok(cmap.has('ㆍ'.codePointAt(0)), '엔진이 제목 자리에 쓰는 구분 기호');
+  const outDir = await tempDir();
+  const { files } = await build({ outDir, quiet: true });
+  for (const info of files) assert.ok(Array.isArray(info.symbols), info.name);
 });
 
 test('템플릿으로 만든 새 게임은 바로 빌드된다', async () => {

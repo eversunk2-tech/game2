@@ -52,13 +52,17 @@ export function createFeedback(root) {
     if (toastHost.firstChild) place();
   });
 
-  function say(message, type) {
-    // 같은 문장을 연달아 말해도 다시 읽도록 비웠다가 넣는다.
+  /** 화면 읽기 프로그램에만 알린다(토스트 없이). 같은 문장을 연달아 말해도 다시 읽도록 비웠다가 넣는다. */
+  function announce(message) {
     live.textContent = '';
     clearTimeout(announceTimer);
     announceTimer = setTimeout(() => {
       live.textContent = message;
     }, 30);
+  }
+
+  function say(message, type) {
+    announce(message);
 
     const toast = h('div', { class: `toast toast-${type}` },
       h('span', { class: 'toast-icon' }, icon(ICONS[type])),
@@ -91,6 +95,10 @@ export function createFeedback(root) {
     },
     info(message) {
       say(message, 'info');
+    },
+    /** 토스트 없이 화면 읽기 프로그램에만 알림 (보상·새로 찾음 안내 등) */
+    announce(message) {
+      if (message) announce(message);
     },
     /**
      * 넓은 화면에서 토스트를 el의 아래쪽 가운데에 띄운다(예: 게임 무대). null이면 기본 자리.

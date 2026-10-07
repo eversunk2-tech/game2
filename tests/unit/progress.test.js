@@ -76,3 +76,38 @@ test('저장소에 남아 다시 열어도 이어진다', () => {
   again.reset();
   assert.equal(createProgress({ stageIds: ids, storage: createStorage('g', backend) }).getStars('s1'), 0);
 });
+
+test('도전 단계(optionalIds): 다음 단계를 막지 않고, 차시의 일반 단계를 모두 마치면 열리며, 별 합계에서 빠진다', () => {
+  // 차시 a: a1 a2 + 도전 ac / 차시 b: b1 + 도전 bc (묶음은 openIds마다 새로 시작)
+  const stageIds = ['a1', 'a2', 'ac', 'b1', 'bc'];
+  const p = createProgress({ stageIds, openIds: ['a1', 'b1'], optionalIds: ['ac', 'bc'] });
+  assert.deepEqual(stageIds.map((id) => p.isUnlocked(id)), [true, false, false, true, false]);
+  assert.equal(p.maxStars, 9); // 일반 단계 3개만
+  assert.equal(p.isOptional('ac'), true);
+  p.record('a1', 2);
+  assert.deepEqual(stageIds.map((id) => p.isUnlocked(id)), [true, true, false, true, false]);
+  p.record('a2', 1);
+  assert.equal(p.isUnlocked('ac'), true); // 차시 a를 모두 마쳐야 열림
+  assert.equal(p.isUnlocked('bc'), false); // 다른 차시는 그대로
+  p.record('ac', 3);
+  assert.equal(p.totalStars(), 3); // 도전 별은 합계에 넣지 않는다
+  assert.equal(p.getStars('ac'), 3);
+  assert.deepEqual(p.allStars(), { a1: 2, a2: 1, ac: 3 });
+  // 다음 단계: 도전 단계는 건너뛰고, 도전 단계 다음은 없다
+  assert.equal(p.nextStageId('a2'), 'b1');
+  assert.equal(p.nextStageId('ac'), null);
+  p.record('b1', 1);
+  assert.equal(p.isUnlocked('bc'), true);
+});
+
+test('도전 단계가 일반 단계 사이에 있어도 다음 일반 단계를 막지 않는다 (차시 묶음 없이)', () => {
+  const p = createProgress({ stageIds: ['s1', 'ch', 's2'], optionalIds: ['ch'] });
+  assert.deepEqual(['s1', 'ch', 's2'].map((id) => p.isUnlocked(id)), [true, false, false]);
+  p.record('s1', 1);
+  assert.equal(p.isUnlocked('s2'), true); // 도전(ch)을 하지 않아도 열린다
+  assert.equal(p.isUnlocked('ch'), false); // 일반 단계를 모두 마쳐야
+  p.record('s2', 1);
+  assert.equal(p.isUnlocked('ch'), true);
+  assert.equal(p.nextStageId('s1'), 's2');
+  assert.equal(createProgress({ stageIds: ['s1', 'ch'], optionalIds: ['ch'], unlockAll: true }).isUnlocked('ch'), true);
+});

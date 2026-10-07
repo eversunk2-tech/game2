@@ -116,8 +116,11 @@ export function formatDate(date) {
   return `${date.getFullYear()}. ${date.getMonth() + 1}. ${date.getDate()}.`;
 }
 
-/** 학생이 복사해서 클래스룸·패들렛 등에 붙여 넣을 결과 문장 */
-export function formatReport({ title, records, studentName = '', date = new Date() }) {
+/**
+ * 학생이 복사해서 클래스룸·패들렛 등에 붙여 넣을 결과 문장.
+ * extra: 끝에 덧붙일 줄(예: 엔진이 넣는 "칭호: 탐험가(60점) · 도장 4개 · 도감 4/11"). 기록이 없으면 넣지 않는다.
+ */
+export function formatReport({ title, records, studentName = '', date = new Date(), extra = [] }) {
   const lines = [`[${title}] 학습 기록`, `이름: ${studentName || '(쓰지 않음)'}`, `날짜: ${formatDate(date)}`, ''];
   if (records.length === 0) {
     lines.push('아직 기록이 없어요.');
@@ -134,5 +137,6 @@ export function formatReport({ title, records, studentName = '', date = new Date
     const top = summary.mistakes.slice(0, 3).map((m) => `${m.tag}(${m.count}번)`);
     lines.push(`자주 틀린 개념: ${top.join(', ')}`);
   }
+  for (const line of extra) if (line) lines.push(String(line));
   return lines.join('\n');
 }

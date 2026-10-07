@@ -115,4 +115,8 @@ test('복사용 결과 문장', () => {
   assert.match(text, /- 12의 약수: 정답률 80% \(10번 중 8번\), 1분 20초, 별 2개/);
   assert.match(text, /자주 틀린 개념: 1과 자기 자신도 약수\(2번\)/);
   assert.match(formatReport({ title: 'x', records: [] }), /아직 기록이 없어요/);
+  // 엔진이 덧붙이는 한 줄(칭호·도장·도감). 주지 않으면 예전과 같다
+  const extra = formatReport({ title: '약수 게임', records, date: new Date(2026, 9, 7), extra: ['칭호: 탐험가(60점) · 도장 4개 · 도감 4/11'] });
+  assert.match(extra, /\n칭호: 탐험가\(60점\) · 도장 4개 · 도감 4\/11$/);
+  assert.equal(formatReport({ title: '약수 게임', records, date: new Date(2026, 9, 7), extra: [] }), formatReport({ title: '약수 게임', records, date: new Date(2026, 9, 7) }));
 });
