@@ -29,7 +29,7 @@ const MAX_UNIT = 116;
 const MIN_UNIT = 30;
 const TAP = 48; // 누르는 곳(빈 자리 버튼) 최소 크기(px)
 const MAX_ZOOM = 1.7; // 다 접은 입체를 이만큼까지 크게 본다
-const STUCK_AT = 0.72; // 한 꼭짓점에 네 면이 모인 전개도는 다른 경첩도 약 65°까지만 접히고 멈춘다
+const STUCK_AT = 0.72; // 한 꼭짓점에 네 면이 모인 전개도는 덩어리에 붙은 경첩만 약 65°까지 접히고 멈춘다
 const LIGHT = normalize([-0.45, -0.55, 1]);
 const FACE_COLORS = ['#ffe6a8', '#cfe6ff', '#d5f0cd', '#ffd9e2', '#e3dafb', '#ffe0c2', '#cdeeea', '#eeeeee'];
 
@@ -43,6 +43,20 @@ function viewDir(n, tiltDeg, spinDeg) {
   const a = rad(tiltDeg);
   const z1 = [n[0] * Math.cos(b) - n[1] * Math.sin(b), n[0] * Math.sin(b) + n[1] * Math.cos(b), n[2]];
   return [z1[0], z1[1] * Math.cos(a) - z1[2] * Math.sin(a), z1[1] * Math.sin(a) + z1[2] * Math.cos(a)];
+}
+
+/** 처음 시점(tilt, SPIN)에서 turn만큼 더 돌렸을 때 방향 벡터가 화면에서 어디를 향하나 (z > 0이면 보는 쪽) */
+export const viewDirection = (v, turn = 0, tilt = TILT) => viewDir(v, tilt, SPIN + turn);
+
+/**
+ * 한 꼭짓점에 네 면이 모인(2×2 덩어리) 전개도의 "멈추는 장면" 접기 규칙. 없으면 null.
+ * 덩어리 안 경첩은 접히지 않고, 덩어리에 붙은 경첩만 약 65°에서 멈춘다.
+ * 덩어리에서 떨어진 면끼리의 경첩은 접지 않아(한 장처럼 붙어) 덩어리 밑으로 말려 들어가 가려지지 않는다.
+ */
+export function stuckTOf(net, blocked = fullVertices(net)) {
+  if (blocked.length === 0) return null;
+  const blockFaces = new Set(blocked.flatMap((v) => v.faces));
+  return (hinge, value) => (blockFaces.has(hinge.a) !== blockFaces.has(hinge.b) ? value * STUCK_AT : 0);
 }
 
 const isAxisRect = (poly) =>
@@ -62,6 +76,34 @@ const seenScore = (normal) => {
 
 // 다 접을 때 더 돌려 볼 수 있는 각도 (세로축 둘레, CSS rotateZ와 같은 방향)
 const TURNS = [0, 90, 180, 270];
+const FINE_TURNS = Array.from({ length: 24 }, (_, i) => i * 15);
+
+// 2×2 장면의 기울기 후보(큰 것부터). 접힌 면이 덩어리 양쪽에 있으면 조금 덜 기울여 내려다봐야 둘 다 잘 보인다.
+const BLOCK_TILTS = [TILT, 48, 40, 32];
+const WELL_SEEN = 0.3; // 면의 법선이 보는 쪽을 이만큼 이상 향하면 "잘 보인다"
+
+/**
+ * 2×2 덩어리 전개도: 덩어리 면을 바닥에 두고(펼친 채), 접히다 멈춘 면들이 모두 보는 쪽을 향하게 돌린다.
+ * 가장 덜 보이는 면이 가장 잘 보이는 각도(turn)를 고르고, 그래도 잘 안 보이면 기울기(tilt)를 줄인다.
+ */
+function displayBlocked(net, blocked) {
+  const blockFaces = new Set(blocked.flatMap((v) => v.faces));
+  const root = blockFaces.has(net.root) ? net.root : net.faces.find((f) => blockFaces.has(f.id)).id;
+  const candidate = root === net.root ? net : { ...net, root };
+  const folded = foldNet(candidate, 1, { tOf: stuckTOf(candidate, blocked) });
+  let best = null;
+  for (const tilt of BLOCK_TILTS) {
+    best = { turn: 0, tilt, worst: -Infinity, sum: -Infinity };
+    for (const turn of FINE_TURNS) {
+      const zs = folded.faces.map((f) => viewDirection(f.normal, turn, tilt)[2]);
+      const worst = Math.min(...zs);
+      const sum = zs.reduce((a, b) => a + b, 0);
+      if (worst > best.worst + 1e-9 || (Math.abs(worst - best.worst) <= 1e-9 && sum > best.sum + 1e-9)) best = { turn, tilt, worst, sum };
+    }
+    if (best.worst >= WELL_SEEN) break;
+  }
+  return { net: candidate, turn: best.turn, tilt: best.tilt };
+}
 const turnNormal = (n, deg) => {
   const b = rad(deg);
   return [n[0] * Math.cos(b) - n[1] * Math.sin(b), n[0] * Math.sin(b) + n[1] * Math.cos(b), n[2]];
@@ -78,7 +120,9 @@ const isTopOrBottom = (normal) => Math.abs(normal[2]) > 0.99;
  *   면 붙이기에서 맞힌 경우는 [붙인 면].
  */
 export function displayNet(net, { focus = [] } = {}) {
-  if (fullVertices(net).length > 0) return { net, turn: 0 };
+  // 돌려주는 값: { net(바닥 면을 고른 전개도), turn(더 돌릴 각도), tilt(다 접었을 때 기울기) }
+  const blocked = fullVertices(net);
+  if (blocked.length > 0) return displayBlocked(net, blocked);
   let best = null;
   const roots = [net.root, ...net.faces.map((f) => f.id).filter((id) => id !== net.root)];
   for (const root of roots) {
@@ -96,7 +140,7 @@ export function displayNet(net, { focus = [] } = {}) {
       if (!best || s > best.score) best = { net: candidate, turn, score: s };
     }
   }
-  return { net: best.net, turn: best.turn };
+  return { net: best.net, turn: best.turn, tilt: TILT };
 }
 
 /**
@@ -124,6 +168,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   let unit = 60;
   let zoom = 1;
   let baseTurn = 0;
+  let baseTilt = TILT;
   let revealed = false;
   let tOf = null;
   let blocked = []; // 한 꼭짓점에 네 면이 모인 곳
@@ -135,6 +180,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   let raf = 0;
   const timers = new Set();
   const listeners = new Set();
+  const markListeners = new Set();
   let destroyed = false;
 
   const later = (fn, ms) => {
@@ -197,7 +243,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     if (t <= 1e-6) for (const s of slots) pts.push([...s.cell, 0], [s.cell[0] + 1, s.cell[1] + 1, 0]);
     const { min, max } = bounds(pts);
     const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
-    const tilt = TILT * t;
+    const tilt = baseTilt * t;
     const turn = spin + (SPIN + baseTurn) * t;
     const z = (1 + (zoom - 1) * t).toFixed(4);
     scene.style.transform = `scale3d(${z}, ${z}, ${z}) rotateX(${tilt.toFixed(3)}deg) rotateZ(${turn.toFixed(3)}deg)`;
@@ -318,6 +364,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     badge.hidden = false;
     badge.classList.toggle('is-wrong', !ok);
     badge.textContent = ok ? '✓ 정육면체가 됐어요' : blocked.length > 0 ? '✗ 네 면이 한 점에 모여 접을 수 없어요' : '✗ 정육면체가 안 돼요';
+    // 빈 자리가 겹친 자리의 정반대라 지금 시점에서 안 보이면 돌려 보라고 알려 준다
+    const hiddenMissing = missing.some((s) => viewDir(s.normal, baseTilt, SPIN + baseTurn + spin)[2] < 0.05);
+    if (hiddenMissing) badge.append(h('span', { class: 'badge-hint' }, '↻ 돌려 보면 빈 자리가 보여요'));
+    for (const fn of markListeners) fn({ ok, hiddenMissing });
   }
 
   function setT(value) {
@@ -370,16 +420,13 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     stopAnimation();
     clearMarks();
     marksKey = '';
-    ({ net, turn: baseTurn } = displayNet(nextNet, { focus }));
+    ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus }));
     slots = nextSlots;
     revealed = false;
     t = 0;
     spin = 0;
     blocked = fullVertices(net);
-    const blockedFaces = blocked.map((v) => v.faces);
-    // 한 꼭짓점에 네 면이 모인 곳의 경첩은 접히지 않고, 나머지도 반쯤에서 멈춘다
-    tOf = blocked.length === 0 ? null : (hinge, value) =>
-      (blockedFaces.some((fs) => fs.includes(hinge.a) && fs.includes(hinge.b)) ? 0 : value * STUCK_AT);
+    tOf = stuckTOf(net, blocked); // 2×2 덩어리면 접다가 멈추는 장면
     faceEls = new Map(net.faces.map((f) => [f.id, buildFace(f)]));
     slotEls = new Map(slots.map((s) => [s.key, buildSlot(s)]));
     scene.replaceChildren(...faceEls.values(), ...slotEls.values());
@@ -487,6 +534,11 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     },
     faceEl: (id) => faceEls.get(id),
     slotEl: (key) => slotEls.get(key),
+    /** 다 접혀 결과 표시가 나올 때 알림: fn({ ok, hiddenMissing }) */
+    onMarks(fn) {
+      markListeners.add(fn);
+      return () => markListeners.delete(fn);
+    },
     onChange(fn) {
       listeners.add(fn);
       return () => listeners.delete(fn);
@@ -497,6 +549,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
       resizer?.disconnect();
       el.removeEventListener('keydown', onKey);
       listeners.clear();
+      markListeners.clear();
     },
   };
 }
@@ -529,6 +582,14 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     title: label,
     onclick: () => view.rotate(deg),
   }, text);
+  const turnRight = rotateButton('오른쪽으로 돌려 보기', 30, '↻');
+  // 빈 자리가 안 보이는 쪽에 있으면 [↻]를 잠깐 강조한다 (배지에도 "↻ 돌려 보면 빈 자리가 보여요")
+  let hintTimer = null;
+  view.onMarks(({ hiddenMissing }) => {
+    clearTimeout(hintTimer);
+    turnRight.classList.toggle('is-hint', hiddenMissing);
+    if (hiddenMissing) hintTimer = setTimeout(() => turnRight.classList.remove('is-hint'), 4000);
+  });
   const halfButton = hint
     ? h('button', { type: 'button', class: 'btn btn-small hint-btn', hidden: true, onclick: () => useHint() }, '반만 접어 보기')
     : null;
@@ -546,7 +607,7 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     h('div', { class: 'q-head' }, counter, prompt),
     answerBox,
     h('div', { class: 'fold-tools' },
-      h('div', { class: 'fold-row' }, foldButton, rotateButton('왼쪽으로 돌려 보기', -30, '↺'), rotateButton('오른쪽으로 돌려 보기', 30, '↻')),
+      h('div', { class: 'fold-row' }, foldButton, rotateButton('왼쪽으로 돌려 보기', -30, '↺'), turnRight),
       slider,
       lockNote,
       halfButton,
@@ -607,6 +668,8 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
       }
       lockFold(true);
       sync(0);
+      clearTimeout(hintTimer);
+      turnRight.classList.remove('is-hint');
     },
     showReason(text, correct) {
       reason.hidden = false;

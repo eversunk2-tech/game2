@@ -2,7 +2,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { createRng } from '../../src/shared/core/random.js';
+import { missingSlots } from '../../src/games/net-workshop/fold.js';
 import { STAGES, judgeNetAnswer, judgeSlot, makeQuestions } from '../../src/games/net-workshop/logic.js';
+import { displayNet, viewDirection } from '../../src/games/net-workshop/view3d.js';
 import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
 
 const FILE = 'net-workshop.html';
@@ -31,6 +33,25 @@ async function expectSameNet(page, net) {
     expect(Math.round(d.x - first.x)).toBe(f.cell[0] - net.faces[0].cell[0]);
     expect(Math.round(d.y - first.y)).toBe(f.cell[1] - net.faces[0].cell[1]);
   }
+}
+
+/** 지금 보이는 알림(토스트)이 조작 버튼(머리의 소리·단계 선택, 답 버튼, 접기 도구, 다음 버튼, 면 카드)과 겹치지 않는다 */
+async function expectToastClear(page) {
+  await expect(page.locator('.toast')).toBeVisible();
+  const hits = await page.evaluate(() => {
+    const t = document.querySelector('.toast').getBoundingClientRect();
+    const controls = '.topbar button, .play-header button, .answer-btn, .fold-toggle, .btn-icon, .fold-range, .hint-btn, .next-btn, .face-card';
+    const out = [];
+    for (const el of document.querySelectorAll(controls)) {
+      const b = el.getBoundingClientRect();
+      if (b.width === 0 || el.closest('[hidden]')) continue;
+      const w = Math.min(t.right, b.right) - Math.max(t.left, b.left);
+      const h = Math.min(t.bottom, b.bottom) - Math.max(t.top, b.top);
+      if (w > 0 && h > 0) out.push(`${el.className} ${Math.round(w)}×${Math.round(h)}`);
+    }
+    return out;
+  });
+  expect(hits).toEqual([]);
 }
 
 async function noScroll(page) {
@@ -89,7 +110,7 @@ test('판별에서 겹치는 전개도에 "돼요"를 고르면 까닭과 겹친
       expect(await overlap.count()).toBeGreaterThanOrEqual(2);
       await expect(overlap.first()).toContainText('겹쳐요');
       await expect(page.locator('.net-ghost').first()).toContainText('비어요');
-      await expect(page.locator('.stage-badge')).toHaveText('✗ 정육면체가 안 돼요');
+      await expect(page.locator('.stage-badge')).toHaveText(/^✗ 정육면체가 안 돼요/);
     } else {
       await page.locator(`.answer-btn[data-answer="${q.expected}"]`).click();
     }
@@ -376,6 +397,62 @@ for (const stageId of ['cube-judge', 'cube-opposite', 'cube-complete']) {
     }
   });
 }
+
+test('빈 자리가 지금 시점에서 안 보이면 이름표에 "↻ 돌려 보면 빈 자리가 보여요"와 [↻] 강조', async ({ page }) => {
+  // 시드 4: 3번(같은 쪽 날개)은 빈 자리가 겹친 자리의 정반대라 처음 시점에서 안 보인다
+  await page.goto(fileUrl(FILE, '?unlock=all&seed=4&sound=off&stage=cube-judge'));
+  let hiddenCount = 0;
+  for (const q of questionsFor('cube-judge', '4')) {
+    const { net, turn, tilt } = displayNet(q.net);
+    const blocked = q.problems.some((p) => p.type === 'vertex-full');
+    const hidden = !q.valid && !blocked && missingSlots(net).some((s) => viewDirection(s.normal, turn, tilt)[2] < 0.05);
+    if (hidden) hiddenCount += 1;
+    await page.locator('.answer-btn[data-answer="yes"]').click();
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    const badge = page.locator('.stage-badge');
+    const turnRight = page.getByRole('button', { name: '오른쪽으로 돌려 보기' });
+    if (hidden) {
+      await expect(badge).toContainText('↻ 돌려 보면 빈 자리가 보여요');
+      await expect(turnRight).toHaveClass(/is-hint/);
+    } else {
+      await expect(badge).not.toContainText('돌려 보면');
+      await expect(turnRight).not.toHaveClass(/is-hint/);
+    }
+    await page.locator('.next-btn').click();
+  }
+  expect(hiddenCount).toBeGreaterThan(0);
+});
+
+test('알림(토스트)이 조작 버튼을 가리지 않는다 (크롬북 1366×768·1366×680, 태블릿, 휴대폰)', async ({ page }, testInfo) => {
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    // 판별 오답(긴 문장)
+    await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
+    const jq = questionsFor('cube-judge')[0];
+    await page.locator(`.answer-btn[data-answer="${jq.expected === 'yes' ? 'no' : 'yes'}"]`).click();
+    await expectToastClear(page);
+    // 마주 보는 면 오답 (힌트 버튼이 보임)
+    await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-opposite'));
+    const oq = questionsFor('cube-opposite')[0];
+    await page.locator(`.net-face[data-face="${oq.net.faces.find((f) => f.id !== oq.star && f.id !== oq.answer).id}"]`).click();
+    await expectToastClear(page);
+    // 면 붙이기 오답 → 펴고 다시 하기 → 같은 자리에 다시 놓기(안내 알림)
+    await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-complete'));
+    const wrong = questionsFor('cube-complete')[0].slots.find((s) => !s.ok);
+    await page.locator('.face-card').click();
+    await page.locator(`.net-slot[data-cell="${wrong.key}"]`).click();
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    await expectToastClear(page);
+    await page.getByRole('button', { name: '◀ 펴고 다시 하기' }).click();
+    await page.locator('.face-card').click();
+    await page.locator(`.net-slot[data-cell="${wrong.key}"]`).click();
+    await expect(page.locator('.toast-info')).toBeVisible();
+    await expectToastClear(page);
+  }
+});
 
 // ── 엔진 "차시 묶음" (lessons) ──────────────────
 // 차시가 둘인 작은 시험 페이지를 src/ 그대로(빌드 없이) 띄운다.

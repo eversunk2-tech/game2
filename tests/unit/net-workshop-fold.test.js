@@ -25,7 +25,7 @@ import {
   rotationAbout,
 } from '../../src/games/net-workshop/geometry.js';
 import { CUBE_NETS, FACE_COUNT_NETS, INVALID_HEXOMINOES } from '../../src/games/net-workshop/nets-data.js';
-import { displayNet } from '../../src/games/net-workshop/view3d.js';
+import { displayNet, stuckTOf, viewDirection } from '../../src/games/net-workshop/view3d.js';
 
 const types = (net) => checkNet(net).problems.map((p) => p.type);
 const close = (a, b, eps = 1e-9) => a.every((v, i) => Math.abs(v - b[i]) <= eps);
@@ -146,7 +146,45 @@ test('화면 바닥 면 고르기(displayNet): 빈 자리("비어요")는 바닥
   }
   // 유효 전개도는 그대로 (처음 고른 바닥 면, 더 돌리지 않음)
   const valid = fromCells(CUBE_NETS[3].cells);
-  assert.deepEqual(displayNet(valid), { net: valid, turn: 0 });
+  const shown = displayNet(valid);
+  assert.equal(shown.net, valid);
+  assert.equal(shown.turn, 0);
+});
+
+test('2×2 덩어리 장면: 모든 면이 보는 쪽을 향하고(법선), 가운데가 다른 면에 가려지지 않는다(위치)', () => {
+  // 정사영으로 화면에 옮긴 볼록 다각형 안에 점이 있나 (변 위는 빼고)
+  const inside = (p, poly) => {
+    let sign = 0;
+    for (let i = 0; i < poly.length; i += 1) {
+      const a = poly[i];
+      const b = poly[(i + 1) % poly.length];
+      const c = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+      if (Math.abs(c) < 1e-9) return false;
+      if (sign === 0) sign = Math.sign(c);
+      else if (Math.sign(c) !== sign) return false;
+    }
+    return true;
+  };
+  let scenes = 0;
+  for (const n of INVALID_HEXOMINOES.filter((x) => x.shape === 'block')) {
+    for (let k = 0; k < 8; k += 1) {
+      const { net, turn, tilt } = displayNet(fromCells(transformCells(n.cells, k)));
+      const folded = foldNet(net, 1, { tOf: stuckTOf(net) });
+      const view = (v) => viewDirection(v, turn, tilt); // 화면 좌표: z가 클수록 보는 사람 쪽
+      const faces = folded.faces.map((f) => ({ id: f.id, normal: view(f.normal), points: f.points.map(view), center: view(f.center) }));
+      for (const f of faces) {
+        assert.ok(f.normal[2] > 0.25, `${n.name} k=${k} ${f.id}: 법선 z=${f.normal[2].toFixed(2)}`);
+        for (const g of faces) {
+          if (g === f || Math.abs(g.normal[2]) < 1e-6 || !inside(f.center, g.points)) continue;
+          const [px, py, pz] = g.points[0];
+          const depth = pz - (g.normal[0] * (f.center[0] - px) + g.normal[1] * (f.center[1] - py)) / g.normal[2];
+          assert.ok(depth <= f.center[2] + 1e-6, `${n.name} k=${k}: ${f.id}가 ${g.id} 뒤에 가려짐`);
+        }
+      }
+      scenes += 1;
+    }
+  }
+  assert.equal(scenes, 8 * 8);
 });
 
 test('displayNet focus: 마주 보는 두 면(★·정답)은 위·바닥이 아닌 옆면에 둔다', () => {
