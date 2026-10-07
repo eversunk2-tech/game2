@@ -1,20 +1,80 @@
-/* 게임 모음(허브) 페이지 전용 스타일. base.css 위에 얹는다. */
-.hub { max-width: 1100px; margin: 0 auto; padding: 32px 16px 48px; display: flex; flex-direction: column; gap: 24px; }
-.hub-header { display: flex; flex-direction: column; gap: 8px; }
-.hub-header h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
-.hub-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+/* 게임 모음(허브) 페이지 전용 스타일. base.css 위에 얹는다. (docs/design/spec.md 3절 "게임 모음") */
+.hub { max-width: 1240px; margin: 0 auto; padding: 22px 24px 32px; display: flex; flex-direction: column; gap: 22px; }
+
+.hub-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: end; }
+.hub-header .eyebrow { justify-self: start; }
+.eyebrow .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--tangerine); border: 1.5px solid var(--ink); }
+.hub-header h1 { font-size: clamp(2.2rem, 4.4vw, 3.3rem); line-height: 1.1; }
+.hub-header .lead { grid-column: 1; font-size: 1.08rem; max-width: none; }
+.hub-promises { grid-row: 1 / span 3; grid-column: 2; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.hub-promises .chip { padding: 6px 14px; font-size: 0.9rem; }
+
+.hub-filter { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.hub-filter .chip { min-height: var(--tap); padding: 6px 16px; font-size: 0.95rem; cursor: pointer; border-color: var(--ink); color: var(--ink); }
+.hub-filter .chip[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+.hub-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 22px; }
 .hub-card {
-  height: 100%;
-  display: flex; flex-direction: column; gap: 8px; padding: 20px;
-  background: var(--surface); border: 2px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); color: inherit; text-decoration: none;
+  position: relative; height: 100%; overflow: hidden;
+  display: grid; grid-template-columns: 210px minmax(0, 1fr);
+  border-radius: var(--radius-lg); border: 2px solid var(--ink); background: var(--paper);
+  box-shadow: 0 5px 0 var(--ink); color: inherit; text-decoration: none;
+  transition: transform var(--dur-1) var(--ease-out);
 }
-.hub-card:hover { border-color: var(--primary); }
+.hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 0 var(--ink); }
+.hub-card:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+.hub-card:focus-visible { box-shadow: 0 5px 0 var(--ink), 0 0 0 7px var(--butter); }
+
+/* 표지: 게임 색 + 매트 모눈, 그 위에 cover.svg(없으면 첫 글자 종이) */
+.hub-cover {
+  position: relative; overflow: hidden; display: grid; place-items: center; padding: 16px;
+  border-right: 2px solid var(--ink);
+  background-color: var(--game-color);
+  background-image: linear-gradient(rgb(255 255 255 / 14%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 14%) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.hub-cover > svg { width: 100%; max-width: 172px; height: auto; }
+.cover-paper {
+  width: 104px; height: 104px; display: grid; place-items: center; transform: rotate(-4deg);
+  border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); box-shadow: 5px 6px 0 rgb(0 0 0 / 22%);
+  font-family: var(--font-display); font-weight: 700; font-size: 3.6rem; line-height: 1;
+}
+.status-ribbon {
+  position: absolute; top: 14px; left: -34px; width: 140px; transform: rotate(-40deg);
+  text-align: center; background: var(--butter); border-block: 2px solid var(--ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; line-height: 1.5;
+}
+
+.hub-body { display: flex; flex-direction: column; gap: 8px; padding: 18px 20px 16px; min-width: 0; }
 .hub-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.chip-status { background: var(--primary-soft); color: var(--primary-strong); }
-.hub-card-title { font-size: 1.3rem; font-weight: 800; }
-.hub-card-summary { color: var(--text-muted); font-size: 1rem; }
-.hub-card-meta { margin-top: auto; font-size: 0.9rem; color: var(--text-muted); }
-.hub-footer { font-size: 0.95rem; color: var(--text-muted); }
-.hub-footer code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; }
-.hub-footer ul { margin: 6px 0 0; padding-left: 1.3em; }
+.hub-card-title { font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; line-height: 1.15; }
+.hub-card-summary { color: var(--ink-2); font-size: 0.98rem; line-height: 1.5; }
+.hub-card-meta { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.9rem; color: var(--ink-2); font-weight: 700; }
+.hub-card-meta > span { display: inline-flex; gap: 5px; align-items: center; }
+.hub-continue { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 46px; padding-top: 10px; border-top: 1.5px dashed var(--line); }
+.go { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; color: var(--primary); }
+
+.hub-footer { display: grid; grid-template-columns: 1.2fr 1fr; gap: 18px; align-items: start; }
+.hub-note h2 { font-size: 1.25rem; margin-bottom: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.hub-note h2 small { font-family: var(--font); font-size: 0.85rem; font-weight: 700; color: var(--ink-2); }
+.opt-list { list-style: none; margin: 0; padding: 0 !important; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; font-size: 0.92rem; }
+.opt-list code {
+  margin-right: 6px; padding: 1px 6px; border-radius: 6px; border: 1.5px solid var(--line); background: var(--paper-2);
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; color: var(--ink);
+}
+.hub-privacy { display: flex; gap: 14px; align-items: center; background: var(--correct-bg); }
+.hub-privacy > .icon { width: 34px; height: 34px; color: var(--correct); }
+.hub-privacy p { font-size: 0.95rem; }
+
+@media (max-width: 900px) {
+  .hub-header { grid-template-columns: 1fr; }
+  .hub-promises { grid-row: auto; grid-column: 1; flex-direction: row; flex-wrap: wrap; }
+  .hub-footer { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .hub { padding: 16px 16px 28px; gap: 18px; }
+  .hub-card { grid-template-columns: 1fr; }
+  .hub-cover { border-right: 0; border-bottom: 2px solid var(--ink); height: 150px; }
+  .hub-cover > svg { max-width: 150px; max-height: 118px; }
+  .opt-list { grid-template-columns: 1fr; }
+}

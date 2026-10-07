@@ -616,6 +616,8 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     nextButton,
   );
   ctx.el.append(h('div', { class: 'workbench' }, view.el, panel));
+  // 넓은 화면에서 엔진 알림(토스트)을 무대 아래쪽 가운데에 띄워 오른쪽 문제 판을 가리지 않게 한다
+  ctx.feedback.anchor?.(view.el);
 
   const sync = (value) => {
     slider.value = String(Math.round(value * 100));

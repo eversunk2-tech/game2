@@ -8,5 +8,6 @@
   "standards": [],
   "playMinutes": 10,
   "mode": "개인",
-  "status": "개발 중"
+  "status": "개발 중",
+  "color": "#2f6f5e"
 }

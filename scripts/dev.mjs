@@ -2,11 +2,14 @@
  * 개발 서버: src/ 를 그대로 보여 준다(빌드 없이 새로고침만 하면 바뀜).
  *   npm run dev  →  http://localhost:5173
  * PORT, HOST 환경 변수로 바꿀 수 있다.
+ * 제목 글꼴: 빌드는 쓰인 글자만 잘라 넣지만, 개발 서버는 전체 글꼴 파일을 /__fonts/ 에서 주고
+ * HTML마다 그 스타일시트 링크를 끼워 넣는다(게임 index.html은 고치지 않는다).
  */
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DISPLAY_FONT, devFontCss } from './lib/font.mjs';
 import { loadGames } from './lib/games.mjs';
 import { renderHub } from './lib/hub.mjs';
 
@@ -31,7 +34,12 @@ const TYPES = {
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',
   '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
 };
+
+const FONT_CSS = '/__fonts/display.css';
+const FONT_FILE = '/__fonts/display.ttf';
+const withFont = (html) => html.replace(/<\/head>/i, () => `  <link rel="stylesheet" href="${FONT_CSS}">\n</head>`);
 
 function send(res, status, body, type = 'text/plain; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
@@ -42,12 +50,15 @@ async function handle(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const pathname = decodeURIComponent(url.pathname);
 
+  if (pathname === FONT_CSS) return send(res, 200, devFontCss(FONT_FILE), TYPES['.css']);
+  if (pathname === FONT_FILE) return send(res, 200, await readFile(DISPLAY_FONT.file), TYPES['.ttf']);
+
   if (pathname === '/') {
     const games = await loadGames(path.join(SRC, 'games'), { includeTemplates: true });
     const html = renderHub({
       games,
       hrefFor: (g) => `/games/${g.dirName}/`,
-      styles: { links: ['/shared/styles/base.css', '/shared/styles/hub.css'] },
+      styles: { links: ['/shared/styles/base.css', '/shared/styles/hub.css', FONT_CSS] },
       title: '학습게임 모음 (개발 중)',
     });
     return send(res, 200, html, TYPES['.html']);
@@ -66,8 +77,10 @@ async function handle(req, res) {
       }
       file = path.join(file, 'index.html');
     }
+    const ext = path.extname(file).toLowerCase();
     const body = await readFile(file);
-    return send(res, 200, body, TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream');
+    if (ext === '.html') return send(res, 200, withFont(body.toString('utf8')), TYPES[ext]);
+    return send(res, 200, body, TYPES[ext] ?? 'application/octet-stream');
   } catch {
     return send(res, 404, `404: ${pathname}`);
   }

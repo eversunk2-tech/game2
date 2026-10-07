@@ -7,15 +7,21 @@
  * index.html의 <link rel="stylesheet" href="…">와 <script type="module" src="…">를
  * esbuild로 묶어 그 자리에 <style>, <script>로 넣는다. 그림 파일은 CSS url()로 쓰면
  * data: 주소로 들어간다(docs/engine.md 7절).
+ * 제목 글꼴(Do Hyeon)은 파일마다 쓰인 글자만 잘라 data: 주소 @font-face로 넣는다(scripts/lib/font.mjs).
+ * 게임 파일 하나는 MAX_FILE_BYTES(400 KB)를 넘지 않아야 한다.
  */
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
+import { displayFontFace, injectStyle } from './lib/font.mjs';
 import { loadGames } from './lib/games.mjs';
 import { renderHub } from './lib/hub.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
+/** 게임 파일 크기 상한: 학교망에서도 사진 한 장보다 작게 */
+export const MAX_FILE_BYTES = 400 * 1024;
+const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
 const ASSET_LOADERS = {
   '.png': 'dataurl',
@@ -110,31 +116,43 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
   const invalid = games.filter((g) => g.errors.length > 0);
   if (invalid.length > 0) {
     const detail = invalid.map((g) => `  ${g.dirName}:\n${g.errors.map((e) => `    - ${e}`).join('\n')}`).join('\n');
-    throw new Error(`game.json을 고쳐 주세요.\n${detail}`);
+    throw new Error(`game.json·cover.svg를 고쳐 주세요.\n${detail}`);
   }
 
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
 
-  for (const game of games) {
-    const html = await readFile(path.join(game.dir, 'index.html'), 'utf8');
-    const out = await inlineHtml(html, game.dir);
+  /** 글꼴을 넣고, 바깥 참조·크기를 검사한 뒤 쓴다. */
+  const files = [];
+  async function emit(name, html, label) {
+    const font = await displayFontFace(html);
+    const out = injectStyle(html, font.css);
     const problems = findExternalRefs(out);
     if (problems.length > 0) {
-      throw new Error(`${game.dirName}: 파일 하나로 열리지 않아요. 바깥 파일 참조:\n  ${problems.join('\n  ')}`);
+      throw new Error(`${label}: 파일 하나로 열리지 않아요. 바깥 파일 참조:\n  ${problems.join('\n  ')}`);
     }
-    const file = path.join(outDir, `${game.meta.id}.html`);
+    const bytes = Buffer.byteLength(out);
+    if (bytes > MAX_FILE_BYTES) {
+      throw new Error(`${label}: 파일이 ${kb(bytes)}로 상한 ${kb(MAX_FILE_BYTES)}를 넘어요. 그림·글자를 줄여 주세요.`);
+    }
+    const file = path.join(outDir, name);
     await writeFile(file, out);
-    log(`  ✓ ${path.relative(rootDir, file)}  (${(Buffer.byteLength(out) / 1024).toFixed(1)} KB)`);
+    const missing = font.missing.length ? `, 제목 글꼴에 없는 글자 ${font.missing.join('')}` : '';
+    log(`  ✓ ${path.relative(rootDir, file)}  (${kb(bytes)}, 제목 글꼴 ${font.chars}자 ${kb(font.bytes)}${missing})`);
+    files.push({ name, bytes, fontChars: font.chars, fontBytes: font.bytes, missing: font.missing });
+  }
+
+  for (const game of games) {
+    const html = await readFile(path.join(game.dir, 'index.html'), 'utf8');
+    await emit(`${game.meta.id}.html`, await inlineHtml(html, game.dir), game.dirName);
   }
 
   const styles = path.join(srcDir, 'shared/styles');
   const css = (await bundle(path.join(styles, 'base.css'), 'css')) + (await bundle(path.join(styles, 'hub.css'), 'css'));
   const hub = renderHub({ games, hrefFor: (g) => `${g.meta.id}.html`, styles: { inline: css.trim() } });
-  await writeFile(path.join(outDir, 'index.html'), hub);
-  log(`  ✓ ${path.relative(rootDir, path.join(outDir, 'index.html'))}  (게임 모음)`);
+  await emit('index.html', hub, '게임 모음');
 
-  return { outDir, games: games.map((g) => g.meta.id) };
+  return { outDir, games: games.map((g) => g.meta.id), files };
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {

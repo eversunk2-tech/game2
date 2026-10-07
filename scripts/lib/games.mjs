@@ -5,6 +5,9 @@ export const STATUSES = ['기획', '개발 중', '시범 운영', '완료', '예
 export const MODES = ['개인', '모둠', '개인·모둠'];
 export const REQUIRED_FILES = ['game.json', 'index.html', 'main.js'];
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+/** 게임 폴더의 표지 그림(선택). 게임 모음 카드에 그대로 넣는다. */
+export const COVER_FILE = 'cover.svg';
 
 export function isValidId(id) {
   return typeof id === 'string' && ID_PATTERN.test(id);
@@ -29,7 +32,32 @@ export function validateGameMeta(meta, dirName) {
   if (!(typeof meta.playMinutes === 'number' && meta.playMinutes > 0)) errors.push('playMinutes는 0보다 큰 숫자예요.');
   if (!MODES.includes(meta.mode)) errors.push(`mode는 ${MODES.join(', ')} 중 하나예요.`);
   if (!STATUSES.includes(meta.status)) errors.push(`status는 ${STATUSES.join(', ')} 중 하나예요.`);
+  if (meta.color !== undefined && !(typeof meta.color === 'string' && COLOR_PATTERN.test(meta.color))) {
+    errors.push(`color는 "#2f6f5e"처럼 # 뒤 16진수 6자리예요 (선택 필드): ${meta.color}`);
+  }
   return errors;
+}
+
+/**
+ * cover.svg를 게임 모음에 그대로 넣을 수 있게 다듬는다.
+ * 파일 하나 규칙(바깥 참조 없음)과 안전(스크립트 없음)을 검사하고, 그림이므로 aria-hidden을 붙인다.
+ * → { svg, errors }
+ */
+export function prepareCover(text) {
+  const svg = String(text)
+    .replace(/<\?xml[\s\S]*?\?>/g, '')
+    .replace(/<!DOCTYPE[\s\S]*?>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .trim();
+  const errors = [];
+  if (!/^<svg\b[\s\S]*<\/svg>$/i.test(svg)) errors.push(`${COVER_FILE}는 <svg>…</svg> 하나여야 해요.`);
+  if (/<(script|foreignObject|image|iframe|use)\b/i.test(svg)) errors.push(`${COVER_FILE}에 script·image·use·foreignObject는 쓸 수 없어요.`);
+  if (/\son[a-z]+\s*=/i.test(svg)) errors.push(`${COVER_FILE}에 on… 이벤트 속성은 쓸 수 없어요.`);
+  if (/\b(?:xlink:)?href\s*=|url\(|\bid\s*=/i.test(svg)) {
+    errors.push(`${COVER_FILE}에 href·url()·id는 쓸 수 없어요(바깥 참조·다른 그림과 id 충돌 방지).`);
+  }
+  const ready = /^<svg\b[^>]*\baria-hidden\s*=/i.test(svg) ? svg : svg.replace(/^<svg\b/i, '<svg aria-hidden="true" focusable="false"');
+  return { svg: errors.length ? null : ready, errors };
 }
 
 const exists = (file) => access(file).then(() => true, () => false);
@@ -59,12 +87,20 @@ export async function loadGames(gamesDir, { includeTemplates = false } = {}) {
         parseError = `game.json을 읽지 못했어요: ${error.message}`;
       }
     }
+    let cover = null;
+    const coverErrors = [];
+    if (await exists(path.join(dir, COVER_FILE))) {
+      const prepared = prepareCover(await readFile(path.join(dir, COVER_FILE), 'utf8'));
+      cover = prepared.svg;
+      coverErrors.push(...prepared.errors);
+    }
     const errors = [
       ...missing.map((f) => `${f} 파일이 없어요.`),
       ...(parseError ? [parseError] : []),
       ...(isTemplate || parseError || missing.includes('game.json') ? [] : validateGameMeta(meta, entry.name)),
+      ...coverErrors,
     ];
-    games.push({ dir, dirName: entry.name, isTemplate, meta, errors });
+    games.push({ dir, dirName: entry.name, isTemplate, meta, cover, errors });
   }
   return games.sort(compareGames);
 }

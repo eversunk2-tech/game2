@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-0.5 -0.5 5 4" width="170" height="136">
+  <!-- 게임 모음 표지: 색종이 면 6장으로 된 정육면체 전개도(1-4-1) -->
+  <g stroke="#1e2140" stroke-width="0.07" stroke-linejoin="round">
+    <rect x="1" y="0" width="1" height="1" rx="0.05" fill="#ffd86b" transform="rotate(-4 1.5 0.5)"/>
+    <rect x="0" y="1" width="1" height="1" rx="0.05" fill="#8ec5ff" transform="rotate(3 0.5 1.5)"/>
+    <rect x="1" y="1" width="1" height="1" rx="0.05" fill="#9fe3b0"/>
+    <rect x="2" y="1" width="1" height="1" rx="0.05" fill="#ffb0c0" transform="rotate(-2 2.5 1.5)"/>
+    <rect x="3" y="1" width="1" height="1" rx="0.05" fill="#c9b6ff" transform="rotate(5 3.5 1.5)"/>
+    <rect x="1" y="2" width="1" height="1" rx="0.05" fill="#ffc08a" transform="rotate(-3 1.5 2.5)"/>
+  </g>
+</svg>

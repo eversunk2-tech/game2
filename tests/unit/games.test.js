@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadGames, validateGameMeta } from '../../scripts/lib/games.mjs';
+import { loadGames, prepareCover, validateGameMeta } from '../../scripts/lib/games.mjs';
 
 const GAMES_DIR = fileURLToPath(new URL('../../src/games', import.meta.url));
 
@@ -40,4 +40,27 @@ test('game.json 검사가 흔한 실수를 잡는다', () => {
   assert.equal(validateGameMeta({ ...ok, mode: '팀' }, 'fraction-factory').length, 1);
   assert.equal(validateGameMeta({ ...ok, status: 'done' }, 'fraction-factory').length, 1);
   assert.equal(validateGameMeta({ ...ok, units: [] }, 'fraction-factory').length, 1);
+  // color는 선택 필드: 있으면 #rrggbb
+  assert.deepEqual(validateGameMeta({ ...ok, color: '#2f6f5e' }, 'fraction-factory'), []);
+  assert.equal(validateGameMeta({ ...ok, color: 'green' }, 'fraction-factory').length, 1);
+  assert.equal(validateGameMeta({ ...ok, color: '#2f6f5e; background:url(x)' }, 'fraction-factory').length, 1);
+});
+
+test('표지 cover.svg: 게임 모음에 그대로 넣을 수 있는 그림만 받는다', async () => {
+  const ok = prepareCover('<?xml version="1.0"?>\n<!-- 설명 -->\n<svg viewBox="0 0 10 10"><rect width="10" height="10" fill="#ffd86b"/></svg>\n');
+  assert.deepEqual(ok.errors, []);
+  assert.equal(ok.svg, '<svg aria-hidden="true" focusable="false" viewBox="0 0 10 10"><rect width="10" height="10" fill="#ffd86b"/></svg>');
+  for (const bad of [
+    '<svg><script>alert(1)</script></svg>',
+    '<svg><image href="https://example.com/a.png"/></svg>',
+    '<svg><rect onclick="x()"/></svg>',
+    '<svg><rect style="fill:url(#g)"/></svg>',
+    '<svg><linearGradient id="g"/></svg>',
+    '<div>그림 아님</div>',
+  ]) assert.ok(prepareCover(bad).errors.length > 0, bad);
+
+  // 지금 게임의 표지는 모두 통과하고 loadGames가 읽어 둔다
+  const games = await loadGames(GAMES_DIR);
+  for (const game of games.filter((g) => g.cover)) assert.match(game.cover, /^<svg aria-hidden="true"/, game.dirName);
+  assert.ok(games.some((g) => g.cover), '표지가 있는 게임이 하나 이상');
 });

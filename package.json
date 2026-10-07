@@ -16,7 +16,9 @@
     "check": "npm test && npm run test:e2e"
   },
   "devDependencies": {
+    "@expo-google-fonts/do-hyeon": "0.4.1",
     "@playwright/test": "1.56.1",
-    "esbuild": "^0.28.2"
+    "esbuild": "^0.28.2",
+    "subset-font": "2.9.0"
   }
 }
