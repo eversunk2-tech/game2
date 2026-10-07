@@ -23,6 +23,7 @@
 
 - `src/shared/core/rewards.js`, `src/shared/ui/app.js`, `src/shared/ui/rewards-view.js`, `src/shared/styles/base.css`(필요한 만큼)
 - `tests/unit/rewards.test.js`, `tests/e2e/engine-features.spec.js`, `tests/e2e/net-workshop.spec.js`(N1 검사가 이 규칙 때문에 바뀌면)
+- (추가 허용, 코디네이터 확인 후) `tests/e2e/sample-divisor-sort.spec.js` — "별 3개 단계 다시 하기" 부분(옛 규칙 +21·탐험가 53점을 기대하던 줄)만 새 규칙(+0·안내 문장·새싹 32점 그대로)으로. 제안한 `build-n1/sample-proposal/sample-divisor-sort.spec.patch` 그대로이며, 다른 검사는 건드리지 않는다
 - `docs/engine.md`
 - 그 밖은 N1 지침([build-brief-n1.md](build-brief-n1.md))의 범위 그대로. `docs/design/**`, `docs/games/**`, `CLAUDE.md`, 예시 게임, 템플릿, package 파일은 고치지 않는다.
 
