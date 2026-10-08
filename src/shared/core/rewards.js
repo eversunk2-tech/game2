@@ -199,6 +199,10 @@ export const MASTERED_STARS = 3;
 /** 판을 시작할 때의 별 수로 연습 점수(처음 맞힘·다시 도전·다시 일어서기·연속·설명)를 줄지 정한다 */
 export const practiceAllowed = (startStars = 0) => (Number(startStars) || 0) < MASTERED_STARS;
 
+/** ctx.log.answer의 scored 값: "이 기기에서 한 번만 점수를 받는 답" (아래 createPlayReward) */
+export const SCORED_ONCE = 'once';
+export const isOnceAnswer = (entry) => entry?.scored === SCORED_ONCE;
+
 /**
  * 한 판(단계 하나를 플레이하는 동안)의 솜씨 점수.
  * answer(): 답, event('explain'|'inspect', data): 학습 행동, discovered(): 도감에 새로 등록(+5는 바로 저장된다)
@@ -206,31 +210,56 @@ export const practiceAllowed = (startStars = 0) => (Number(startStars) || 0) < M
  *   별이 3개가 안 된 단계는 그대로 준다(복습 보상). 이번 판에서 처음 별 3개를 받아도 이번 판 점수는 준다(시작할 때 기준).
  *   새로 찾음(+5)은 원래 처음 한 번뿐이라 별과 상관없이 준다.
  * 답에 scored: false를 주면(이미 점수를 받은 것을 다시 답함) 그 답은 점수가 없고, 그 문항(itemId)의 설명 점수도 없다.
+ * 답에 scored: 'once'를 주면 "이 기기에서 한 번만 점수를 받는 답"이다. 게임이 저장된 값(예: 도감)으로 그 답이 이 기기에서
+ *   처음이자 마지막으로 점수를 받는다는 것을 보장할 때만 쓴다(다음부터는 scored: false).
+ *   - 새로 찾음(+5)처럼 처음 한 번뿐이라, 판을 시작할 때 별이 3개여도 점수(처음 맞힘·다시 도전·다시 일어서기·연속)를 준다.
+ *     그 문항(itemId)의 설명 점수도 별과 상관없이 준다.
+ *   - 이 점수는 생긴 자리에서 바로 저장할 몫이다: instant() = 새로 찾음 + '한 번만' 답·설명 점수 (엔진 app.js가 그때그때 저장한다).
+ *   - '한 번만' 답은 '한 번만' 답끼리, 표시 없는 답은 표시 없는 답끼리 연속·다시 일어서기를 센다. 서로에게는 점수 없는 답
+ *     (scored: false)과 같다: 틀리면 연속만 끊긴다. 그래서 표시 없는 답을 일부러 틀리거나 판 중간에 나가서 '한 번만' 답의
+ *     보너스를 더 얻을 수 없고, 바로 저장할 몫도 모두 맞혔을 때보다 커지지 않는다(tests/unit/rewards.test.js).
+ *     한 가지 답만 쓰는 판(지금까지의 모든 단계, '한 번만' 답만 쓰는 단계)은 답을 하나로 셀 때와 점수가 같다.
  */
 export function createPlayReward({ startStars = 0 } = {}) {
   const practice = practiceAllowed(startStars);
-  const tracker = createAnswerTracker();
+  const tracker = createAnswerTracker(); //   모든 답: 횟수·연속 표시 (지금까지와 같다)
+  const plain = createAnswerTracker(); //     표시 없는 답의 점수 ('한 번만' 답은 점수 없는 답으로 넣는다)
+  const onceOnly = createAnswerTracker(); //  '한 번만' 답의 점수 (표시 없는 답은 점수 없는 답으로 넣는다)
   const explained = new Set();
   const unscored = new Set(); // 점수 없이 기록만 한 문항 (scored: false)
+  const onceItems = new Set(); // '한 번만' 답으로 기록한 문항 (scored: 'once')
   const explain = { count: 0, xp: 0 };
   const discover = { count: 0, xp: 0 };
+  const once = { count: 0, xp: 0 }; // '한 번만' 답의 수와 그 답·설명으로 받은 점수 (바로 저장할 몫)
   let inspect = 0;
+  /** 이 판에서 실제로 받은 답 점수: 표시 없는 답(연습 점수가 있는 판만) + '한 번만' 답 */
+  const answerXp = () => (practice ? plain.totals().xp : 0) + onceOnly.totals().xp;
 
   return {
-    /** 답 하나 → 이번에 생긴 일. 연습 점수가 없는 판이면 xp는 0 (연속 수·종류는 그대로) */
+    /** 답 하나 → 이번에 생긴 일. 연습 점수가 없는 판이면 표시 없는 답의 xp는 0 (연속 수·종류는 그대로) */
     answer: (entry) => {
       if (entry?.scored === false && entry.itemId != null) unscored.add(String(entry.itemId));
-      const step = tracker.answer(entry);
-      return practice ? step : { ...step, xp: 0 };
+      const isOnce = isOnceAnswer(entry);
+      const silent = { ...entry, scored: false };
+      tracker.answer(entry);
+      const streak = tracker.streak(); // 돌려주는 연속 수는 늘 화면에 보이는 연속(모든 답)
+      const step = { ...plain.answer(isOnce ? silent : entry), streak };
+      const own = { ...onceOnly.answer(isOnce ? entry : silent), streak };
+      if (!isOnce) return practice ? step : { ...step, xp: 0 };
+      once.count += 1;
+      once.xp += own.xp;
+      if (entry.itemId != null) onceItems.add(String(entry.itemId));
+      return own;
     },
     streak: () => tracker.streak(),
-    bounceReady: () => tracker.bounceReady(),
-    /** 이 판에서 연습 점수를 주는지 (시작할 때 별 3개였으면 false) */
+    bounceReady: () => plain.bounceReady() || onceOnly.bounceReady(),
+    /** 이 판에서 연습 점수를 주는지 (시작할 때 별 3개였으면 false. '한 번만' 답은 그래도 점수를 받는다) */
     practice: () => practice,
     /**
      * 학습 행동 알림. 점수를 주는 것은 'explain'(맞혔을 때, 문항마다 한 번)뿐이다. → 이번에 받은 점수
      * explain은 itemId가 꼭 있어야 한다. 없으면 어느 문항의 설명인지 몰라 반복으로 쌓일 수 있으므로 점수·횟수 모두 없다.
      * 점수 없이 기록만 한 문항(scored: false)의 설명은 횟수만 세고 점수는 없다.
+     * '한 번만' 답으로 기록한 문항(scored: 'once')의 설명은 연습 점수가 없는 판에서도 점수를 받는다(바로 저장할 몫).
      */
     event(name, data = {}) {
       if (name === 'explain') {
@@ -238,9 +267,12 @@ export function createPlayReward({ startStars = 0 } = {}) {
         const key = String(data.itemId);
         if (explained.has(key)) return 0;
         explained.add(key);
-        const xp = practice && !unscored.has(key) ? XP.explain : 0;
+        const scored = !unscored.has(key);
+        const isOnce = scored && onceItems.has(key);
+        const xp = scored && (practice || isOnce) ? XP.explain : 0;
         explain.count += 1;
         explain.xp += xp;
+        if (isOnce) once.xp += xp;
         return xp;
       }
       if (name === 'inspect') inspect += 1;
@@ -254,11 +286,27 @@ export function createPlayReward({ startStars = 0 } = {}) {
       return add;
     },
     /** 지금까지 이 판에서 받은 점수 (단계 완료·별 점수는 아직 없음) */
-    xp: () => (practice ? tracker.totals().xp : 0) + explain.xp + discover.xp,
-    /** answers.xp는 이 판에서 실제로 받은 답 점수(연습 점수가 없는 판이면 0). practice: 연습 점수를 주는 판인지 */
+    xp: () => answerXp() + explain.xp + discover.xp,
+    /** xp() 가운데 생긴 자리에서 바로 저장할 몫: 새로 찾음 + '한 번만' 답과 그 설명. 나머지는 판을 마칠 때 저장한다 */
+    instant: () => once.xp + discover.xp,
+    /**
+     * answers: 모든 답의 횟수. answers.xp는 이 판에서 실제로 받은 답 점수(연습 점수가 없는 판이면 '한 번만' 답의 점수뿐).
+     * practice: 연습 점수를 주는 판인지. once: '한 번만' 답의 수와 그 답·설명으로 받은 점수.
+     * paid: 점수를 준 답만 센 횟수 { firstTry, retryFix, bounce, streakBonus } — 결과 "오늘의 솜씨" 칸 점수를 실제 점수와 맞출 때 쓴다.
+     *   한 가지 답만 쓰는 판에서는 answers의 횟수와 같다(연습 점수가 없는 판의 표시 없는 답은 0).
+     */
     summary: () => {
-      const answers = tracker.totals();
-      return { answers: practice ? answers : { ...answers, xp: 0 }, explain: { ...explain }, discover: { ...discover }, inspect, practice };
+      const parts = [...(practice ? [plain.totals()] : []), onceOnly.totals()];
+      const sum = (key) => parts.reduce((total, t) => total + t[key], 0);
+      return {
+        answers: { ...tracker.totals(), xp: answerXp() },
+        explain: { ...explain },
+        discover: { ...discover },
+        inspect,
+        practice,
+        once: { ...once },
+        paid: { firstTry: sum('firstTry'), retryFix: sum('retryFix'), bounce: sum('bounce'), streakBonus: sum('streakBonus') },
+      };
     },
   };
 }
@@ -438,6 +486,8 @@ export function createRewardStore({ storage = null, ranks = DEFAULT_RANKS, thres
       }
       return { ms: value, prevMs };
     },
+    /** 지금 이 탭의 값을 그대로 다시 저장한다 (다른 탭이 덮어쓴 저장값을 도감과 한 쌍으로 맞출 때, ui/app.js) */
+    save,
     reset() {
       state = normalizeRewardState(null);
       save();

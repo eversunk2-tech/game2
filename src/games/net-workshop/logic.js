@@ -506,7 +506,7 @@ export function centerOnBoard(cells, { cols, rows }) {
 /**
  * 자유 배치 한 판의 흐름 (순수 상태). 화면(play-free.js)과 점수 테스트가 같은 규칙을 쓴다.
  * fold(cells, labels, prediction) → judgeFree 결과 + { itemId(기록할 때), collect: { id, item }(도감·노트에 넣을 칸),
- *   first(이 기기에서 처음 접는 모양 — 도감·노트에 아직 없음. 점수는 이때만, spec 16-8),
+ *   first(이 기기에서 처음 접는 모양 — 도감·노트에 아직 없음. 점수는 이때만, spec 16-8. 별 3개 뒤에도 받는다, 16-9),
  *   explainable(까닭 고르기를 보일지), fixed(안 된 뒤 바로 전개도를 만듦), found(이번 판에 찾은 전개도 수), done(목표 달성) }
  * dex·note는 이 기기에 저장된 도감·노트(판을 넘어 이어진다). 접어 본 모양은 예상이 맞든 틀리든 도감이나 노트에 들어가므로
  * "처음 접는 모양" = 도감·노트에 새로 들어가는 모양이다.
@@ -564,6 +564,12 @@ export function createFreeSession({ stageId = 'cube-free', goal = FREE_GOAL, dex
     goal,
   };
 }
+
+/**
+ * 별 3개를 받은 뒤 다시 한 판의 결과 화면 안내 (spec 16-9). 자유 배치는 처음 접는 모양이면 별과 상관없이 점수를 받고,
+ * 접어 본 모양은 16-8대로 점수가 없다 — 엔진 기본 문장("별 3개를 받은 단계라 연습 점수는 없어요")은 이 단계에서 사실과 다르다.
+ */
+export const FREE_REPLAY_NOTE = '처음 접는 모양은 점수를 받아요. 접어 본 모양은 다시 접어도 점수가 없어요.';
 
 /** 까닭 고르기 전에 쪽지에 보이는 문장: 왜 안 되는지(겹침·네 면이 한 점)는 말하지 않는다 */
 export const FREE_NOTE_BEFORE_PICK = '안 될 거라고 예상했고, 접어 보니 정육면체가 안 돼요.';

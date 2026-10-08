@@ -576,7 +576,9 @@
 .dex { display: flex; flex-direction: column; gap: 8px; }
 .dex-head { display: flex; justify-content: space-between; align-items: baseline; }
 .dex-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; }
-.dex-count { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+.dex-count, .dex-note-line { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+/* 안 되는 모양을 접은 장면: 도감 칸을 접고 머리 한 줄만 ("전개도 도감 3 / 11 · 노트 5 / 24") */
+.dex.is-folded { gap: 0; }
 .dex-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .dex-slot {
   position: relative;
@@ -617,6 +619,15 @@
 .free-buttons:empty { display: none; }
 .free-buttons .btn { width: 100%; min-height: 56px; padding: 8px 12px; }
 .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* 목표를 채운 뒤: [결과 보기] [펴서 고치기] [새로 만들기]를 한 줄에 — 두 줄이면 낮은 화면에서 판이 넘쳐 아래 버튼이 잘린다.
+   좁은 판(옆 판·휴대폰)은 아이콘 위, 글자 아래(예상 버튼과 같은 모양). 판이 넓은 태블릿 세로는 아이콘과 글자를 나란히 */
+.btn-trio { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.free-buttons .btn-trio .btn { flex-direction: column; gap: 2px; padding: 6px 4px; font-size: 1rem; line-height: 1.15; }
+.free-buttons .btn-trio .free-finish { flex-direction: column-reverse; }
+@media (min-width: 561px) and (max-width: 900px) {
+  .free-buttons .btn-trio .btn,
+  .free-buttons .btn-trio .free-finish { flex-direction: row; gap: 8px; padding: 8px 12px; font-size: 1.12rem; line-height: 1.2; }
+}
 .goal-done { display: flex; align-items: center; gap: 6px; font-weight: 800; color: var(--correct); }
 .note.is-info { background: var(--paper-2); }
 

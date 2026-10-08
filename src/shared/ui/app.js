@@ -116,24 +116,38 @@ function badgeLessons(stages, lessons) {
 
 /**
  * 결과 화면 "오늘의 솜씨" 기본 칸: 답 기록에서 만든다(맞힘, 다시 일어서기, 연속) + 새로 찾음·설명
- * 연습 점수가 없는 판(별 3개 단계를 다시 함, summary.practice === false)이면 연습 칸의 점수는 0
+ * 연습 점수가 없는 판(별 3개 단계를 다시 함, summary.practice === false)이면 연습 칸의 점수는 0.
+ * 그 판에 '한 번만' 답(scored: 'once')이 있으면 그 답으로 받은 점수만 적는다(summary.paid) → 칸 점수의 합 = 이번 판 점수
  */
 export function defaultHighlights(summary) {
   const a = summary.answers;
-  const k = summary.practice === false ? 0 : 1;
+  const paid = summary.paid ?? (summary.practice === false ? {} : a); // 점수를 준 답만 센 횟수
+  const n = (value) => Number(value) || 0;
   const list = [];
-  if (a.attempts > 0) list.push({ icon: 'target', label: '처음에 맞힘', value: `${a.firstTry} / ${a.items}`, xp: k * a.firstTry * XP.first });
+  if (a.attempts > 0) list.push({ icon: 'target', label: '처음에 맞힘', value: `${a.firstTry} / ${a.items}`, xp: n(paid.firstTry) * XP.first });
   if (summary.discover.count > 0) list.push({ icon: 'book', label: '새로 찾음', value: `${summary.discover.count}가지`, xp: summary.discover.xp });
   if (summary.explain.count > 0) list.push({ icon: 'bulb', label: '설명 맞힘', value: `${summary.explain.count}번`, xp: summary.explain.xp });
   if (a.attempts > 0) {
-    list.push({ icon: 'rise', label: '다시 일어서기', value: `${a.retryFix + a.bounce}번`, xp: k * (a.retryFix * XP.retry + a.bounce * XP.bounce) });
-    list.push({ icon: 'spark', label: '연속 최고', value: `${a.bestStreak}번`, xp: k * a.streakBonus * XP.streakBonus });
+    list.push({ icon: 'rise', label: '다시 일어서기', value: `${a.retryFix + a.bounce}번`, xp: n(paid.retryFix) * XP.retry + n(paid.bounce) * XP.bounce });
+    list.push({ icon: 'spark', label: '연속 최고', value: `${a.bestStreak}번`, xp: n(paid.streakBonus) * XP.streakBonus });
   }
   return list;
 }
 
 /** 별 3개 단계를 다시 할 때 결과 화면에 보이는 까닭 */
 export const PRACTICE_OFF_TEXT = '별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.';
+/** 별 3개 단계를 다시 한 판에 '한 번만' 답(scored: 'once')이 있었을 때의 까닭 (그 답은 점수를 받았다) */
+export const PRACTICE_OFF_ONCE_TEXT = '별 3개를 받은 단계라 연습 점수는 없어요. 처음 해 본 것은 점수를 받았어요.';
+
+/**
+ * 연습 점수가 없는 판(별 3개 단계 다시 하기)의 결과 화면 안내 문장. 연습 점수가 있는 판이면 null.
+ * custom: 게임이 ctx.finish({ practiceNote })로 준 문장(게임의 말로 바꿀 때)
+ */
+export function practiceNoteText(summary, custom = null) {
+  if (!summary || summary.practice !== false) return null;
+  if (typeof custom === 'string' && custom.trim()) return custom.trim();
+  return (summary.once?.count ?? 0) > 0 ? PRACTICE_OFF_ONCE_TEXT : PRACTICE_OFF_TEXT;
+}
 
 /** 결과 화면의 단계 완료·별 점수 줄 */
 export function stageXpLine(sx, { challenge = false } = {}) {
@@ -298,6 +312,18 @@ export function createGameApp({
   const sfx = createSfx({ storage, enabled: options.sound });
   const rewardStore = createRewardStore({ storage, ...rankConfig });
   let collectionState = normalizeCollectionState(storage.get('collections', null), collections);
+  /**
+   * 점수를 저장할 때 도감도 함께 맞춘다(도감이 있는 게임만). 탭을 두 개 열어 섞어 해도 저장된 값이 늘 "한 탭의
+   * 같은 때의 점수와 도감 한 쌍"이 되어, 도감에서 빠진 칸의 점수만 남아 같은 칸으로 점수를 다시 받는 일이 없다.
+   * 저장된 도감이 이미 같으면(탭 하나로 할 때는 늘 같다) 아무것도 쓰지 않는다. 다르면 도감과 점수를 이 탭의 값으로 함께 쓴다.
+   */
+  const saveCollections = () => {
+    if (collections.length === 0) return;
+    const saved = normalizeCollectionState(storage.get('collections', null), collections);
+    if (JSON.stringify(saved) === JSON.stringify(collectionState)) return;
+    storage.set('collections', collectionState);
+    rewardStore.save();
+  };
   const foundThisVisit = new Set(); // 도감 화면의 "새로!" 꼬리표 (이번에 열어 둔 동안 찾은 칸)
   const lessonsForBadges = badgeLessons(allStages, lessons);
   const lowFx = isLowFx({ fx: options.fx });
@@ -653,6 +679,8 @@ export function createGameApp({
     // 다시 하기 점수 규칙: 판을 시작할 때 이미 별 3개인 단계는 연습 점수가 없다 (새로 찾음은 그대로)
     const play = createPlayReward({ startStars: progress.getStars(stage.id) });
     const startXp = rewardStore.xp();
+    // 이 판 점수 가운데 이미 저장한 몫(play.instant(): 새로 찾음, '한 번만' 답과 그 설명). 나머지는 판을 마칠 때 저장한다
+    let savedXp = 0;
     const timers = [];
     const later = (fn, ms) => timers.push(setTimeout(fn, ms));
     screenCleanups.push(() => timers.forEach((t) => {
@@ -719,6 +747,17 @@ export function createGameApp({
       streakText.textContent = `연속 ${n}`;
     }
 
+    /** '한 번만' 답(scored: 'once')과 그 설명 점수는 새로 찾음 점수처럼 생긴 자리에서 바로 저장한다 (중간에 나가도 남는다) */
+    function saveInstant() {
+      if (!rewardsOn || finished) return;
+      const add = play.instant() - savedXp;
+      if (add <= 0) return;
+      savedXp += add;
+      rewardStore.addXp(add);
+      saveCollections(); // 점수와 도감은 늘 같은 때의 한 쌍으로
+      renderRankChip();
+    }
+
     const collectionsCtx = {
       collect(id, itemId) {
         const r = collectItem(collectionState, collections, id, itemId, { at: Date.now(), stage: stage.id });
@@ -732,6 +771,7 @@ export function createGameApp({
             const gain = discoverXp(collections.find((c) => c.id === id)?.xp);
             const xp = finished ? gain : play.discovered(gain);
             rewardStore.addXp(xp);
+            if (!finished) savedXp += xp;
             rewardStore.addCounters({ discover: 1 });
             renderRankChip();
             updateMeta();
@@ -761,6 +801,7 @@ export function createGameApp({
           const step = play.answer(entry ?? {});
           if (timerToggle) timerToggle.disabled = true; // 첫 답 뒤에는 켜고 끄기를 바꾸지 않는다
           if (!rewardsOn) return;
+          saveInstant();
           updateMeta();
           if (step.streakBonus) {
             feedback.mark(streakBox, 'correct');
@@ -774,6 +815,7 @@ export function createGameApp({
         event(name, data) {
           if (finished) return 0;
           const xp = play.event(name, data);
+          saveInstant();
           updateMeta();
           return rewardsOn ? xp : 0;
         },
@@ -786,7 +828,7 @@ export function createGameApp({
             xp: play.xp(),
             streak: play.streak(),
             bounceReady: play.bounceReady(),
-            practice: play.practice(), // false: 별 3개 단계를 다시 하는 판이라 연습 점수가 없다
+            practice: play.practice(), // false: 별 3개 단계를 다시 하는 판이라 연습 점수가 없다 ('한 번만' 답은 그래도 받는다)
             counters: { ...stored, bounce: stored.bounce + a.bounce, retryFix: stored.retryFix + a.retryFix },
           };
         },
@@ -804,6 +846,7 @@ export function createGameApp({
       /**
        * 단계를 끝낸다. stars를 생략하면 정답률로 정한다. 실패면 { cleared: false }.
        * highlights: [{ icon, label, value, xp }]로 결과의 "오늘의 솜씨" 칸을 게임이 채울 수 있다(보여 주기만).
+       * practiceNote: 별 3개 단계를 다시 한 판의 안내 문장을 게임의 말로 바꾼다(그런 판에서만 보인다).
        */
       finish(result = {}) {
         if (finished) return;
@@ -816,11 +859,11 @@ export function createGameApp({
         const record = log.endStage({ stars, cleared });
         progress.record(stage.id, stars);
         const opened = lockedBefore.filter((id) => progress.isUnlocked(id));
-        const reward = rewardsOn ? settleRewards({ stage, play, prevStars, stars, cleared, startXp }) : null;
+        const reward = rewardsOn ? settleRewards({ stage, play, prevStars, stars, cleared, startXp, savedXp }) : null;
         const time = stage.timer === 'optional' && timerOn && cleared ? rewardStore.recordTime(stage.id, record.durationMs) : null;
         sfx.play(cleared ? 'clear' : 'wrong');
         renderRankChip();
-        showResult(stage, record, { fromAccuracy, reward, highlights: result.highlights, opened, time });
+        showResult(stage, record, { fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, opened, time });
       },
     };
 
@@ -836,13 +879,16 @@ export function createGameApp({
     }
   }
 
-  /** 단계를 마칠 때 점수·도장을 정산해 저장한다. → 결과 화면에 보일 것 */
-  function settleRewards({ stage, play, prevStars, stars, cleared, startXp }) {
+  /**
+   * 단계를 마칠 때 점수·도장을 정산해 저장한다. → 결과 화면에 보일 것
+   * savedXp: 이 판 점수 가운데 플레이 중에 이미 저장한 몫(새로 찾음, '한 번만' 답과 그 설명) — 다시 더하지 않는다
+   */
+  function settleRewards({ stage, play, prevStars, stars, cleared, startXp, savedXp = 0 }) {
     const summary = play.summary();
     const a = summary.answers;
     const sx = stageXp({ prevStars, stars, cleared, challenge: Boolean(stage.challenge) });
-    // 새로 찾음 점수는 칸을 찾을 때 이미 저장했다
-    rewardStore.addXp(a.xp + summary.explain.xp + sx.total);
+    rewardStore.addXp(play.xp() - savedXp + sx.total);
+    saveCollections();
     rewardStore.addCounters({ bounce: a.bounce, retryFix: a.retryFix, explain: summary.explain.count, inspect: summary.inspect });
     const state = badgeState({
       stars: progress.allStars(),
@@ -887,7 +933,7 @@ export function createGameApp({
     )));
   }
 
-  function showResult(stage, record, { fromAccuracy = true, reward = null, highlights = null, opened = [], time = null } = {}) {
+  function showResult(stage, record, { fromAccuracy = true, reward = null, highlights = null, practiceNote = null, opened = [], time = null } = {}) {
     let nextStage = null;
     if (!stage.challenge) {
       const nextId = progress.nextStageId(stage.id);
@@ -906,6 +952,7 @@ export function createGameApp({
     const label = stage.challenge ? '도전' : `${number}단계`;
     const eyebrow = stage.challenge ? `도전 주문서 · ${stage.title}` : label === stage.title ? label : `${label} · ${stage.title}`;
     const hint = starHint({ ...record, fromAccuracy });
+    const practiceOff = reward ? practiceNoteText(reward.summary, practiceNote) : null;
 
     const stat = (name, value) => h('div', { class: 'stat' }, h('dt', null, name), h('dd', null, value));
     const side = [
@@ -927,7 +974,7 @@ export function createGameApp({
           starsEl(record.stars, 'stars-big'),
           hint && h('p', { class: 'star-hint' }, hint),
           reward && highlightTiles(highlights ?? defaultHighlights(reward.summary)),
-          reward && !reward.summary.practice && h('p', { class: 'practice-note' }, icon('info'), PRACTICE_OFF_TEXT),
+          practiceOff && h('p', { class: 'practice-note' }, icon('info'), practiceOff),
           reward && h('p', { class: 'xp-line' }, stageXpLine(reward.sx, { challenge: Boolean(stage.challenge) })),
           time && h('p', { class: 'time-line' }, icon('clock'), timeRecordText(time)),
           h('dl', { class: 'result-stats' },
@@ -963,7 +1010,7 @@ export function createGameApp({
     const said = [`별 ${MAX_STARS}개 중 ${record.stars}개`];
     if (reward) {
       said.push(`솜씨 점수 ${reward.gained}점을 모았어요`);
-      if (!reward.summary.practice) said.push(PRACTICE_OFF_TEXT);
+      if (practiceOff) said.push(practiceOff);
       if (reward.rankUp) said.push(`칭호가 올랐어요: ${reward.after.name}`);
       if (reward.newBadges.length) said.push(`새 도장: ${reward.newBadges.map((b) => b.title).join(', ')}`);
     }

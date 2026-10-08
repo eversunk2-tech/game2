@@ -8,6 +8,7 @@ import {
   BOARD_SIZES,
   FREE_GOAL,
   FREE_NOTE_BEFORE_PICK,
+  FREE_REPLAY_NOTE,
   FREE_TILE_MAX,
   NET_BY_KEY,
   NOTE_ITEMS,
@@ -195,16 +196,18 @@ test('까닭 고르기: 정답 칩은 primaryProblem의 까닭 (겹침 · 네 �
   }
 });
 
-// ── 점수: 학습 행동에만, 모양마다 한 번만 (자유 배치, spec 16-8) ─────────────────
+// ── 점수: 학습 행동에만, 모양마다 한 번만 (자유 배치, spec 16-8·16-9) ─────────────────
 
 /** 도감·노트에 처음 등록할 때의 점수 (main.js의 collections: 전개도 도감은 엔진 기본 +5, 노트는 NOTE_XP) */
 const collectXp = (id) => (id === 'cube-non-nets' ? NOTE_XP : XP.discover);
 
 /**
  * 자유 배치 한 판을 엔진 점수 규칙(createPlayReward + stageXp)으로 계산한다. 화면(play-free.js)과 같은 순서:
- * 예상 기록(이미 접어 본 모양은 scored: false) → 도감·노트 등록 → 까닭 설명.
- *   dex·note: 이 기기에 저장된 도감·노트, startStars: 판을 시작할 때 이 단계의 별(다시 하기 규칙),
- *   finished: false면 중간에 나간 판(답·설명 점수는 저장되지 않고, 바로 저장되는 등록 점수만 남는다)
+ * 도감·노트 등록 → 예상 기록(처음 접는 모양은 scored: 'once', 이미 접어 본 모양은 scored: false) → 까닭 설명.
+ *   dex·note: 이 기기에 저장된 도감·노트, startStars: 판을 시작할 때 이 단계의 별,
+ *   explain: 까닭 고르기 'right' | 'wrong' | 'skip' (접기마다 fold.explain으로 따로 줄 수도 있다),
+ *   finished: false면 중간에 나간 판(← 단계 선택·새로 고침). 그 자리에서 저장된 몫(play.instant(): 등록 + 처음 접는 모양의
+ *     예측·설명 점수)은 남고, 단계 완료·별 점수는 없다 (spec 16-9, N1c-3)
  * → { xp(이 판으로 저장되는 점수), play(단계 완료·별 점수를 뺀 이번 판 점수), stage, stars, entries, earned(갈래별), explainCount, session }
  */
 function freePlayXp(folds, { dex = [], note = [], explain = 'right', startStars = 0, finished = true } = {}) {
@@ -212,23 +215,26 @@ function freePlayXp(folds, { dex = [], note = [], explain = 'right', startStars 
   const play = createPlayReward({ startStars });
   const earned = { answer: 0, nets: 0, notes: 0, explain: 0 };
   let explainCount = 0;
-  for (const { cells, prediction } of folds) {
-    const step = session.fold(cells, L6, prediction);
+  for (const fold of folds) {
+    const step = session.fold(fold.cells, L6, fold.prediction);
     let before = play.xp();
-    if (step.log) play.answer({ itemId: step.itemId, correct: step.correct, scored: step.first });
-    earned.answer += play.xp() - before;
-    before = play.xp();
     if (step.collect?.isNew) play.discovered(collectXp(step.collect.id));
     earned[step.valid ? 'nets' : 'notes'] += play.xp() - before;
-    if (step.explainable && explain !== 'skip') {
-      earned.explain += play.event('explain', { correct: explain === 'right', itemId: step.itemId });
-      if (explain === 'right') explainCount += 1;
+    before = play.xp();
+    if (step.log) play.answer({ itemId: step.itemId, correct: step.correct, scored: step.first ? 'once' : false });
+    earned.answer += play.xp() - before;
+    const pick = fold.explain ?? explain;
+    if (step.explainable && pick !== 'skip') {
+      earned.explain += play.event('explain', { correct: pick === 'right', itemId: step.itemId });
+      if (pick === 'right') explainCount += 1;
     }
+    // 자유 배치의 점수는 모두 그 자리에서 저장되는 몫이다(처음 접는 모양의 답·설명 + 등록). 판을 마칠 때 더 저장할 답 점수가 없다
+    assert.equal(play.instant(), play.xp());
   }
   const t = play.summary().answers;
   const stars = starsFromAccuracy(t.attempts ? t.correct / t.attempts : null);
   const stage = finished ? stageXp({ prevStars: startStars, stars, cleared: true }).total : 0;
-  const saved = finished ? play.xp() : play.summary().discover.xp;
+  const saved = finished ? play.xp() : play.instant();
   return { xp: saved + stage, play: play.xp(), stage, stars, finished, entries: t.attempts, earned, explainCount, session };
 }
 
@@ -238,6 +244,7 @@ function createDevice() {
   let note = [];
   let stars = 0;
   let total = 0;
+  let shapeXp = 0;
   return {
     play(folds, options = {}) {
       const r = freePlayXp(folds, { dex, note, startStars: stars, ...options });
@@ -245,9 +252,12 @@ function createDevice() {
       note = [...r.session.note()];
       if (r.finished) stars = Math.max(stars, r.stars);
       total += r.xp;
+      shapeXp += r.xp - r.stage;
       return r;
     },
     total: () => total,
+    /** 모양으로 받은 점수(예측·연속·다시 일어서기·까닭 설명·등록)만: 단계 완료·별 점수를 뺀 것 */
+    shapeXp: () => shapeXp,
     stars: () => stars,
     shapes: () => [...dex, ...note],
   };
@@ -348,18 +358,40 @@ test('모양마다 한 번만: 같은 모양(돌리거나 뒤집어도)을 다�
   }
 });
 
-test('처음 접을 때 예상을 틀린 모양은 나중에 맞혀도 점수가 없다. 판 중간에 나가도 같은 모양으로 두 번 받지 못한다', () => {
+test('처음 접을 때 예상을 틀린 모양은 나중에 맞혀도 점수가 없다. 판 중간에 나가도 처음 접은 모양의 점수는 남고(N1c-3), 같은 모양으로 두 번 받지 못한다', () => {
   for (const n of ALL_SHAPES) {
+    const full = createDevice().play(honest([n])).xp; // 나가지 않고 끝까지: 전개도 7 + 11, 안 되는 모양 5 + 11
+    assert.equal(full, (isNet(n) ? 7 : 5) + 11, n.name);
     // 처음에 틀림: 등록 점수만(전개도 +5, 노트 +1) → 다른 판에서 맞혀도 예측·설명 0
     const device = createDevice();
     const first = device.play([{ cells: n.cells, prediction: wrongOf(n) }]);
     assert.equal(first.play, isNet(n) ? XP.discover : NOTE_XP, n.name);
     assert.equal(device.play(honest([n])).play, 0, n.name);
-    // 판 중간에 나감(새로 고침): 등록 점수는 바로 저장되고 답 점수는 저장되지 않는다 → 다시 와서 접어도 0
+    // 처음에 틀리고 판 중간에 나감: 틀린 예상은 지워지지 않는다(모양은 접는 순간 "접어 본 모양") → 다시 와서 맞혀도 0
+    const eraser = createDevice();
+    assert.equal(eraser.play([{ cells: n.cells, prediction: wrongOf(n) }], { finished: false }).xp, isNet(n) ? XP.discover : NOTE_XP, n.name);
+    assert.equal(eraser.play(honest([n])).play, 0, n.name);
+    assert.ok(eraser.total() < full, n.name);
+    // 맞히고 판 중간에 나감(← 단계 선택·새로 고침): 예측·설명·등록 점수가 그 자리에서 저장돼 남는다 (전에는 등록 점수만 남았다)
     const quitter = createDevice();
-    assert.equal(quitter.play(honest([n]), { finished: false }).xp, isNet(n) ? XP.discover : NOTE_XP, n.name);
+    assert.equal(quitter.play(honest([n]), { finished: false }).xp, isNet(n) ? XP.first + XP.discover : XP.first + NOTE_XP + XP.explain, n.name);
+    // … 다시 와서 같은 모양을 접어도 0점. 나갔다 온 쪽이 끝까지 한 쪽보다 더 받지도, 덜 받지도 않는다
     assert.equal(quitter.play(honest([n])).play, 0, n.name);
-    assert.ok(quitter.total() < createDevice().play(honest([n])).xp, n.name); // 끝까지 한 것보다 적다
+    assert.equal(quitter.total(), full, n.name);
+    // 나가기를 몇 번 되풀이해도 그대로
+    const looper = createDevice();
+    for (let i = 0; i < 4; i += 1) looper.play(honest([n]), { finished: false });
+    assert.equal(looper.total(), full - 11, n.name);
+    assert.equal(looper.play(honest([n])).xp, 11, n.name); // 마치면 단계 완료·별 점수만
+    assert.equal(looper.total(), full, n.name);
+  }
+  // 남는 한계: 안 되는 모양을 맞힌 뒤 까닭을 고르기 전에 나가면, 그 모양의 까닭 설명 +2는 다시 받을 수 없다(모양은 이미 접어 본 모양)
+  for (const n of INVALID_HEXOMINOES) {
+    const device = createDevice();
+    assert.equal(device.play([{ cells: n.cells, prediction: 'no' }], { finished: false, explain: 'skip' }).xp, XP.first + NOTE_XP, n.name);
+    const back = device.play(honest([n]));
+    assert.deepEqual(back.earned, { answer: 0, nets: 0, notes: 0, explain: 0 }, n.name);
+    assert.equal(device.total(), XP.first + NOTE_XP + 11, n.name);
   }
 });
 
@@ -394,6 +426,155 @@ test('35가지를 모두 탐구하면 한 번씩만 보상: 한 판에 모두 �
   for (let i = 0; i < ALL_SHAPES.length; i += 5) split.play(honest(ALL_SHAPES.slice(i, i + 5)));
   assert.ok(split.total() <= 219, `${split.total()}점`);
   assert.equal(split.shapes().length, 35);
+  // 5가지씩 7판에 나눠 모두 맞힘: 첫 판에 별 3개가 되어도 처음 접는 모양의 점수는 그대로(spec 16-9) → 215점 (연속이 판마다 끊겨 219보다 4점 적다)
+  assert.equal(split.stars(), 3);
+  assert.equal(split.total(), 77 + 120 + 7 + 11);
+});
+
+// ── 처음 접는 모양의 점수는 별과 상관없이 (spec 16-9, N1c-1) ─────────────────
+
+/** 모양 목록을 sizes대로 여러 판에 나눈다 */
+function inPlays(list, sizes) {
+  const plays = [];
+  let at = 0;
+  for (const size of sizes) {
+    if (at >= list.length) break;
+    plays.push(list.slice(at, at + size));
+    at += size;
+  }
+  if (at < list.length) plays.push(list.slice(at));
+  return plays;
+}
+
+test('35가지를 여러 판에 나눠 탐구: 5가지씩 7판 모두 맞힘 215점 ≥ 판마다 하나씩 일부러 틀림 189~198점, 첫 판 전개도 3가지 뒤 4가지씩 217점', () => {
+  // 판마다 하나씩 일부러 틀려 별 2개를 지키는 쪽 (틀리는 자리 0~4)
+  const tricky = [0, 1, 2, 3, 4].map((pos) => {
+    const device = createDevice();
+    for (const group of inPlays(ALL_SHAPES, Array(7).fill(5))) {
+      device.play(group.map((n, i) => ({ cells: n.cells, prediction: i === pos ? wrongOf(n) : rightOf(n) })));
+    }
+    assert.equal(device.stars(), 2);
+    return device.total();
+  });
+  assert.deepEqual(tricky, [198, 196, 189, 196, 189]);
+  const honestDevice = createDevice();
+  for (const group of inPlays(ALL_SHAPES, Array(7).fill(5))) honestDevice.play(honest(group));
+  assert.equal(honestDevice.total(), 215);
+  assert.ok(tricky.every((xp) => xp < 215));
+  // 흔한 흐름: 첫 판에 전개도 3가지를 모두 맞혀 바로 별 3개(33점) → 나머지 32가지를 4가지씩 모두 맞힘
+  const flow = createDevice();
+  assert.equal(flow.play(honest(CUBE_NETS.slice(0, 3))).xp, 33);
+  assert.equal(flow.stars(), 3);
+  const rest = ALL_SHAPES.filter((n) => !CUBE_NETS.slice(0, 3).includes(n));
+  for (const group of inPlays(rest, Array(8).fill(4))) {
+    const r = flow.play(honest(group));
+    // 별 3개를 받은 뒤의 판에서도 처음 접는 모양 4가지의 예측(2씩) + 연속 3번(+1) + 등록 + 까닭 설명을 모두 받는다
+    assert.equal(r.earned.answer, 4 * XP.first + 1);
+    assert.equal(r.earned.explain, group.filter((n) => !isNet(n)).length * XP.explain);
+    assert.equal(r.stage, 0);
+  }
+  assert.equal(flow.total(), 217);
+  assert.equal(flow.total(), 33 + (8 * 7 + 24 * 5) + 8); // 전개도 8 × 7 + 안 되는 모양 24 × 5 + 연속 8번
+});
+
+test('무작위 1,200기기: 같은 모양·같은 순서·같은 판 나눔·같은 나가기에서 모두 맞힌 쪽이 일부러 틀린 쪽보다 늘 더 받거나 같다 (판을 넘어서도 일부러 틀려 이득 없음)', () => {
+  const rng = createRng('free-honest-first');
+  let lower = 0;
+  let split = 0;
+  for (let trial = 0; trial < 1200; trial += 1) {
+    const pool = rng.sample(ALL_SHAPES, rng.int(3, 35));
+    // 같은 모양을 다시 접는 것도 섞는다(돌리거나 뒤집어서)
+    const seq = Array.from({ length: rng.int(3, 45) }, () => {
+      const n = rng.pick(pool);
+      return { n, cells: shift(transformCells(n.cells, rng.int(0, SYMMETRY_COUNT - 1)), rng.int(0, 1), rng.int(0, 1)) };
+    });
+    const sizes = [];
+    for (let left = seq.length; left > 0;) {
+      const size = Math.min(left, rng.int(1, 9));
+      sizes.push(size);
+      left -= size;
+    }
+    const plays = inPlays(seq, sizes);
+    const exits = plays.map(() => rng.next() < 0.2); // 중간에 나가는 판
+    const wrongRate = rng.pick([0.1, 0.3, 0.6, 1]);
+    const good = createDevice();
+    const tricky = createDevice();
+    plays.forEach((group, i) => {
+      const finished = !exits[i];
+      good.play(group.map((f) => ({ cells: f.cells, prediction: rightOf(f.n) })), { finished });
+      tricky.play(
+        group.map((f) => ({ cells: f.cells, prediction: rng.next() < wrongRate ? wrongOf(f.n) : rightOf(f.n), explain: rng.pick(['right', 'right', 'wrong', 'skip']) })),
+        { finished },
+      );
+      // 판마다, 그때까지 받은 점수도 늘 모두 맞힌 쪽이 크거나 같다 (어느 판에서 그만둬도 손해 없음)
+      assert.ok(good.total() >= tricky.total(), `기기 ${trial} 판 ${i}: 모두 맞힘 ${good.total()} < 일부러 틀림 ${tricky.total()}`);
+      assert.ok(good.shapeXp() >= tricky.shapeXp(), `기기 ${trial} 판 ${i}`);
+    });
+    assert.deepEqual(good.shapes().sort(), tricky.shapes().sort()); // 접어 본 모양은 같다
+    assert.ok(good.total() <= bestXp(good.shapes()));
+    // 모두 맞힌 쪽의 모양 점수는 판 나눔·나가기와 상관없이 모양마다 한 번씩(예측 2 + 등록 + 설명 2) + 연속
+    const names = [...new Set(seq.map((f) => f.n.name))].map(byName);
+    const base = names.reduce((sum, n) => sum + (isNet(n) ? XP.first + XP.discover : XP.first + NOTE_XP + XP.explain), 0);
+    assert.ok(good.shapeXp() >= base && good.shapeXp() <= base + Math.floor(names.length / XP.streakEvery), `기기 ${trial}`);
+    if (tricky.total() < good.total()) lower += 1;
+    if (plays.length > 1) split += 1;
+  }
+  assert.ok(lower > 800, '틀린 예상이 섞이면 대개 점수가 낮다');
+  assert.ok(split > 800);
+});
+
+test('무작위 800기기: 판 중간에 나갔다 들어오기를 섞어도 같은 순서로 나가지 않은 쪽보다 더 받지 못한다', () => {
+  const rng = createRng('free-exit');
+  let fewer = 0;
+  for (let trial = 0; trial < 800; trial += 1) {
+    const pool = rng.sample(ALL_SHAPES, rng.int(3, 35));
+    const seq = Array.from({ length: rng.int(3, 40) }, () => {
+      const n = rng.pick(pool);
+      return { cells: transformCells(n.cells, rng.int(0, SYMMETRY_COUNT - 1)), prediction: rng.next() < 0.75 ? rightOf(n) : wrongOf(n), explain: rng.pick(['right', 'right', 'wrong', 'skip']) };
+    });
+    const sizes = [];
+    for (let left = seq.length; left > 0;) {
+      const size = Math.min(left, rng.int(1, 9));
+      sizes.push(size);
+      left -= size;
+    }
+    const plays = inPlays(seq, sizes);
+    const exits = plays.map((_, i) => i < plays.length - 1 && rng.next() < 0.4);
+    // 나간 쪽: 표시한 판을 마치지 않고 나간다
+    const leaver = createDevice();
+    plays.forEach((group, i) => leaver.play(group, { finished: !exits[i] }));
+    // (가) 같은 판 나눔으로 모든 판을 마친 쪽
+    const finisher = createDevice();
+    plays.forEach((group) => finisher.play(group));
+    // (나) 나가지 않고 그 판을 다음 판까지 이어서 한 쪽
+    const stayer = createDevice();
+    let carry = [];
+    plays.forEach((group, i) => {
+      carry = carry.concat(group);
+      if (!exits[i]) {
+        stayer.play(carry);
+        carry = [];
+      }
+    });
+    assert.ok(leaver.total() <= finisher.total(), `기기 ${trial}: 나감 ${leaver.total()} > 모두 마침 ${finisher.total()}`);
+    assert.equal(leaver.shapeXp(), finisher.shapeXp(), `기기 ${trial}`); // 모양 점수는 그 자리에서 저장되므로 같다
+    // 이어서 한 쪽은 연속·다시 일어서기가 끊기지 않아 모양 점수가 같거나 더 크다
+    assert.ok(leaver.shapeXp() <= stayer.shapeXp(), `기기 ${trial}: 나감 ${leaver.shapeXp()} > 이어 함 ${stayer.shapeXp()}`);
+    // 단계 완료·별 점수(모두 11점)는 마친 판의 정답률로 정해지는 엔진 공통 규칙이라 따로 견준다:
+    // 둘 다 접어 본 모양으로 한 판을 더 해 별 3개를 채우면(모양 점수 0) 총점도 나간 쪽이 더 크지 않다
+    const top = (device) => {
+      const r = device.play(honest(device.shapes().slice(0, 3).map(byName)));
+      assert.equal(r.play, 0);
+      assert.equal(device.stars(), 3);
+      return device.total();
+    };
+    const [a, b] = [top(leaver), top(stayer)];
+    assert.ok(a <= b, `기기 ${trial}: 나감 ${a} > 이어 함 ${b}`);
+    assert.equal(a, leaver.shapeXp() + 11);
+    assert.ok(a <= bestXp(leaver.shapes()));
+    if (leaver.shapeXp() < stayer.shapeXp()) fewer += 1;
+  }
+  assert.ok(fewer > 100, '나가면 연속·다시 일어서기가 끊겨 덜 받는 경우가 섞여 있어야 한다');
 });
 
 test('별 3개를 일부러 피하며 다시 해도 이미 접은 모양은 0점 (전에는 판마다 +116점 · +7점)', () => {
@@ -419,13 +600,26 @@ test('별 3개를 일부러 피하며 다시 해도 이미 접은 모양은 0점
   assert.equal(short.total(), one.xp);
 });
 
-test('별 3개를 받은 단계를 다시 하는 판: 처음 접는 모양도 예측·설명 점수는 없고(다시 하기 규칙) 등록 점수(전개도 +5, 노트 +1)만 받는다', () => {
+test('별 3개를 받은 단계를 다시 하는 판: 처음 접는 모양은 예측·연속·다시 일어서기·까닭 설명 점수를 모두 받고(spec 16-9), 접어 본 모양은 0점', () => {
   const device = createDevice();
   device.play(honest(['1-4-1e', '2-3-1a', '3-3'].map(byName)));
   assert.equal(device.stars(), 3);
+  // 새 전개도 1 + 새 안 되는 모양 2 + 접어 본 십자: 예측 2 × 3 + 연속 3번 +1, 발견 5, 노트 1 × 2, 까닭 설명 2 × 2
   const replay = device.play(honest(['2-2-2', 'line5-a', 'block-a', '1-4-1e'].map(byName)));
-  assert.deepEqual(replay.earned, { answer: 0, nets: 5, notes: 2, explain: 0 });
-  assert.equal(replay.xp, 7);
+  assert.deepEqual(replay.earned, { answer: 7, nets: 5, notes: 2, explain: 4 });
+  assert.equal(replay.xp, 18); // 별이 늘지 않아 단계 완료·별 점수는 없다
+  // 같은 판을 별 0개에서 시작했을 때와 모양 점수가 같다 (별은 처음 접는 모양의 점수에 영향이 없다)
+  const fresh = freePlayXp(honest(['2-2-2', 'line5-a', 'block-a', '1-4-1e'].map(byName)), { dex: ['1-4-1e', '2-3-1a', '3-3'] });
+  assert.deepEqual(fresh.earned, replay.earned);
+  // 다시 일어서기도: 새 모양을 틀린 뒤 다음 새 모양을 맞히면 +1
+  const bounce = device.play([{ cells: byName('line5-b').cells, prediction: 'yes' }, { cells: byName('1-4-1a').cells, prediction: 'yes' }]);
+  assert.deepEqual(bounce.earned, { answer: XP.first + XP.bounce, nets: 5, notes: 1, explain: 0 });
+  // 접어 본 모양만 다시 접는 판은 0점 (몇 번을 해도)
+  for (let i = 0; i < 3; i += 1) {
+    const again = device.play(honest(['2-2-2', 'line5-a', 'block-a', '1-4-1e', 'line5-b', '1-4-1a'].map(byName)));
+    assert.deepEqual([again.play, again.xp], [0, 0]);
+  }
+  assert.match(FREE_REPLAY_NOTE, /^처음 접는 모양은 점수를 받아요\. 접어 본 모양은 다시 접어도 점수가 없어요\.$/);
 });
 
 test('무작위 400기기 × 여러 판: 일부러 틀리거나, 같은 모양을 되풀이하거나, 중간에 나가거나, 별 3개를 피해도 접어 본 모양들을 한 판에 모두 맞힌 점수를 넘지 못한다', () => {

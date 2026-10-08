@@ -13,9 +13,11 @@ import {
   createRewardStore,
   discoverXp,
   evaluateBadges,
+  isOnceAnswer,
   MASTERED_STARS,
   normalizeBadges,
   practiceAllowed,
+  SCORED_ONCE,
   normalizeRanks,
   normalizeRewardState,
   rankOf,
@@ -324,6 +326,260 @@ test('무작위 2,000개: 점수 없는 답(scored: false)을 아무 데나 섞�
   assert.ok(lower > 500);
 });
 
+// ── 한 번만 점수 답(scored: 'once'): 이 기기에서 처음이자 마지막으로 점수를 받는 답 (예: 처음 접는 모양) ─────────────
+
+const once = (itemId, correct = true) => ({ itemId, correct, scored: SCORED_ONCE });
+
+test("scored: 'once'인 답은 별 3개 단계를 다시 하는 판에서도 점수를 받는다(처음 맞힘·연속·다시 일어서기·다시 도전, 그 문항의 설명). 표시 없는 답은 그대로 0", () => {
+  assert.equal(SCORED_ONCE, 'once');
+  assert.deepEqual([once('a'), { scored: true }, { scored: false }, {}, undefined].map(isOnceAnswer), [true, false, false, false, false]);
+  const play = createPlayReward({ startStars: 3 });
+  assert.equal(play.practice(), false); // 표시 없는 답의 연습 점수는 여전히 없다
+  assert.deepEqual(play.answer(once('a')), { kind: 'first', xp: 2, bounce: false, streak: 1, streakBonus: false });
+  assert.equal(play.answer(once('b')).xp, 2);
+  assert.deepEqual(play.answer(once('c')), { kind: 'first', xp: 3, bounce: false, streak: 3, streakBonus: true }); // 연속 3번 +1
+  assert.equal(play.answer(once('d', false)).xp, 0);
+  assert.deepEqual(play.answer(once('e')), { kind: 'first', xp: 3, bounce: true, streak: 1, streakBonus: false }); // 다시 일어서기 +1
+  assert.deepEqual(play.answer(once('d')), { kind: 'retry', xp: 1, bounce: false, streak: 1, streakBonus: false }); // 다시 도전 +1
+  assert.equal(play.answer(once('a')).xp, 0); // 이미 맞힌 문항을 또 답하면 0
+  assert.equal(play.xp(), 2 + 2 + 3 + 3 + 1);
+  // 설명: '한 번만' 문항은 +2(문항마다 한 번), 표시 없는 문항·점수 없는 문항은 0
+  assert.equal(play.event('explain', { correct: true, itemId: 'a' }), 2);
+  assert.equal(play.event('explain', { correct: true, itemId: 'a' }), 0);
+  assert.equal(play.answer(ok('n1')).xp, 0);
+  assert.equal(play.event('explain', { correct: true, itemId: 'n1' }), 0);
+  assert.equal(play.answer({ itemId: 'old', correct: true, scored: false }).xp, 0);
+  assert.equal(play.event('explain', { correct: true, itemId: 'old' }), 0);
+  assert.equal(play.xp(), 13);
+  const sum = play.summary();
+  assert.deepEqual(sum.once, { count: 7, xp: 13 });
+  assert.equal(sum.practice, false);
+  assert.equal(sum.answers.xp, 11); // 실제로 받은 답 점수
+  assert.deepEqual([sum.answers.attempts, sum.answers.correct, sum.answers.wrong], [9, 8, 1]); // 횟수는 모든 답
+  assert.deepEqual([sum.paid.firstTry, sum.paid.retryFix, sum.paid.bounce, sum.paid.streakBonus], [4, 1, 1, 1]); // 점수를 준 답만
+  // 별 0~2개 판: 지금까지와 같은 점수(표시 없는 답과 함께 센다) — 표시가 달라도 한 판 점수는 같다
+  for (const startStars of [0, 1, 2]) {
+    const a = createPlayReward({ startStars });
+    const b = createPlayReward({ startStars });
+    for (const [id, correct] of [['a', true], ['b', true], ['c', true], ['d', false], ['e', true], ['d', true]]) {
+      assert.deepEqual(a.answer(once(id, correct)), b.answer({ itemId: id, correct }));
+    }
+    assert.equal(a.event('explain', { correct: true, itemId: 'a' }), 2);
+    assert.equal(b.event('explain', { correct: true, itemId: 'a' }), 2);
+    assert.equal(a.xp(), b.xp());
+    assert.deepEqual(a.summary().paid, b.summary().paid);
+    assert.deepEqual(a.summary().paid, { firstTry: 4, retryFix: 1, bounce: 1, streakBonus: 1 });
+    assert.equal(a.instant(), a.xp()); // '한 번만' 답만 있는 판은 모두 바로 저장할 몫
+    assert.equal(b.instant(), 0);
+  }
+});
+
+test("바로 저장할 몫 instant(): 새로 찾음 + '한 번만' 답과 그 설명. 표시 없는 답·설명은 판을 마칠 때 저장할 몫이다", () => {
+  for (const startStars of [0, 2, 3]) {
+    const play = createPlayReward({ startStars });
+    const practice = startStars < 3;
+    assert.equal(play.instant(), 0);
+    play.answer(ok('n1')); // 표시 없는 답
+    play.event('explain', { correct: true, itemId: 'n1' });
+    assert.equal(play.instant(), 0, `별 ${startStars}개`);
+    assert.equal(play.xp(), practice ? 4 : 0);
+    play.discovered(1);
+    assert.equal(play.instant(), 1);
+    play.answer(once('o1'));
+    assert.equal(play.instant(), 1 + 2);
+    play.event('explain', { correct: true, itemId: 'o1' });
+    assert.equal(play.instant(), 1 + 2 + 2);
+    play.answer({ itemId: 'old', correct: true, scored: false });
+    play.event('explain', { correct: true, itemId: 'old' });
+    assert.equal(play.instant(), 5);
+    assert.equal(play.xp(), 5 + (practice ? 4 : 0));
+    assert.ok(play.instant() <= play.xp());
+  }
+  // '한 번만' 답과 점수 없는 답만 있는 판(예: 자유 배치)은 점수가 모두 바로 저장할 몫이다 — 별과 상관없이 같은 점수
+  const totals = [0, 3].map((startStars) => {
+    const play = createPlayReward({ startStars });
+    for (const a of [once(1), once(2, false), { itemId: 'old', correct: false, scored: false }, once(3), once(4), once(5)]) play.answer(a);
+    play.event('explain', { correct: true, itemId: 3 });
+    play.discovered();
+    assert.equal(play.instant(), play.xp());
+    return play.xp();
+  });
+  assert.deepEqual(totals, [17, 17]); // 처음 맞힘 4 × 2 + 다시 일어서기 1 + 연속 3번 1(틀린 뒤 3·4·5번) + 설명 2 + 새로 찾음 5
+});
+
+test("별 3개 판에서 표시 없는 답(연습)을 일부러 틀려도 '한 번만' 답의 다시 일어서기·연속 보너스를 얻지 못한다", () => {
+  const total = (answers) => {
+    const play = createPlayReward({ startStars: 3 });
+    for (const a of answers) play.answer(a);
+    return play.xp();
+  };
+  // 연습 답을 틀린 뒤 '한 번만' 답을 맞힘: 다시 일어서기 +1이 붙지 않는다
+  assert.equal(total([no('n1'), once('o1')]), 2);
+  assert.equal(total([ok('n1'), once('o1')]), 2);
+  // 연습 답으로 연속을 쌓아 '한 번만' 답에서 연속 보너스를 받지 못한다 ('한 번만' 답끼리만 센다)
+  assert.equal(total([ok('n1'), ok('n2'), once('o1')]), 2);
+  assert.equal(total([once('o1'), ok('n1'), once('o2'), ok('n2'), once('o3')]), 7); // '한 번만' 3번 연속 +1
+  assert.equal(total([once('o1'), no('n1'), once('o2'), once('o3')]), 6); // 연습 답을 틀리면 연속만 끊긴다
+  // 리뷰에서 든 꼴: [연습 틀림, 한 번만, 연습 맞힘, 한 번만]이 모두 맞힌 것보다 크지 않다
+  assert.ok(total([no('n1'), once('o1'), ok('n2'), once('o2')]) <= total([ok('n1'), once('o1'), ok('n2'), once('o2')]));
+});
+
+/**
+ * 견줄 기준: 'once'를 넣기 전(커밋 d5a0a55)의 한 판 점수 계산을 그대로 옮긴 것. 표시 없는 답(과 scored: false)만 쓰는 판은
+ * 새 계산과 한 글자도 다르지 않아야 한다(예시 게임·다른 단계).
+ */
+function legacyPlayReward({ startStars = 0 } = {}) {
+  const practice = practiceAllowed(startStars);
+  const tracker = createAnswerTracker();
+  const explained = new Set();
+  const unscored = new Set();
+  const explain = { count: 0, xp: 0 };
+  const discover = { count: 0, xp: 0 };
+  let inspect = 0;
+  return {
+    answer: (entry) => {
+      if (entry?.scored === false && entry.itemId != null) unscored.add(String(entry.itemId));
+      const step = tracker.answer(entry);
+      return practice ? step : { ...step, xp: 0 };
+    },
+    streak: () => tracker.streak(),
+    bounceReady: () => tracker.bounceReady(),
+    practice: () => practice,
+    event(name, data = {}) {
+      if (name === 'explain') {
+        if (!data?.correct || data.itemId == null) return 0;
+        const key = String(data.itemId);
+        if (explained.has(key)) return 0;
+        explained.add(key);
+        const xp = practice && !unscored.has(key) ? XP.explain : 0;
+        explain.count += 1;
+        explain.xp += xp;
+        return xp;
+      }
+      if (name === 'inspect') inspect += 1;
+      return 0;
+    },
+    discovered(xp = XP.discover) {
+      const add = discoverXp(xp);
+      discover.count += 1;
+      discover.xp += add;
+      return add;
+    },
+    xp: () => (practice ? tracker.totals().xp : 0) + explain.xp + discover.xp,
+    summary: () => {
+      const answers = tracker.totals();
+      return { answers: practice ? answers : { ...answers, xp: 0 }, explain: { ...explain }, discover: { ...discover }, inspect, practice };
+    },
+  };
+}
+
+test("표시 없는 답은 그대로: 무작위 2,000판(별 0~3개, 표시 없는 답·scored: false·itemId 없는 답·설명·새로 찾음)에서 답마다 돌려주는 값·점수·연속·횟수가 'once'를 넣기 전과 모두 같다", () => {
+  const rng = createRng('rewards-legacy');
+  let checked = 0;
+  for (let trial = 0; trial < 2000; trial += 1) {
+    const startStars = rng.int(0, 3);
+    const now = createPlayReward({ startStars });
+    const old = legacyPlayReward({ startStars });
+    const n = rng.int(1, 12);
+    const noIds = trial % 5 === 0; // itemId 없이 기록하는 게임
+    const answers = randomAnswers(rng, n).flatMap((a) => [
+      ...Array.from({ length: rng.pick([0, 0, 0, 1, 2]) }, () => ({ itemId: `old${rng.int(0, 3)}`, correct: rng.next() < 0.5, scored: false })),
+      noIds ? { correct: a.correct } : rng.next() < 0.2 ? { ...a, scored: true } : a,
+    ]);
+    for (const a of answers) {
+      // 답 사이사이에 설명·살펴봄·새로 찾음을 섞는다
+      if (rng.next() < 0.3) {
+        const e = { correct: rng.next() < 0.7, itemId: rng.pick([`q${rng.int(0, n - 1)}`, `old${rng.int(0, 3)}`, null, 7]) };
+        assert.equal(now.event('explain', e), old.event('explain', e));
+      }
+      if (rng.next() < 0.1) assert.equal(now.event('inspect'), old.event('inspect'));
+      if (rng.next() < 0.1) {
+        const xp = rng.pick([undefined, 1, 0, 5]);
+        assert.equal(now.discovered(xp), old.discovered(xp));
+      }
+      assert.deepEqual(now.answer(a), old.answer(a));
+      assert.equal(now.xp(), old.xp());
+      assert.equal(now.streak(), old.streak());
+      assert.equal(now.bounceReady(), old.bounceReady());
+      checked += 1;
+    }
+    const { once: onceSum, paid, ...rest } = now.summary();
+    assert.deepEqual(rest, old.summary());
+    assert.deepEqual(onceSum, { count: 0, xp: 0 });
+    // 점수를 준 답만 센 횟수: 연습 점수가 있는 판은 답 횟수와 같고, 없는 판은 0
+    const a = rest.answers;
+    assert.deepEqual(paid, startStars < 3 ? { firstTry: a.firstTry, retryFix: a.retryFix, bounce: a.bounce, streakBonus: a.streakBonus } : { firstTry: 0, retryFix: 0, bounce: 0, streakBonus: 0 });
+    assert.equal(now.practice(), old.practice());
+    assert.equal(now.instant(), old.summary().discover.xp); // 바로 저장할 몫은 지금까지처럼 새로 찾음뿐
+  }
+  assert.ok(checked > 20000);
+});
+
+test("'한 번만' 답만 쓰는 판(예: 자유 배치)은 무작위 1,000판에서 답을 하나로 셀 때(표시 없는 답으로 기록한 별 0개 판)와 점수가 같다 — 별이 몇 개든", () => {
+  const rng = createRng('rewards-once-pure');
+  for (let trial = 0; trial < 1000; trial += 1) {
+    const startStars = rng.int(0, 3);
+    const now = createPlayReward({ startStars });
+    const ref = legacyPlayReward({ startStars: 0 });
+    const n = rng.int(1, 12);
+    for (const a of randomAnswers(rng, n)) {
+      const again = rng.next() < 0.2; // 가끔 점수 없는 답(이미 점수를 받은 것)
+      const entry = again ? { itemId: `old${rng.int(0, 3)}`, correct: a.correct, scored: false } : a;
+      assert.deepEqual(now.answer(again ? entry : { ...entry, scored: SCORED_ONCE }), ref.answer(entry));
+      if (rng.next() < 0.3) {
+        const e = { correct: rng.next() < 0.7, itemId: entry.itemId };
+        assert.equal(now.event('explain', e), ref.event('explain', e));
+      }
+      assert.equal(now.streak(), ref.streak());
+      assert.equal(now.bounceReady(), ref.bounceReady());
+    }
+    assert.equal(now.xp(), ref.xp());
+    assert.equal(now.instant(), now.xp());
+    assert.deepEqual(now.summary().answers, ref.summary().answers);
+  }
+});
+
+test("무작위 3,000개: '한 번만' 답·표시 없는 답·점수 없는 답을 섞어도(별 0~3개) 같은 문항을 모두 처음에 맞힌 것보다 크지 않고, 바로 저장할 몫도 그렇다", () => {
+  const rng = createRng('rewards-once');
+  let lower = 0;
+  let withOnce = 0;
+  for (let trial = 0; trial < 3000; trial += 1) {
+    const n = rng.int(1, 12);
+    const startStars = rng.int(0, 3);
+    const onceIds = new Set(Array.from({ length: n }, (_, i) => `q${i}`).filter(() => rng.next() < 0.5));
+    const flag = (a) => (onceIds.has(a.itemId) ? { ...a, scored: SCORED_ONCE } : a);
+    const mixed = randomAnswers(rng, n).map(flag).flatMap((a) => [
+      ...Array.from({ length: rng.pick([0, 0, 0, 1]) }, () => ({ itemId: `old${rng.int(0, 3)}`, correct: rng.next() < 0.5, scored: false })),
+      a,
+    ]);
+    // 설명은 답한 문항에만 한다 (문항 q…, 점수 없이 기록만 한 문항 old…)
+    const olds = [...new Set(mixed.filter((a) => a.scored === false).map((a) => a.itemId))];
+    const explains = Array.from({ length: rng.int(0, n * 2) }, () => ({
+      correct: rng.next() < 0.7,
+      itemId: olds.length > 0 && rng.next() < 0.2 ? rng.pick(olds) : `q${rng.int(0, n - 1)}`,
+    }));
+    const run = (answers, exps) => {
+      const play = createPlayReward({ startStars });
+      for (const a of answers) play.answer(a);
+      for (const e of exps) play.event('explain', e);
+      const t = play.summary().answers;
+      const stars = starsFromAccuracy(t.attempts ? t.correct / t.attempts : null);
+      return { total: play.xp() + stageXp({ prevStars: startStars, stars, cleared: true }).total, instant: play.instant(), xp: play.xp() };
+    };
+    const got = run(mixed, explains);
+    const best = run(Array.from({ length: n }, (_, i) => flag(ok(`q${i}`))), Array.from({ length: n }, (_, i) => ({ correct: true, itemId: `q${i}` })));
+    assert.ok(got.total <= best.total, `별 ${startStars}개, 문항 ${n}개: ${got.total} > ${best.total} ${JSON.stringify(mixed)}`);
+    assert.ok(got.instant <= best.instant, `바로 저장할 몫 ${got.instant} > ${best.instant}`);
+    assert.ok(got.instant <= got.xp);
+    if (startStars === 3 && onceIds.size === 0) assert.equal(got.xp, 0); // 표시 없는 답만 있는 별 3개 판은 지금까지처럼 0점
+    if (onceIds.size === 0) assert.equal(got.instant, 0);
+    if (got.total < best.total) lower += 1;
+    if (onceIds.size > 0) withOnce += 1;
+  }
+  assert.ok(lower > 1000);
+  assert.ok(withOnce > 2000);
+});
+
 test('칭호: 기본 5단계 기준 0·40·100·180·300점, 다음 칭호까지 남은 점수와 비율', () => {
   assert.deepEqual([...DEFAULT_RANKS], ['새싹', '탐험가', '해결사', '척척박사', '으뜸 박사']);
   assert.deepEqual([...DEFAULT_THRESHOLDS], [0, 40, 100, 180, 300]);
@@ -454,6 +710,13 @@ test('저장: 점수·도장·횟수·시간 기록이 남고, 지우면 모두 
   assert.equal(again.best('ch'), 118_000);
   // 게임 모음 "이어 하기"용으로 칭호 이름도 저장한다
   assert.equal(createStorage('g', backend).get('rewards').rank, '탐험가');
+
+  // save(): 다른 탭이 저장값을 덮어써도 이 탭의 값을 그대로 다시 저장한다 (점수와 도감을 한 탭의 한 쌍으로 맞출 때)
+  createStorage('g', backend).set('rewards', { v: 1, xp: 7 });
+  assert.equal(createRewardStore({ storage: createStorage('g', backend) }).xp(), 7);
+  again.save();
+  const resaved = createRewardStore({ storage: createStorage('g', backend) });
+  assert.deepEqual([resaved.xp(), resaved.counters().bounce, Object.keys(resaved.badges()), resaved.best('ch')], [42, 2, ['first-step'], 118_000]);
 
   again.reset();
   const cleared = createRewardStore({ storage: createStorage('g', backend) });

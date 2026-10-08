@@ -2,7 +2,18 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitTitleMark } from '../../src/shared/core/title-mark.js';
 import { createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
-import { PRACTICE_OFF_TEXT, defaultHighlights, gradeLabel, readUrlOptions, stageXpLine, starHint, stageStates, timeRecordText } from '../../src/shared/ui/app.js';
+import {
+  PRACTICE_OFF_ONCE_TEXT,
+  PRACTICE_OFF_TEXT,
+  defaultHighlights,
+  gradeLabel,
+  practiceNoteText,
+  readUrlOptions,
+  stageXpLine,
+  starHint,
+  stageStates,
+  timeRecordText,
+} from '../../src/shared/ui/app.js';
 import { SOUNDS } from '../../src/shared/ui/audio.js';
 import { CONFETTI_MAX, RESULT_MS, confettiSpecs, isLowFx } from '../../src/shared/ui/celebrate.js';
 import { anchorPlacement, belowPlacement } from '../../src/shared/ui/feedback.js';
@@ -114,6 +125,53 @@ test('결과 "오늘의 솜씨" 기본 칸: 답 기록에서(처음에 맞힘·�
   assert.deepEqual(replayList.map((x) => [x.label, x.xp]), [['처음에 맞힘', 0], ['새로 찾음', 5], ['다시 일어서기', 0], ['연속 최고', 0]]);
   assert.equal(replayList.reduce((sum, x) => sum + x.xp, 0), replay.xp());
   assert.match(PRACTICE_OFF_TEXT, /별 3개를 받은 단계라 연습 점수는 없어요/);
+});
+
+test("결과 \"오늘의 솜씨\" 기본 칸과 '한 번만' 답(scored: 'once'): 별 3개 판에서도 칸 점수의 합 = 이번 판 점수, 안내 문장은 사실대로", () => {
+  const once = (itemId, correct = true) => ({ itemId, correct, scored: 'once' });
+  // 별 3개 단계를 다시 하는 판: '한 번만' 답 4개(하나 틀린 뒤 다시 일어서기) + 표시 없는 답 2개 + 점수 없는 답 1개
+  const play = createPlayReward({ startStars: 3 });
+  for (const a of [once(1), once(2), once(3), once(4, false), once(5), { itemId: 'n1', correct: true }, { itemId: 'n2', correct: true }, { itemId: 'old', correct: true, scored: false }]) play.answer(a);
+  play.event('explain', { correct: true, itemId: 1 });
+  play.event('explain', { correct: true, itemId: 'n1' }); // 표시 없는 문항의 설명은 별 3개 판에서 0
+  play.discovered();
+  const list = defaultHighlights(play.summary());
+  assert.deepEqual(list.map((x) => [x.label, x.value, x.xp]), [
+    ['처음에 맞힘', '6 / 7', 8], // 점수는 '한 번만' 답 4번만
+    ['새로 찾음', '1가지', 5],
+    ['설명 맞힘', '2번', 2],
+    ['다시 일어서기', '1번', 1],
+    ['연속 최고', '3번', 1],
+  ]);
+  assert.equal(list.reduce((sum, x) => sum + x.xp, 0), play.xp());
+  assert.equal(play.xp(), 17);
+  assert.equal(play.instant(), 17); // 모두 바로 저장할 몫
+  // 안내 문장: 연습 점수가 있는 판은 없음, 없는 판은 '한 번만' 답이 있었는지에 따라, 게임이 준 문장이 있으면 그 문장
+  assert.equal(practiceNoteText(createPlayReward({ startStars: 2 }).summary()), null);
+  assert.equal(practiceNoteText(createPlayReward({ startStars: 2 }).summary(), '게임 문장'), null);
+  assert.equal(practiceNoteText(createPlayReward({ startStars: 3 }).summary()), PRACTICE_OFF_TEXT);
+  assert.equal(practiceNoteText(play.summary()), PRACTICE_OFF_ONCE_TEXT);
+  assert.equal(PRACTICE_OFF_ONCE_TEXT, '별 3개를 받은 단계라 연습 점수는 없어요. 처음 해 본 것은 점수를 받았어요.');
+  assert.equal(practiceNoteText(play.summary(), ' 처음 접는 모양은 점수를 받아요. '), '처음 접는 모양은 점수를 받아요.');
+  assert.equal(practiceNoteText(play.summary(), '   '), PRACTICE_OFF_ONCE_TEXT);
+  assert.equal(practiceNoteText(null), null);
+  // 무작위 500판: 별이 몇 개든, 답을 어떻게 섞든 기본 칸 점수의 합 = 이번 판 점수
+  let seed = 7;
+  const rand = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  for (let trial = 0; trial < 500; trial += 1) {
+    const p = createPlayReward({ startStars: Math.floor(rand() * 4) });
+    for (let i = 0; i < 1 + Math.floor(rand() * 14); i += 1) {
+      const itemId = `q${Math.floor(rand() * 8)}`;
+      const kind = itemId < 'q4' ? 'once' : true; // 문항마다 한 가지 답
+      p.answer(rand() < 0.15 ? { itemId: `old${i}`, correct: rand() < 0.5, scored: false } : { itemId, correct: rand() < 0.7, scored: kind });
+      if (rand() < 0.3) p.event('explain', { correct: rand() < 0.7, itemId });
+      if (rand() < 0.1) p.discovered(rand() < 0.5 ? 1 : undefined);
+    }
+    assert.equal(defaultHighlights(p.summary()).reduce((sum, x) => sum + x.xp, 0), p.xp(), `판 ${trial}`);
+  }
 });
 
 test('결과 점수 줄: 단계 완료·별 점수, 반복이면 안내, 늘 "빨리 푼 시간에는 점수가 없어요"', () => {

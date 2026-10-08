@@ -62,11 +62,43 @@ createGameApp({
 
 const URL = 'http://engine.test/engine.html';
 
+// '한 번만 점수' 답(scored: 'once') 시험 페이지: 답의 표시만 다른 버튼들. 같은 것을 다시 답하지 않게 하는 것은 게임의 몫이라 여기서는 문항 번호를 늘린다
+const ONCE_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/src/shared/styles/base.css"></head><body><div id="app"></div>
+<script type="module">
+import { createGameApp } from '/src/shared/ui/app.js';
+createGameApp({
+  root: document.getElementById('app'),
+  game: { id: 'once-test', title: '한 번만 시험 공방', summary: '한 번만 점수 답을 시험해요.', grades: [5], subject: '수학' },
+  collections: [{ id: 'shapes', title: '모양 도감', items: [{ id: 'tri', name: '세모' }, { id: 'sq', name: '네모' }] }],
+  stages: [{ id: 's1', title: '첫 단계', goal: '버튼을 눌러 답해요.' }, { id: 's2', title: '둘째 단계', goal: '한 번 더 답해요.' }],
+  playStage(stage, ctx) {
+    const { h } = ctx;
+    let n = 0;
+    const b = (label, fn) => h('button', { type: 'button', class: 'btn', onclick: fn }, label);
+    ctx.el.append(h('div', { class: 'actions' },
+      b('한 번만 맞힘', () => { n += 1; ctx.log.answer({ itemId: 'o' + n, correct: true, scored: 'once' }); }),
+      b('한 번만 틀림', () => { n += 1; ctx.log.answer({ itemId: 'o' + n, correct: false, scored: 'once' }); }),
+      b('표시 없이 맞힘', () => { n += 1; ctx.log.answer({ itemId: 'p' + n, correct: true }); }),
+      b('표시 없이 틀림', () => { n += 1; ctx.log.answer({ itemId: 'p' + n, correct: false }); }),
+      b('이미 받은 답', () => { n += 1; ctx.log.answer({ itemId: 'old' + n, correct: true, scored: false }); }),
+      b('한 번만 설명', () => { window.lastXp = ctx.reward.event('explain', { correct: true, itemId: 'o' + n }); }),
+      b('표시 없는 설명', () => { window.lastXp = ctx.reward.event('explain', { correct: true, itemId: 'p' + n }); }),
+      b('세모 찾기', () => { ctx.collect('shapes', 'tri'); }),
+      b('끝내기', () => { ctx.finish(); }),
+      b('문장 주고 끝내기', () => { ctx.finish({ practiceNote: '처음 한 것만 점수를 받아요.' }); }),
+    ));
+  },
+}).start();
+</script></body></html>`;
+const ONCE_URL = 'http://engine.test/once.html';
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }));
   await page.route('http://engine.test/**', async (route) => {
     const { pathname } = new globalThis.URL(route.request().url());
     if (pathname === '/engine.html') return route.fulfill({ contentType: 'text/html', body: ENGINE_PAGE });
+    if (pathname === '/once.html') return route.fulfill({ contentType: 'text/html', body: ONCE_PAGE });
     const file = path.resolve(`.${pathname}`);
     const contentType = file.endsWith('.css') ? 'text/css' : 'text/javascript';
     return route.fulfill({ contentType, body: await readFile(file, 'utf8') });
@@ -202,6 +234,99 @@ test('다시 하기 점수: 별 3개 단계를 다시 하면 연습 점수 0(칭
   await btn(page, '끝내기').click();
   await expect(page.locator('.practice-note')).toHaveText(NOTE);
   expect(await storedXp()).toBe(31);
+  expect(errors).toEqual([]);
+});
+
+test("한 번만 점수 답(scored: 'once'): 별 3개 단계에서도 점수를 받고 그 자리에서 저장된다. 중간에 나가도 남고, 마칠 때 다시 더하지 않는다. 표시 없는 답은 그대로", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(ONCE_URL);
+  await page.evaluate(() => {
+    localStorage.setItem('edu:once-test:stars', JSON.stringify({ s1: 3, s2: 2 }));
+    localStorage.setItem('edu:once-test:rewards', JSON.stringify({ v: 1, xp: 20 }));
+  });
+  const xp = page.locator('.meta-xp b');
+  const chip = page.locator('.rank-chip small');
+  const storedXp = () => page.evaluate(() => JSON.parse(localStorage.getItem('edu:once-test:rewards')).xp);
+
+  // 별 3개 단계(s1) 다시 하기: '한 번만' 답은 처음 맞힘 +2, 연속 3번 +1 — 누르는 그 자리에서 칭호 칩(저장된 점수)이 오른다
+  await page.goto(`${ONCE_URL}?stage=s1&sound=off`);
+  await expect(chip).toHaveText('20점');
+  for (let i = 0; i < 3; i += 1) await btn(page, '한 번만 맞힘').click();
+  await expect(xp).toHaveText('+7');
+  await expect(chip).toHaveText('27점');
+  expect(await storedXp()).toBe(27);
+  // 표시 없는 답·설명·이미 받은 답은 지금까지처럼 0점이고 저장도 그대로
+  await btn(page, '표시 없이 맞힘').click();
+  await btn(page, '표시 없는 설명').click();
+  expect(await page.evaluate(() => window.lastXp)).toBe(0);
+  await btn(page, '이미 받은 답').click();
+  await expect(xp).toHaveText('+7');
+  expect(await storedXp()).toBe(27);
+  // 표시 없는 답(연습)을 틀려도 '한 번만' 답에 다시 일어서기가 붙지 않는다. '한 번만' 답을 틀린 뒤 맞히면 +2 +1
+  await btn(page, '표시 없이 틀림').click();
+  await btn(page, '한 번만 맞힘').click();
+  await expect(xp).toHaveText('+9');
+  await btn(page, '한 번만 틀림').click();
+  await btn(page, '한 번만 맞힘').click();
+  await expect(xp).toHaveText('+12');
+  // 그 문항의 설명 +2도 별과 상관없이, 바로 저장
+  await btn(page, '한 번만 설명').click();
+  expect(await page.evaluate(() => window.lastXp)).toBe(2);
+  await expect(xp).toHaveText('+14');
+  await expect(chip).toHaveText('34점');
+  expect(await storedXp()).toBe(34);
+  // 판 중간에 나가도(← 단계 선택, 새로 고침) 남는다
+  await btn(page, '← 단계 선택').click();
+  await expect(chip).toHaveText('34점');
+  expect(await storedXp()).toBe(34);
+  await page.goto(`${ONCE_URL}?stage=s1&sound=off`);
+  await expect(chip).toHaveText('34점');
+
+  // 판을 마칠 때 같은 점수를 다시 더하지 않는다. 결과의 "오늘의 솜씨" 칸 합 = 이번에 모은 점수 = 저장된 점수 차
+  await btn(page, '한 번만 맞힘').click();
+  await btn(page, '표시 없이 맞힘').click();
+  await expect(xp).toHaveText('+2');
+  expect(await storedXp()).toBe(36);
+  await btn(page, '끝내기').click();
+  await expect(page.getByRole('heading', { name: '단계 성공!' })).toBeVisible();
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+2');
+  await expect(page.locator('.behavior', { hasText: '처음에 맞힘' })).toContainText('2 / 2');
+  await expect(page.locator('.behavior', { hasText: '처음에 맞힘' }).locator('.b-xp')).toHaveText('+2');
+  await expect(page.locator('.practice-note')).toHaveText('별 3개를 받은 단계라 연습 점수는 없어요. 처음 해 본 것은 점수를 받았어요.');
+  await expect(page.locator('[role="status"]')).toContainText('처음 해 본 것은 점수를 받았어요');
+  await expect(chip).toHaveText('36점');
+  expect(await storedXp()).toBe(36);
+  // 게임이 안내 문장을 주면 그 문장을 보인다 (별 3개 단계를 다시 한 판에서만)
+  await btn(page, '다시 하기').click();
+  await btn(page, '문장 주고 끝내기').click();
+  await expect(page.locator('.practice-note')).toHaveText('처음 한 것만 점수를 받아요.');
+  expect(await storedXp()).toBe(36);
+
+  // 별 2개 단계(s2): 표시 없는 답은 판을 마칠 때 저장, '한 번만' 답과 새로 찾음은 바로 저장. 연속·다시 일어서기는 따로 센다
+  await page.goto(`${ONCE_URL}?stage=s2&sound=off`);
+  await btn(page, '표시 없이 맞힘').click();
+  await btn(page, '표시 없이 맞힘').click();
+  await expect(xp).toHaveText('+4');
+  await expect(chip).toHaveText('36점');
+  await btn(page, '한 번만 맞힘').click(); // 화면의 연속은 3이지만 '한 번만' 답으로는 첫 번째라 연속 보너스가 없다
+  await expect(page.locator('.meta-streak')).toHaveText('연속 3');
+  await expect(xp).toHaveText('+6');
+  await expect(chip).toHaveText('38점');
+  await btn(page, '세모 찾기').click();
+  await expect(chip).toHaveText('43점');
+  expect(await storedXp()).toBe(43);
+  // 중간에 나가면 표시 없는 답의 4점은 지금까지처럼 저장되지 않는다
+  await btn(page, '← 단계 선택').click();
+  expect(await storedXp()).toBe(43);
+  // 다시 들어가 마치면: 표시 없는 답 2 + '한 번만' 2(바로 저장) + 별 1개 더 +2, 문장은 없다(연습 점수가 있는 판)
+  await page.goto(`${ONCE_URL}?stage=s2&sound=off`);
+  await btn(page, '표시 없이 맞힘').click();
+  await btn(page, '한 번만 맞힘').click();
+  await expect(chip).toHaveText('45점');
+  await btn(page, '문장 주고 끝내기').click();
+  await expect(page.locator('.practice-note')).toHaveCount(0);
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+6');
+  expect(await storedXp()).toBe(49);
   expect(errors).toEqual([]);
 });
 
