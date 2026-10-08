@@ -5,6 +5,10 @@
  *
  * 무대 상태: .fold-stage[data-fold] = flat(펼침) · folding(접는 중) · half(반 접힘) · partial · done(다 접음)
  * 움직임 줄이기(prefers-reduced-motion)면 애니메이션 대신 펼침 → 반 접힘 → 다 접힘 3장면.
+ *
+ * 돌려 보기·크게 작게 (spec 17절): 답한 뒤(접기 막대가 풀린 뒤) 접힌 입체에서만 된다 — .fold-stage.can-view.
+ * 끌기(마우스·한 손가락)·두 손가락 벌리기·휠·방향키와 + − 0·조작판 버튼(.view-pad)이 모두 같은 보기 값(orbit.js)을 바꾼다.
+ * 펼친 전개도는 늘 위에서 본 처음 크기라 답하기 전 화면은 문항·조작과 무관하게 같다(가로 돌림만 지금처럼 된다).
  */
 import { icon } from '../../shared/ui/icons.js';
 import { LABELS, foldNet, fullVertices, missingSlots, overlappingPairs } from './fold.js';
@@ -15,40 +19,58 @@ import {
   dot,
   identity,
   multiply,
-  normalize,
   scale as scaleVec,
   scaling,
   sub,
   toCssMatrix,
   translation,
 } from './geometry.js';
+import {
+  DRAG_START,
+  HOME_WORD,
+  SPIN,
+  TILT,
+  TURN_BUTTON,
+  TURN_KEY,
+  dragView,
+  eyeOf,
+  facesViewer,
+  homeView,
+  isBackFacing,
+  isHome,
+  pinchView,
+  sceneAt,
+  shadeOf,
+  stepTilt,
+  stepZoom,
+  tiltOf,
+  tiltWord,
+  tiltZone,
+  turnBy,
+  uprightTurn,
+  viewDir,
+  viewLimits,
+  wheelView,
+  zoomWord,
+} from './orbit.js';
 
-const TILT = 56; // 다 접었을 때 기울기(도): 위쪽이 멀어져 비스듬히 내려다본다
-const SPIN = -28; // 다 접었을 때 돌린 각도(도): 옆면 두 개가 보이게
 const DURATION = 1300; // 끝까지 접는 데 걸리는 시간(ms)
 const SCENE_GAP = 550; // 움직임 줄이기에서 장면 사이 시간(ms)
 const MAX_UNIT = 116;
 const MIN_UNIT = 30;
 const TAP = 48; // 누르는 곳(빈 자리 버튼) 최소 크기(px)
 const MAX_ZOOM = 1.7; // 다 접은 입체를 이만큼까지 크게 본다
+const RASTER_MAX = 4; // 선명하게 그리는 배수의 위쪽 끝 (자동 맞춤 1.7 × 학생 배율 2 = 3.4배까지 본다)
+const PAD_GAP = 8; // 펼친 전개도의 면·빈 자리와 보기 조작판 사이에 두는 틈(px)
 // 한 꼭짓점에 네 면이 모인 전개도는 덩어리에 붙은 경첩만 약 56°까지 접히고 멈춘다.
 // (65°에서는 덩어리 양쪽에 접힌 면이 비스듬해 좁게 보였다 — net-workshop 재검토 2 R3)
 const STUCK_AT = 0.62;
-const LIGHT = normalize([-0.45, -0.55, 1]);
 /** 색종이 면 색: 디자인 토큰 --face-1 ~ --face-8 (가 노랑, 나 하늘, 다 연두, 라 분홍, 마 보라, 바 귤색 …) */
 export const faceColor = (label) => `var(--face-${(Math.max(0, LABELS.indexOf(label)) % 8) + 1})`;
 
 export const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
 const rad = (deg) => (deg * Math.PI) / 180;
-
-/** CSS의 rotateX(a) rotateZ(b)를 방향 벡터에 적용 (빛 계산용) */
-function viewDir(n, tiltDeg, spinDeg) {
-  const b = rad(spinDeg);
-  const a = rad(tiltDeg);
-  const z1 = [n[0] * Math.cos(b) - n[1] * Math.sin(b), n[0] * Math.sin(b) + n[1] * Math.cos(b), n[2]];
-  return [z1[0], z1[1] * Math.cos(a) - z1[2] * Math.sin(a), z1[1] * Math.sin(a) + z1[2] * Math.cos(a)];
-}
 
 /** 처음 시점(tilt, SPIN)에서 turn만큼 더 돌렸을 때 방향 벡터가 화면에서 어디를 향하나 (z > 0이면 보는 쪽) */
 export const viewDirection = (v, turn = 0, tilt = TILT) => viewDir(v, tilt, SPIN + turn);
@@ -172,7 +194,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     class: `fold-stage${still ? ' is-still' : ''}`,
     tabindex: still ? null : '0',
     role: still ? null : 'group',
-    'aria-label': still ? null : '전개도 무대. 왼쪽·오른쪽 방향키로 돌려 볼 수 있어요.',
+    'aria-label': still ? null : '전개도 무대. 접은 뒤에는 끌거나 방향키로 돌려 보고, 더하기·빼기 키로 크게·작게 볼 수 있어요. 0 키는 처음 보기예요.',
     'aria-hidden': still ? 'true' : null,
     inert: still,
     dataset: { fold: 'flat' },
@@ -181,9 +203,14 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   let net = null;
   let slots = [];
   let t = 0;
-  let spin = 0;
+  let view = homeView(); // 학생이 바꾼 보기 { spin, lift, zoom } (orbit.js). 새 전개도가 놓이면 처음으로
+  let viewOn = false; // 보기 조작(끌기·위아래·크게 작게)을 켰나 — 접기 막대가 풀릴 때(답한 뒤) 함께 켠다
   let unit = 60;
-  let zoom = 1;
+  let zoom = 1; // 자동 맞춤 배율: 다 접은 입체를 무대에 맞게
+  // 선명하게 그리는 배수(1~4): 브라우저는 3D 면을 놓인 크기(1배)로 그려 두고 늘리므로, 크게 볼 때는 면을 이만큼 크게 놓고
+  // (--unit × raster, 테두리·빗금은 --k) 무대 변환을 그만큼 줄인다. 보이는 크기·자리는 같고 글자·빗금만 또렷해진다.
+  // 멈춰 있을 때만 바꾼다(settle) — 끌기·접는 움직임 동안에는 transform만 바뀐다. 답하기 전·펼친 상태·처음 화면 그림은 늘 1
+  let raster = 1;
   let baseTurn = 0;
   let baseTilt = TILT;
   let revealed = false;
@@ -191,15 +218,24 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   let blocked = []; // 한 꼭짓점에 네 면이 모인 곳
   let layout = null; // { unit, origin: [x, y] } 펼친 상태를 놓는 판의 칸과 같은 자리·크기로 (자유 배치)
   let layoutBox = null; // layout을 맞춘 때의 무대 크기
+  let padEl = null; // 무대 오른쪽 위에 겹쳐 놓인 보기 조작판 — 펼친 전개도가 그 밑에 들어가지 않게 한다 (keepClear)
   let faceEls = new Map();
   let slotEls = new Map();
   let markEls = [];
   let marksShown = false; // 다 접힌 뒤의 표시(겹침·빈 자리·이름표)가 보이는 중
   let marksKey = '';
+  let marksOk = false;
+  let hintEl = null; // 이름표의 "돌려 보면 빈 자리가 보여요"
+  let unseenSlots = []; // 아직 한 번도 보이지 않은 빈 자리 (모두 보이면 안내를 끄고 다시 켜지 않는다)
+  let hintDone = false;
   let raf = 0;
   const timers = new Set();
   const listeners = new Set();
   const markListeners = new Set();
+  const viewListeners = new Set();
+  const dragListeners = new Set();
+  const sayListeners = new Set();
+  let viewKey = '';
   let destroyed = false;
 
   const later = (fn, ms) => {
@@ -241,11 +277,59 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     boxSize = { width, height };
     const fit = (margin) => Math.floor(Math.min(width / (max[0] - min[0] + margin), height / (max[1] - min[1] + margin)));
     let size = fit(0.9);
+    // 보기 조작판 밑에 면·빈 자리가 들어가는 모양만 줄인다(조작판과 틈 8px). 안 겹치는 모양은 지금 크기 그대로
+    if (Math.min(MAX_UNIT, size) > padLimit(box, min, max, 0)) size = Math.min(size, Math.floor(padLimit(box, min, max, PAD_GAP)));
     // 빈 자리 버튼이 있으면 가장자리 여백을 줄여서라도 48px 이상으로 (좁은 휴대폰)
     if (slots.length > 0 && size < TAP) size = Math.max(size, Math.min(TAP, fit(0.1)));
     unit = layout ? layout.unit : Math.max(MIN_UNIT, Math.min(MAX_UNIT, size));
     zoom = blocked.length > 0 ? 1 : Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
-    scene.style.setProperty('--unit', `${unit}px`);
+    applyRaster();
+  }
+
+  /**
+   * 보기 조작판(무대 오른쪽 위 모서리)의 버튼이 펼친 전개도의 면·빈 자리를 가리지 않는(틈 gap px) 가장 큰 칸 크기(px). 가릴 일이 없으면 Infinity.
+   * 전개도는 무대 가운데에 놓이므로, 오른쪽 위 칸이 버튼의 왼쪽 변보다 왼쪽에 있거나 아래쪽 변보다 아래에 있으면 된다
+   * (십자 모양이라 버튼이 없는 아래 두 모서리 칸에는 면이 들어가도 된다).
+   * 조작판이 무대 밖에 있을 때(휴대폰의 아래 띠)·숨겨졌을 때·판 자리를 맞출 때(자유 배치 layout)는 줄이지 않는다.
+   */
+  function padLimit(box, min, max, gap) {
+    if (!padEl || layout) return Infinity;
+    const mid = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2];
+    const rects = net.faces.map((f) => bounds(f.poly)).concat(slots.map((s) => ({ min: s.cell, max: [s.cell[0] + 1, s.cell[1] + 1] })));
+    let limit = Infinity;
+    for (const button of padEl.querySelectorAll('button')) {
+      const b = button.getBoundingClientRect();
+      if (b.width === 0 || b.left >= box.right || b.right <= box.left || b.top >= box.bottom || b.bottom <= box.top) continue;
+      const roomX = b.left - box.left - gap - box.width / 2; // 무대 가운데에서 버튼 왼쪽 변까지
+      const roomY = box.height / 2 - (b.bottom - box.top) - gap; // 버튼 아래쪽 변에서 무대 가운데까지
+      for (const r of rects) {
+        const right = r.max[0] - mid[0]; // 칸의 오른쪽 변이 가운데에서 떨어진 정도(칸)
+        const up = mid[1] - r.min[1]; // 칸의 위쪽 변이 가운데보다 위에 있는 정도(칸)
+        if (right <= 0) continue;
+        const byWidth = roomX / right;
+        const byHeight = up > 0 ? roomY / up : roomY >= 0 ? Infinity : 0;
+        limit = Math.min(limit, Math.max(byWidth, byHeight));
+      }
+    }
+    return limit;
+  }
+
+  /** 면을 놓는 크기(칸 한 변 px)와 테두리·빗금 굵기 배수를 무대에 준다 */
+  function applyRaster() {
+    scene.style.setProperty('--unit', `${unit * raster}px`);
+    if (raster === 1) scene.style.removeProperty('--k');
+    else scene.style.setProperty('--k', String(raster));
+  }
+
+  /** 멈춰 있을 때 부른다: 지금 보이는 배율에 맞춰 선명하게 그리는 배수를 고르고, 바뀌었으면 다시 그린다 */
+  function settle() {
+    if (!net || destroyed) return;
+    const { scale } = sceneAt(t, { tilt: baseTilt, turn: baseTurn }, zoom, view);
+    const next = viewOn && !still ? Math.max(1, Math.min(RASTER_MAX, Math.ceil(scale - 1e-3))) : 1;
+    if (next === raster) return;
+    raster = next;
+    applyRaster();
+    render();
   }
 
   /** layout이 있으면 펼친 상태(t = 0)에서 판의 칸 (x, y)가 화면의 같은 자리에 오도록 하는 가운데 점 */
@@ -256,9 +340,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   // ── 그리기 ───────────────────────────
   /** 펼친 좌표의 사각형(local px) → 화면 행렬 */
   function placeMatrix(modelMatrix, origin, center, lift = [0, 0, 0]) {
+    const px = unit * raster;
     return multiply(
-      scaling(unit),
-      multiply(translation(add(scaleVec(center, -1), lift)), multiply(modelMatrix, multiply(translation(origin), scaling(1 / unit)))),
+      scaling(px),
+      multiply(translation(add(scaleVec(center, -1), lift)), multiply(modelMatrix, multiply(translation(origin), scaling(1 / px)))),
     );
   }
 
@@ -271,10 +356,11 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     let center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     // 놓는 판에서 이어 접을 때: 펼친 상태는 판의 칸 자리 그대로, 접을수록 무대 가운데로 (면이 튀지 않게)
     if (layout) center = add(scaleVec(layoutCenter(), 1 - t), scaleVec(center, t));
-    const tilt = baseTilt * t;
-    const turn = spin + (SPIN + baseTurn) * t;
-    const z = (1 + (zoom - 1) * t).toFixed(4);
+    // 학생이 바꾼 기울기·배율은 펼친 상태에서 0으로 곱해진다(orbit.js sceneAt): 펼친 전개도는 늘 위에서 본 처음 크기
+    const { tilt, turn, scale } = sceneAt(t, { tilt: baseTilt, turn: baseTurn }, zoom, view);
+    const z = (scale / raster).toFixed(4);
     scene.style.transform = `scale3d(${z}, ${z}, ${z}) rotateX(${tilt.toFixed(3)}deg) rotateZ(${turn.toFixed(3)}deg)`;
+    const look = { tilt, turn, px: unit * scale, eye: eyeOf(boxSize.height) };
 
     const lifts = marksShown ? overlapLifts(folded) : new Map();
     for (const f of folded.faces) {
@@ -283,25 +369,27 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       const { min: bmin } = bounds(src.poly);
       const lift = liftVector(f, lifts.get(f.id) ?? 0);
       faceEl.style.transform = toCssMatrix(placeMatrix(f.matrix, [bmin[0], bmin[1], 0], center, lift));
-      const k = dot(normalize(viewDir(f.normal, tilt, turn)), LIGHT);
-      faceEl.style.setProperty('--shade', (0.34 * (1 - Math.max(0, Math.min(1, k)))).toFixed(3));
-      if (marksShown) faceEl.style.setProperty('--mark-turn', `${uprightTurn(f, tilt, turn)}deg`);
+      faceEl.style.setProperty('--shade', shadeOf(f.normal, tilt, turn).toFixed(3));
+      // 종이 안쪽이 보이는 면(구멍으로 보이는 안쪽 면, 아래에서 본 2×2 장면 등): 글자가 거울상이 되지 않게 뒤집는다(.is-back)
+      const back = isBack(f.normal, f.center, center, look);
+      faceEl.classList.toggle('is-back', back);
+      if (marksShown) faceEl.style.setProperty('--mark-turn', `${uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), tilt, turn)}deg`);
     }
     for (const s of slots) {
       const slotEl = slotEls.get(s.key);
       slotEl.style.transform = toCssMatrix(placeMatrix(identity(), [s.cell[0], s.cell[1], 0], center));
     }
     el.classList.toggle('is-flat', t <= 1e-6);
-    for (const m of markEls) m.place(center, folded);
+    for (const m of markEls) m.place(center, folded, look);
     // 애니메이션 중에는 animateTo가 상태를 정한다
     if (!raf && timers.size === 0) el.dataset.fold = foldState();
+    checkHint();
+    emitView();
   }
 
-  /** 면 안의 글자(✗ 겹쳐요)를 지금 시점에서 바로 읽히게 돌릴 각도 (90° 단위) */
-  function uprightTurn(face, tilt, turn) {
-    const down = viewDir(applyDir(face.matrix, [0, 1, 0]), tilt, turn);
-    const angle = (Math.atan2(down[1], down[0]) * 180) / Math.PI; // 화면에서 면의 '아래' 방향
-    return ((Math.round((90 - angle) / 90) * 90) % 360 + 360) % 360;
+  /** 종이 안쪽이 보이나: 면 가운데 mid(모델 좌표)를 무대 가운데 기준 px로 바꿔 눈 위치와 견준다 */
+  function isBack(normal, mid, center, look) {
+    return isBackFacing(normal, scaleVec(sub(mid, center), look.px), look.tilt, look.turn, look.eye);
   }
 
   /** 겹친 면마다 몇 번째로 띄울지 (0, 1, 2, …) */
@@ -332,6 +420,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     }
     badge.hidden = true;
     badge.replaceChildren(); // 숨긴 이름표에 앞 장면의 까닭 글자가 남지 않게
+    hintEl = null;
+    unseenSlots = [];
     marksShown = false;
     el.classList.remove('marks-on', 'marks-blocked');
   }
@@ -346,8 +436,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     const markEl = h('div', { class: 'net-dot', 'aria-hidden': 'true' }, h('span', null, '●'));
     addMark(markEl, (center, folded) => {
       const face = folded.faces.find((f) => vertex.faces.includes(f.id));
-      markEl.style.width = `${2 * r * unit}px`;
-      markEl.style.height = `${2 * r * unit}px`;
+      markEl.style.width = `${2 * r * unit * raster}px`;
+      markEl.style.height = `${2 * r * unit * raster}px`;
       markEl.style.transform = toCssMatrix(placeMatrix(face.matrix, [vertex.point[0] - r, vertex.point[1] - r, 0], center, scaleVec(face.normal, 0.02)));
     });
   }
@@ -362,10 +452,13 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       u[2], v[2], normal[2], origin[2],
       0, 0, 0, 1,
     ];
-    addMark(markEl, (center) => {
-      markEl.style.width = `${unit}px`;
-      markEl.style.height = `${unit}px`;
+    addMark(markEl, (center, folded, look) => {
+      markEl.style.width = `${unit * raster}px`;
+      markEl.style.height = `${unit * raster}px`;
       markEl.style.transform = toCssMatrix(placeMatrix(model, [0, 0, 0], center, scaleVec(normal, 0.01)));
+      // "비어요" 글자도 면 글자와 같은 규칙으로 바로 세운다 (아래에서 봐도 거꾸로 서지 않게, 안쪽에서 보면 뒤집어서)
+      markEl.classList.toggle('is-back', isBack(normal, c, center, look));
+      markEl.style.setProperty('--mark-turn', `${uprightTurn(u, v, look.tilt, look.turn)}deg`);
     });
   }
 
@@ -396,10 +489,31 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     badge.classList.toggle('is-wrong', !ok);
     const text = ok ? '정육면체가 됐어요' : blocked.length > 0 ? '네 면이 한 점에 모여 접을 수 없어요' : '정육면체가 안 돼요';
     badge.replaceChildren(h('span', { class: 'badge-main' }, icon(ok ? 'check' : 'cross'), text));
-    // 빈 자리가 겹친 자리의 정반대라 지금 시점에서 안 보이면 돌려 보라고 알려 준다
-    const hiddenMissing = missing.some((s) => viewDir(s.normal, baseTilt, SPIN + baseTurn + spin)[2] < 0.05);
-    if (hiddenMissing) badge.append(h('span', { class: 'badge-hint' }, icon('rotr'), '돌려 보면 빈 자리가 보여요'));
+    // 빈 자리가 겹친 자리의 정반대라 지금 보기(내가 돌리고 기울인 것까지)에서 안 보이면 돌려 보라고 알려 준다
+    unseenSlots = hintDone ? [] : missing.filter(slotHidden);
+    const hiddenMissing = unseenSlots.length > 0;
+    if (hiddenMissing) {
+      hintEl = h('span', { class: 'badge-hint' }, icon('rotr'), '돌려 보면 빈 자리가 보여요');
+      badge.append(hintEl);
+    }
+    marksOk = ok;
     for (const fn of markListeners) fn({ ok, hiddenMissing });
+  }
+
+  /** 다 접은 입체의 그 빈 자리가 지금 보기에서 보는 사람 쪽을 향하지 않나 */
+  function slotHidden(slot) {
+    return !facesViewer(slot.normal, tiltOf({ tilt: baseTilt }, view), SPIN + baseTurn + view.spin);
+  }
+
+  /** 보기를 바꿔 숨어 있던 빈 자리가 모두 한 번씩 보였으면 "돌려 보면…" 안내와 [↻] 강조를 끈다 (다시 켜지 않는다) */
+  function checkHint() {
+    if (!hintEl) return;
+    unseenSlots = unseenSlots.filter(slotHidden);
+    if (unseenSlots.length > 0) return;
+    hintEl.remove();
+    hintEl = null;
+    hintDone = true;
+    for (const fn of markListeners) fn({ ok: marksOk, hiddenMissing: false });
   }
 
   function setT(value) {
@@ -458,7 +572,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     slots = nextSlots;
     revealed = false;
     t = 0;
-    spin = 0;
+    endGesture();
+    view = homeView(); // 새 전개도는 늘 처음 보기에서 시작한다 (판 → 무대 이어 접기도 여기서 시작)
+    raster = 1;
+    hintDone = false;
     blocked = fullVertices(net);
     tOf = stuckTOf(net, blocked); // 2×2 덩어리면 접다가 멈추는 장면
     faceEls = new Map(net.faces.map((f) => [f.id, buildFace(f)]));
@@ -472,6 +589,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
 
   function finishState() {
     el.dataset.fold = foldState();
+    settle();
   }
 
   /** target(0~1)까지 접는다. 끝나면 풀리는 Promise (다른 접기·새 전개도로 멈추면 풀리지 않는다) */
@@ -530,19 +648,216 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     return animateTo(0);
   }
 
+  // ── 보기: 돌려 보기 · 크게 작게 (spec 17절) ─────────────
+  const baseView = () => ({ tilt: baseTilt, turn: baseTurn });
+  /** 새 조작(끌기·위아래·크게 작게·처음 보기로)이 되는 때: 접기 막대가 풀려 있고(답한 뒤) 조금이라도 접힌 상태 */
+  const canView = () => viewOn && !still && t > 1e-6;
+  const say = (text) => {
+    if (destroyed) return;
+    for (const fn of sayListeners) fn(text);
+  };
+
+  /** 조작판에 지금 상태를 알린다(바뀌었을 때만): { can, atTop, atBottom, zoomMax, zoomMin, home } */
+  function emitView() {
+    const can = canView();
+    el.classList.toggle('can-view', can);
+    if (!can && gesture) endGesture(); // 잠기거나 다 펴면 하던 끌기를 멈춘다
+    const state = { can, ...viewLimits(view, baseView()) };
+    const key = Object.values(state).join();
+    if (key === viewKey) return;
+    viewKey = key;
+    for (const fn of viewListeners) fn(state);
+  }
+
+  /** 가로로 돌리기: 지금처럼 펼친 전개도(답하기 전)도 평면에서 돈다 */
   function rotate(deg) {
-    spin += deg;
+    view = turnBy(view, deg);
     render();
+  }
+
+  /** 위쪽(dir < 0)·아래쪽(dir > 0)으로 15° 눈금까지. 보는 방향 구간이 바뀌면 화면 읽기 알림 */
+  function tiltStep(dir) {
+    if (!canView()) return false;
+    const before = tiltZone(tiltOf(baseView(), view));
+    view = stepTilt(view, baseView(), dir);
+    render();
+    const tilt = tiltOf(baseView(), view);
+    if (tiltZone(tilt) !== before) say(tiltWord(tilt));
+    return true;
+  }
+
+  /** 크게(dir > 0)·작게(dir < 0) 다음 단계로 */
+  function zoomStep(dir) {
+    if (!canView()) return false;
+    const before = view.zoom;
+    view = stepZoom(view, dir);
+    render();
+    settle();
+    if (view.zoom !== before) say(zoomWord(view.zoom));
+    return true;
+  }
+
+  /** 가로 돌림·기울기·배율을 한 번에 처음으로 */
+  function resetView() {
+    if (!canView()) return false;
+    if (isHome(view)) return true;
+    view = homeView();
+    render();
+    settle();
+    say(HOME_WORD);
+    return true;
+  }
+
+  // 끌어서 돌리기(마우스·한 손가락) · 두 손가락 벌리기 · 휠
+  const pointers = new Map(); // pointerId → 마지막 자리 { x, y }
+  let gesture = null; // { mode: 'wait'(문턱 전) | 'turn' | 'pinch', x, y, zone, zoom, … }
+  let swallowClick = false; // 끌기 뒤 따라오는 click 한 번을 삼킨다
+  let swallowTimer = 0;
+  let wheelTimer = 0;
+
+  function capture(pointerId) {
+    try {
+      el.setPointerCapture?.(pointerId);
+    } catch {
+      // 이미 떨어진 포인터면 붙잡지 않는다
+    }
+  }
+
+  /** 끌기·벌리기가 시작됐다: 무대가 포인터를 붙잡고, 뒤따르는 click을 삼킬 준비를 한다 */
+  function startMoving() {
+    for (const id of pointers.keys()) capture(id);
+    el.classList.add('is-turning');
+    clearTimeout(swallowTimer);
+    swallowTimer = 0;
+    swallowClick = true;
+    for (const fn of dragListeners) fn();
+  }
+
+  /** 끌기·벌리기를 끝낸다. told: 손을 떼어 끝났을 때만 true — 보는 방향 구간·배율이 바뀌었으면 한 번 알린다 */
+  function endGesture(told = false) {
+    const g = gesture;
+    gesture = null;
+    pointers.clear();
+    globalThis.removeEventListener?.('pointermove', onPointerMove);
+    globalThis.removeEventListener?.('pointerup', onPointerUp);
+    globalThis.removeEventListener?.('pointercancel', onPointerUp);
+    el.classList.remove('is-turning');
+    if (!g || g.mode === 'wait') return;
+    settle();
+    // click은 pointerup과 같은 차례에 오므로, 그 차례가 지나면 삼키기를 푼다 (click이 오지 않는 터치 끌기에서 남지 않게)
+    clearTimeout(swallowTimer);
+    swallowTimer = setTimeout(() => {
+      swallowTimer = 0;
+      swallowClick = false;
+    }, 0);
+    if (!told) return;
+    const tilt = tiltOf(baseView(), view);
+    if (tiltZone(tilt) !== g.zone) say(tiltWord(tilt));
+    else if (Math.abs(view.zoom - g.zoom) > 0.005) say(zoomWord(view.zoom));
+  }
+
+  function onPointerDown(event) {
+    if (!canView() || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (event.isPrimary && gesture) endGesture(); // 뗀 것을 못 받은 포인터가 남아 있으면 버린다
+    if (pointers.size >= 2) return; // 셋째 손가락은 쓰지 않는다
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 1) {
+      gesture = { mode: 'wait', x: event.clientX, y: event.clientY, zone: tiltZone(tiltOf(baseView(), view)), zoom: view.zoom };
+      // 끌기 전(문턱 전)에는 포인터를 붙잡지 않으므로, 무대 밖에서 움직이거나 떼어도 받도록 창에서 듣는다
+      globalThis.addEventListener('pointermove', onPointerMove);
+      globalThis.addEventListener('pointerup', onPointerUp);
+      globalThis.addEventListener('pointercancel', onPointerUp);
+      return;
+    }
+    // 두 번째 손가락: 벌리기·오므리기
+    const [a, b] = [...pointers.values()];
+    gesture = { ...gesture, mode: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: view.zoom };
+    startMoving();
+  }
+
+  function onPointerMove(event) {
+    const p = pointers.get(event.pointerId);
+    if (!p || !gesture) return;
+    if (gesture.mode === 'pinch') {
+      p.x = event.clientX;
+      p.y = event.clientY;
+      if (pointers.size < 2) return;
+      const [a, b] = [...pointers.values()];
+      view = pinchView(view, gesture.zoom0, gesture.dist, Math.hypot(a.x - b.x, a.y - b.y));
+      render();
+      return;
+    }
+    if (gesture.mode === 'wait') {
+      if (Math.hypot(event.clientX - gesture.x, event.clientY - gesture.y) <= DRAG_START) return;
+      gesture.mode = 'turn';
+      startMoving();
+    }
+    const dx = event.clientX - p.x;
+    const dy = event.clientY - p.y;
+    p.x = event.clientX;
+    p.y = event.clientY;
+    view = dragView(view, baseView(), dx, dy);
+    render();
+  }
+
+  function onPointerUp(event) {
+    if (!pointers.delete(event.pointerId)) return;
+    // 두 손가락에서 한 손가락이 되면: 남은 손가락의 마지막 자리부터 이어 돌린다(튀지 않는다)
+    if (pointers.size === 1 && gesture?.mode === 'pinch') gesture.mode = 'turn';
+    else if (pointers.size === 0) endGesture(true);
+  }
+
+  function onClickCapture(event) {
+    if (!swallowClick) return;
+    swallowClick = false;
+    event.stopPropagation();
+    event.preventDefault();
+  }
+
+  /** 접은 입체 위에서 휠(터치패드 두 손가락 쓸기)·Ctrl+휠(터치패드 벌리기): 크게·작게. 그 밖에서는 페이지 스크롤 그대로 */
+  function onWheel(event) {
+    if (!canView()) return;
+    event.preventDefault();
+    const before = view.zoom;
+    view = wheelView(view, event.deltaY, { ctrl: event.ctrlKey, lines: event.deltaMode === 1 });
+    if (view.zoom === before) return;
+    render();
+    // 휠이 멈추면 한 번: 선명하게 다시 그리고, 배율을 화면 읽기로 알린다
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      wheelTimer = 0;
+      settle();
+      say(zoomWord(view.zoom));
+    }, 300);
+  }
+
+  /** 사파리의 두 손가락 벌리기(화면 전체 확대)를 접은 입체 위에서는 막는다 */
+  function onGestureStart(event) {
+    if (canView()) event.preventDefault();
   }
 
   function onKey(event) {
     if (still || event.target instanceof HTMLInputElement) return;
-    if (event.key === 'ArrowLeft') rotate(-15);
-    else if (event.key === 'ArrowRight') rotate(15);
+    if (event.ctrlKey || event.metaKey || event.altKey) return; // 브라우저 확대(Ctrl + − 0)·뒤로 가기는 건드리지 않는다
+    const { key } = event;
+    if (key === 'ArrowLeft') rotate(-TURN_KEY);
+    else if (key === 'ArrowRight') rotate(TURN_KEY);
+    else if (!canView()) return; // 잠겨 있으면 ↑↓는 페이지 스크롤 그대로
+    else if (key === 'ArrowUp') tiltStep(-1);
+    else if (key === 'ArrowDown') tiltStep(1);
+    else if (key === '+' || key === '=') zoomStep(1);
+    else if (key === '-' || key === '_') zoomStep(-1);
+    else if (key === '0' || key === 'Home') resetView();
     else return;
     event.preventDefault();
   }
   el.addEventListener('keydown', onKey);
+  if (!still) {
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('click', onClickCapture, true);
+    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('gesturestart', onGestureStart);
+  }
 
   const resizer = typeof ResizeObserver === 'function'
     ? new ResizeObserver(() => {
@@ -551,6 +866,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       if (layout && layoutBox && (Math.abs(box.width - layoutBox.width) > 1 || Math.abs(box.height - layoutBox.height) > 1)) layout = null;
       measure();
       render();
+      if (!raf && timers.size === 0 && !gesture) settle();
     })
     : null;
   resizer?.observe(el);
@@ -567,6 +883,38 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     animateTo,
     peek,
     rotate,
+    tiltStep,
+    zoomStep,
+    resetView,
+    /** 보기 조작(끌기·위아래·크게 작게)을 켜고 끈다. 접기 막대의 잠금과 함께 쓴다 (createFoldTools.lock) */
+    setViewEnabled(value) {
+      viewOn = Boolean(value);
+      if (!viewOn) endGesture();
+      render();
+      emitView();
+      if (!raf && timers.size === 0) settle();
+    },
+    /** 무대 오른쪽 위에 겹쳐 놓는 조작판을 알려 준다: 펼친 전개도의 면·빈 자리가 그 밑에 들어가지 않게 칸 크기를 맞춘다 */
+    keepClear(element) {
+      padEl = element ?? null;
+      measure();
+      render();
+    },
+    /** 조작판 상태 알림: fn({ can, atTop, atBottom, zoomMax, zoomMin, home }) */
+    onView(fn) {
+      viewListeners.add(fn);
+      return () => viewListeners.delete(fn);
+    },
+    /** 끌기·벌리기가 시작될 때 알림 */
+    onDrag(fn) {
+      dragListeners.add(fn);
+      return () => dragListeners.delete(fn);
+    },
+    /** 화면 읽기 알림 문장(보는 방향·크기): fn(text) */
+    onSay(fn) {
+      sayListeners.add(fn);
+      return () => sayListeners.delete(fn);
+    },
     reveal() {
       revealed = true;
       updateMarks();
@@ -587,9 +935,19 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       destroyed = true;
       stopAnimation();
       resizer?.disconnect();
+      endGesture();
+      clearTimeout(swallowTimer);
+      clearTimeout(wheelTimer);
       el.removeEventListener('keydown', onKey);
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('click', onClickCapture, true);
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGestureStart);
       listeners.clear();
       markListeners.clear();
+      viewListeners.clear();
+      dragListeners.clear();
+      sayListeners.clear();
     },
   };
 }
@@ -598,8 +956,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
 export const MAT_TOOLS_LIFT = 64;
 
 /**
- * 재단 매트 아래쪽 띠의 접기 조작: [접어 보기 / 펴기] [접는 정도 막대] [↺] [↻]
- * → { el, lock(잠금), turnRight }
+ * 접기 조작과 보기 조작.
+ * - el: 재단 매트 아래쪽 띠 [접어 보기 / 펴기] [접는 정도 막대]
+ * - pad: 보는 방향과 크기 조작판(.view-pad) — 무대 오른쪽 위 십자(휴대폰은 아래 띠 두 줄). 매트에 el 다음으로 붙인다.
+ *   [왼쪽·오른쪽으로 돌려 보기]는 지금처럼 늘 되고, [위쪽·아래쪽으로 돌려 보기] [크게·작게 보기] [처음 보기로]는
+ *   답한 뒤 접힌 입체에서만 켜진다(잠김·한계에 닿으면 disabled). 끌기·휠·키보드와 같은 일을 한다(view의 같은 함수).
+ * → { el, pad, turnRight, lock(잠금: 접기와 보기 조작을 함께), reset, destroy }
  */
 export function createFoldTools({ ctx, view }) {
   const { h } = ctx;
@@ -616,26 +978,68 @@ export function createFoldTools({ ctx, view }) {
     'aria-label': '접는 정도',
     oninput: () => view.setT(Number(slider.value) / 100),
   });
-  const rotateButton = (label, deg, name) => h('button', {
+  const padButton = (label, cls, name, onclick) => h('button', {
     type: 'button',
-    class: 'btn btn-icon',
+    class: `btn btn-icon ${cls}`,
     'aria-label': label,
     title: label,
-    onclick: () => view.rotate(deg),
+    onclick,
   }, icon(name));
-  const turnRight = rotateButton('오른쪽으로 돌려 보기', 30, 'rotr');
-  // 빈 자리가 안 보이는 쪽에 있으면 [↻]를 잠깐 강조한다 (이름표에도 "돌려 보면 빈 자리가 보여요")
+  const turnLeft = padButton('왼쪽으로 돌려 보기', 'view-left', 'rotl', () => view.rotate(-TURN_BUTTON));
+  const turnRight = padButton('오른쪽으로 돌려 보기', 'view-right', 'rotr', () => view.rotate(TURN_BUTTON));
+  const tiltUp = padButton('위쪽으로 돌려 보기', 'view-up', 'up', () => view.tiltStep(-1));
+  const tiltDown = padButton('아래쪽으로 돌려 보기', 'view-down', 'down', () => view.tiltStep(1));
+  const zoomOut = padButton('작게 보기', 'view-out', 'zoomout', () => view.zoomStep(-1));
+  const zoomIn = padButton('크게 보기', 'view-in', 'zoomin', () => view.zoomStep(1));
+  const home = padButton('처음 보기로', 'view-home', 'cube', () => view.resetView());
+  // 끌기 안내: 보기 조작이 처음 켜질 때 한 번 보이고, 처음 끌거나 문제가 바뀌면 지운다 (눌리지 않는 칩. 휴대폰은 자리가 없어 숨긴다)
+  const tip = h('p', { class: 'view-tip', hidden: true, 'aria-hidden': 'true' }, icon('hand'), '끌어서 돌려 봐요');
+  // Tab 순서: 왼쪽 · 오른쪽 · 위쪽 · 아래쪽 · 작게 · 크게 · 처음 보기로 (자리는 CSS grid-area가 정한다)
+  const pad = h('div', { class: 'view-pad', role: 'group', 'aria-label': '보는 방향과 크기' },
+    turnLeft, turnRight, tiltUp, tiltDown, zoomOut, zoomIn, home, tip);
+
+  /**
+   * 한계에 닿아 꺼지는 버튼에 초점이 있었으면 무대로 옮긴다 — 키보드로 누르던 초점이 사라지지 않고,
+   * 무대에서는 방향키와 + − 0으로 이어서 볼 수 있다(반대쪽 버튼으로 옮기면 Enter를 한 번 더 눌렀을 때 되돌아간다)
+   */
+  function setOff(button, off) {
+    if (button.disabled === off) return;
+    const focused = off && document.activeElement === button;
+    button.disabled = off;
+    if (focused) view.el.focus({ preventScroll: true });
+  }
+  let tipUsed = false;
+  view.onView((s) => {
+    setOff(tiltUp, !s.can || s.atTop);
+    setOff(tiltDown, !s.can || s.atBottom);
+    setOff(zoomIn, !s.can || s.zoomMax);
+    setOff(zoomOut, !s.can || s.zoomMin);
+    setOff(home, !s.can || s.home);
+    // 끌기 안내 칩: 처음 켜질 때 한 번. 다시 잠기거나 다 펴면(끌 수 없을 때) 지운다
+    if (!s.can) tip.hidden = true;
+    else if (!tipUsed) {
+      tipUsed = true;
+      tip.hidden = false;
+    }
+  });
+  view.onDrag(() => {
+    tip.hidden = true;
+  });
+  view.keepClear(pad);
+  // 지금 보는 방향·크기는 화면 읽기 알림으로만 알린다(무대를 가리지 않게). 면 이름·빈 자리·겹침은 말하지 않는다
+  view.onSay((text) => ctx.feedback.announce(text));
+  for (const button of [tiltUp, tiltDown, zoomOut, zoomIn, home]) button.disabled = true;
+
+  // 빈 자리가 안 보이는 쪽에 있으면 [↻]를 잠깐 강조한다 (이름표에도 "돌려 보면 빈 자리가 보여요"). 돌려서 보이면 바로 끈다
   let hintTimer = null;
   view.onMarks(({ hiddenMissing }) => {
     clearTimeout(hintTimer);
     turnRight.classList.toggle('is-hint', hiddenMissing);
     if (hiddenMissing) hintTimer = setTimeout(() => turnRight.classList.remove('is-hint'), 4000);
   });
-  const el = h('div', { class: 'mat-tools' },
+  const el = h('div', { class: 'mat-tools fold-tools' },
     foldButton,
     h('label', { class: 'fold-slider' }, h('span', { class: 'fold-slider-label' }, '접는 정도'), slider),
-    rotateButton('왼쪽으로 돌려 보기', -30, 'rotl'),
-    turnRight,
   );
 
   const sync = (value) => {
@@ -653,15 +1057,19 @@ export function createFoldTools({ ctx, view }) {
 
   return {
     el,
+    pad,
     turnRight,
+    /** 접기(버튼·막대)와 보기 조작(끌기·위아래·크게 작게)을 함께 잠그고 푼다. 답이 기록된 뒤에만 푼다 */
     lock(value) {
       foldButton.disabled = value;
       slider.disabled = value;
+      view.setViewEnabled(!value);
     },
     reset() {
       sync(0);
       clearTimeout(hintTimer);
       turnRight.classList.remove('is-hint');
+      tip.hidden = true;
     },
     destroy() {
       clearTimeout(hintTimer);
@@ -670,9 +1078,9 @@ export function createFoldTools({ ctx, view }) {
 }
 
 /**
- * 판별·마주 보는 면·면 붙이기 화면의 틀: 왼쪽 재단 매트(3D 무대 + 접기 조작 띠), 오른쪽 작업 지시서(엔진 ctx.ui.order).
+ * 판별·마주 보는 면·면 붙이기 화면의 틀: 왼쪽 재단 매트(3D 무대 + 접기 조작 띠 + 보기 조작판), 오른쪽 작업 지시서(엔진 ctx.ui.order).
  * 작업 지시서: 주문 도장 + 문제 번호, 물음, 답 칸(단계가 채움), 까닭 쪽지, 보너스 쪽지, 다음 버튼.
- * 답하기 전에는 접기 막대가 잠긴다. hint면 틀린 뒤 [반만 접어 보기]가 열린다.
+ * 답하기 전에는 접기 막대와 보기 조작(끌기·위아래·크게 작게)이 잠긴다. hint면 틀린 뒤 [반만 접어 보기]가 열린다.
  */
 export function createWorkbench({ ctx, view, total, hint = false }) {
   const { h } = ctx;
@@ -696,7 +1104,7 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     onNext?.();
   });
 
-  const mat = h('div', { class: 'mat' }, view.el, tools.el);
+  const mat = h('div', { class: 'mat' }, view.el, tools.el, tools.pad);
   order.el.classList.add('net-panel');
   order.el.append(...[prompt, answerBox, lockNote, halfButton, reasonSlot, bonusSlot, nextButton].filter(Boolean));
   ctx.el.append(h('div', { class: 'workbench' }, mat, order.el));

@@ -63,7 +63,7 @@ export function playFree(stage, ctx) {
   let mode = 'edit';
   let goalReached = false;
 
-  // ── 매트: 놓는 판 ↔ 3D 무대 ─────────────────
+  // ── 매트: 놓는 판 ↔ 3D 무대(+ 접기 조작 띠, 보는 방향·크기 조작판) ─────────────────
   const view = createNetView({ h, sfx: ctx.sfx });
   const tools = createFoldTools({ ctx, view });
   const host = h('div', { class: 'free-host' });
@@ -80,7 +80,7 @@ export function playFree(stage, ctx) {
   const statusExtra = h('span', { class: 'status-extra' });
   const status = h('p', { class: 'mat-status', 'aria-hidden': 'true' }, icon('grid'), h('span', null, '놓은 면'), statusCount, statusExtra);
   const editTools = h('div', { class: 'mat-tools edit-tools' }, clearBtn, undoBtn, hintBtn, finishTool, status);
-  const mat = h('div', { class: 'mat free-mat' }, legend, sticky, host, stamp, editTools, tools.el);
+  const mat = h('div', { class: 'mat free-mat' }, legend, sticky, host, stamp, editTools, tools.el, tools.pad);
 
   // ── 작업 지시서: 설계 주문 ────────────────────
   const order = ctx.ui.order({ kind: stage.order ?? '설계 주문', label: '설계 판' });
@@ -143,6 +143,7 @@ export function playFree(stage, ctx) {
   host.append(board.el, view.el);
   view.el.hidden = true;
   tools.el.hidden = true;
+  tools.pad.hidden = true; // 보는 방향·크기 조작판은 접힌 뒤(무대가 보일 때)에만
 
   const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => board.fit(host)) : null;
   resizer?.observe(host);
@@ -254,6 +255,7 @@ export function playFree(stage, ctx) {
     mode = 'edit';
     view.el.hidden = true;
     tools.el.hidden = true;
+    tools.pad.hidden = true;
     stamp.hidden = true;
     resultSection.hidden = true;
     buttonsSlot.replaceChildren();
@@ -281,6 +283,7 @@ export function playFree(stage, ctx) {
     editSection.hidden = true;
     view.el.hidden = false;
     tools.el.hidden = false;
+    tools.pad.hidden = false;
     resultSection.hidden = false;
   }
 

@@ -90,7 +90,7 @@ test('좁은 화면 토스트 자리(anchor narrow: below): 요소 바로 밑(�
 });
 
 test('아이콘: 기획서 2-6절 이름이 모두 있고, 그림 요소 형식이 맞다', () => {
-  const names = 'back, sound, mute, lock, check, cross, rotl, rotr, play, unfold, bulb, book, stamp, spark, clock, user, target, search, cube, trash, undo, hand, shield, grid, flag, arrow, copy, home, ring'.split(', ');
+  const names = 'back, sound, mute, lock, check, cross, rotl, rotr, play, unfold, bulb, book, stamp, spark, clock, user, target, search, cube, trash, undo, hand, shield, grid, flag, arrow, copy, home, ring, up, down, zoomin, zoomout'.split(', ');
   for (const name of names) assert.ok(ICONS[name], name);
   for (const [name, parts] of Object.entries(ICONS)) {
     assert.ok(parts.length > 0, name);

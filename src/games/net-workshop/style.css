@@ -44,7 +44,8 @@
     repeating-linear-gradient(90deg, rgb(255 255 255 / 35%) 0 1px, transparent 1px 6px) top / 100% 5px no-repeat;
 }
 
-/* 매트 아래쪽 조작 띠: [접어 보기/펴기] [접는 정도] [↺] [↻] · 놓는 중: [모두 빼기] [되돌리기] [힌트] [놓은 면] */
+/* 매트 아래쪽 조작 띠: [접어 보기/펴기] [접는 정도] · 놓는 중: [모두 빼기] [되돌리기] [힌트] [놓은 면]
+   ([↺] [↻]는 무대 오른쪽 위 보기 조작판 .view-pad로 옮겼다) */
 .mat-tools {
   position: absolute;
   left: 14px;
@@ -98,6 +99,54 @@
 .mat-status b { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
 .status-extra { color: var(--wrong); }
 
+/* ── 보는 방향과 크기 조작판 (spec 17-6): 무대 오른쪽 위 십자. 휴대폰은 아래 띠 두 줄(맨 아래 @media) ──
+     [작게][위쪽][크게]
+     [왼쪽][처음][오른쪽]
+          [아래쪽]
+   무대보다 위 층이라 크게 본 입체가 밑으로 들어가도 버튼은 늘 눌린다. 버튼이 없는 칸은 무대 끌기가 그대로 된다 */
+.view-pad {
+  position: absolute;
+  right: 14px;
+  top: 24px;
+  z-index: 3;
+  display: grid;
+  grid-template:
+    "out up in" var(--tap)
+    "left home right" var(--tap)
+    ". down ." var(--tap) / var(--tap) var(--tap) var(--tap);
+  gap: 4px;
+  pointer-events: none;
+}
+.view-pad .btn { pointer-events: auto; min-height: var(--tap); }
+.view-left { grid-area: left; }
+.view-right { grid-area: right; }
+.view-up { grid-area: up; }
+.view-down { grid-area: down; }
+.view-out { grid-area: out; }
+.view-in { grid-area: in; }
+.view-home { grid-area: home; }
+/* 자유 배치: 무대가 설명 칩 띠(54px) 아래에서 시작한다 — 조작판 윗줄을 결과 이름표 윗줄에 맞춘다 */
+.free-mat .view-pad { top: 64px; }
+/* 끌기 안내 칩 (조작판 바로 밑, 눌리지 않음) */
+.view-tip {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: rgb(255 253 248 / 94%);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* ── 3D 무대 (매트 안, 조작 띠 위) ─────────── */
 /* 넓은 화면: 무대와 조작 띠 사이에 알림 자리(약 68px)를 비워 둔다 — 알림이 면·빈 자리를 가리지 않게 (feedback.anchor lift) */
 .fold-stage {
@@ -109,6 +158,11 @@
   touch-action: manipulation;
 }
 .fold-stage:focus-visible { outline: 3px solid var(--butter); outline-offset: -6px; box-shadow: none; }
+/* 보기 조작이 켜진 동안(답한 뒤 접힌 입체)만: 끌어서 돌리고 두 손가락으로 키운다 — 화면 스크롤·브라우저 확대를 무대가 받는다.
+   잠겨 있거나 펼친 상태에서는 위의 manipulation 그대로(무대를 쓸면 페이지가 내려간다) */
+.fold-stage.can-view { touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; }
+.fold-stage.can-view .net-face { cursor: grab; }
+.fold-stage.is-turning, .fold-stage.is-turning .net-face { cursor: grabbing; }
 
 .net-scene {
   position: absolute;
@@ -135,10 +189,12 @@
   line-height: 1;
 }
 
-/* 색종이 면: 잉크 테두리 + 위왼쪽 빛, 글자는 제목 글꼴 */
+/* 색종이 면: 잉크 테두리 + 위왼쪽 빛, 글자는 제목 글꼴.
+   크게 볼 때 view3d.js가 면을 --k배(1~4) 크게 놓고 무대 변환을 그만큼 줄여 또렷하게 그린다 — 무대 안의 px 값(테두리·빗금·작은 글자)은
+   모두 var(--k, 1)을 곱해 보이는 굵기가 그대로다. 답하기 전·펼친 상태에서는 --k가 없다(= 1) */
 .net-face {
-  border: 2.5px solid var(--ink);
-  border-radius: 3px;
+  border: calc(2.5px * var(--k, 1)) solid var(--ink);
+  border-radius: calc(3px * var(--k, 1));
   background-color: var(--face-color, var(--face-1));
   background-image: linear-gradient(135deg, rgb(255 255 255 / 35%), transparent 45%);
   color: var(--ink);
@@ -158,9 +214,9 @@
   pointer-events: none;
 }
 .net-face:not([tabindex="-1"]) { cursor: pointer; }
-.net-face:not([tabindex="-1"]):hover { box-shadow: inset 0 0 0 3px var(--primary); }
+.net-face:not([tabindex="-1"]):hover { box-shadow: inset 0 0 0 calc(3px * var(--k, 1)) var(--primary); }
 /* 키보드 초점: 잉크 테두리 안쪽에 흰 띠를 둔 두 겹 + 바깥 노랑 후광. 어떤 색종이 면 위에서도 잘 보인다(잉크/면 8.6:1 이상) */
-.net-face:focus-visible { outline: 4px solid var(--ink); outline-offset: -4px; box-shadow: inset 0 0 0 7px var(--paper), 0 0 0 7px var(--butter); }
+.net-face:focus-visible { outline: calc(4px * var(--k, 1)) solid var(--ink); outline-offset: calc(-4px * var(--k, 1)); box-shadow: inset 0 0 0 calc(7px * var(--k, 1)) var(--paper), 0 0 0 calc(7px * var(--k, 1)) var(--butter); }
 
 .face-inner {
   position: absolute;
@@ -176,31 +232,31 @@
   bottom: 6%;
   font-family: var(--font);
   font-weight: 800;
-  font-size: max(11px, calc(var(--unit, 60px) * 0.15));
+  font-size: max(calc(11px * var(--k, 1)), calc(var(--unit, 60px) * 0.15));
   text-align: center;
   white-space: nowrap;
 }
 
 .net-face.is-star { background-color: var(--butter); }
-.net-face.is-correct { border: 4px solid var(--correct); }
+.net-face.is-correct { border: calc(4px * var(--k, 1)) solid var(--correct); }
 .net-face.is-correct .face-mark { color: var(--correct); }
-.net-face.is-wrong, .net-face.is-wrong:hover { border: 4px dashed var(--wrong); }
+.net-face.is-wrong, .net-face.is-wrong:hover { border: calc(4px * var(--k, 1)) dashed var(--wrong); }
 .net-face.is-wrong .face-mark { color: var(--wrong); }
-.net-face.is-placed { box-shadow: inset 0 0 0 4px var(--primary); }
+.net-face.is-placed { box-shadow: inset 0 0 0 calc(4px * var(--k, 1)) var(--primary); }
 
 /* 겹친 면: 빗금 + ✗ 겹쳐요 (색만으로 구분하지 않음) */
 .net-face.is-overlap {
-  border: 3px solid var(--wrong);
+  border: calc(3px * var(--k, 1)) solid var(--wrong);
   background-color: #fff4ec;
-  background-image: repeating-linear-gradient(45deg, rgb(178 63 20 / 50%) 0 4px, transparent 4px 11px);
+  background-image: repeating-linear-gradient(45deg, rgb(178 63 20 / 50%) 0 calc(4px * var(--k, 1)), transparent calc(4px * var(--k, 1)) calc(11px * var(--k, 1)));
 }
 .net-face.is-overlap .face-mark {
   color: #fff;
   background: var(--wrong);
   left: 8%;
   right: 8%;
-  padding: 2px 0;
-  border-radius: 8px;
+  padding: calc(2px * var(--k, 1)) 0;
+  border-radius: calc(8px * var(--k, 1));
 }
 /* 다 접힌 뒤 표시가 있는 면(겹침·맞힘·붙인 면)의 글자는 보는 쪽에서 바로 읽히게 면 가운데를 축으로 돌린다
    (view3d.js가 --mark-turn과 .marks-on을 준다) */
@@ -208,16 +264,24 @@
 .marks-on .net-face.is-correct .face-inner,
 .marks-on .net-face.is-placed .face-inner,
 .marks-blocked .net-face .face-inner { transform: rotate(var(--mark-turn, 0deg)); }
+/* 종이 안쪽이 보이는 면(view3d.js가 .is-back을 준다): 글자를 좌우로 뒤집어 거울상이 되지 않게 한다.
+   바로 세우는 면은 뒤집은 다음 돌린다(글자의 '아래'는 뒤집어도 그대로라 --mark-turn은 같은 값) */
+.net-face.is-back .face-inner { transform: scaleX(-1); }
+.marks-on .net-face.is-overlap.is-back .face-inner,
+.marks-on .net-face.is-correct.is-back .face-inner,
+.marks-on .net-face.is-placed.is-back .face-inner,
+.marks-blocked .net-face.is-back .face-inner { transform: rotate(var(--mark-turn, 0deg)) scaleX(-1); }
 
 /* 빈 자리(다 접었는데 아무 면도 오지 않은 곳): 노랑 굵은 점선 + 비어요 (매트 위에서 잘 보이게) */
 .net-ghost {
-  border: 4px dashed var(--butter);
+  border: calc(4px * var(--k, 1)) dashed var(--butter);
   background: rgb(255 241 194 / 22%);
   color: var(--ink);
-  font-size: max(12px, calc(var(--unit, 60px) * 0.2));
+  font-size: max(calc(12px * var(--k, 1)), calc(var(--unit, 60px) * 0.2));
   pointer-events: none;
 }
-.net-ghost span { background: var(--butter); border: 2px solid var(--ink); padding: 2px 6px; border-radius: 6px; font-family: var(--font-display); font-weight: 700; }
+.net-ghost span { background: var(--butter); border: calc(2px * var(--k, 1)) solid var(--ink); padding: calc(2px * var(--k, 1)) calc(6px * var(--k, 1)); border-radius: calc(6px * var(--k, 1)); font-family: var(--font-display); font-weight: 700; transform: rotate(var(--mark-turn, 0deg)); }
+.net-ghost.is-back span { transform: rotate(var(--mark-turn, 0deg)) scaleX(-1); }
 
 /* 한 꼭짓점에 네 면이 모인 곳 */
 .net-dot {
@@ -252,7 +316,8 @@
   z-index: 2;
   margin: 0;
   padding: 6px 14px 6px 10px;
-  max-width: calc(100% - 28px);
+  /* 오른쪽 위 보기 조작판(152px + 사이 12px)과 겹치지 않게 */
+  max-width: calc(100% - 28px - 164px);
   border-radius: 12px;
   border: 2px solid var(--ink);
   background: var(--paper);
@@ -659,8 +724,8 @@
 }
 
 @media (max-width: 560px) {
-  /* 휴대폰: 결과 이름표 띠(위 54px)까지 넣은 높이. 자유 배치는 6칸 × 6줄 판이 들어가는 높이 */
-  .mat { height: clamp(340px, 100vw, 440px); }
+  /* 휴대폰: 결과 이름표 띠(위 54px)와 두 줄 조작 띠(아래 48px × 2)까지 넣은 높이. 자유 배치는 6칸 × 6줄 판이 들어가는 높이 */
+  .mat { height: calc(clamp(340px, 100vw, 440px) + 48px); }
   .free-mat { height: calc(124px + (100vw - 60px)); }
   .free-host { inset: 54px 12px 70px; }
   .q-prompt { font-size: 1.2rem; }
@@ -676,11 +741,30 @@
   .fold-slider { padding: 0 8px; }
   .fold-slider-label { display: none; }
   .hint-sticky { left: 10px; right: 10px; max-width: none; top: 8px; padding: 3px 8px; font-size: 0.78rem; line-height: 1.3; }
-  .found-stamp { --size: 96px; right: 12px; bottom: 76px; }
+  /* 도장은 두 줄 조작 띠(아래 112px) 위로 */
+  .found-stamp { --size: 96px; right: 12px; bottom: 124px; }
   /* 휴대폰: 결과 이름표는 무대 위쪽 띠에 따로 둔다 — 접힌 입체·"✗ 겹쳐요"와 겹치지 않게 (재검토 2 R2).
-     매트가 가장자리를 자르므로 무대는 넘쳐도 된다 */
-  .mat > .fold-stage { inset: 54px 0 72px; overflow: visible; }
-  .free-host .fold-stage { overflow: visible; }
+     이름표가 무대 위로 나가 있어 overflow는 풀어 두고, 크게 본 입체가 조작 띠·매트 옆으로 넘어가지 않게 아래·좌우만 자른다 */
+  .mat > .fold-stage { inset: 54px 0 120px; overflow: visible; clip-path: inset(-54px 0 0 0); }
+  /* 자유 배치: 무대의 왼쪽 위는 놓는 판 자리 그대로 두고(이어 접기 어긋남 0) 아래쪽만 두 줄 조작 띠만큼 줄인다 */
+  .free-host .fold-stage { inset: 0 0 50px; overflow: visible; clip-path: inset(-54px 0 0 0); }
   .stage-badge { top: -46px; left: 0; max-width: 100%; padding: 4px 10px 4px 8px; font-size: 0.92rem; line-height: 1.25; }
   .free-host .stage-badge { top: -46px; }
+  /* 조작 띠 두 줄: 왼쪽에 [접어 보기/펴기] 위 · [접는 정도] 아래, 오른쪽에 보기 조작판 4칸 × 2줄
+       [왼쪽][위쪽][오른쪽][크게]
+       [처음][아래쪽]      [작게] */
+  .fold-tools { right: calc(10px + 198px + 6px); flex-direction: column; align-items: stretch; gap: 4px; }
+  .fold-tools .btn { min-height: var(--tap); }
+  .fold-tools .fold-slider { flex: none; height: var(--tap); }
+  .view-pad,
+  .free-mat .view-pad {
+    top: auto;
+    right: 10px;
+    bottom: 12px;
+    grid-template:
+      "left up right in" var(--tap)
+      "home down . out" var(--tap) / var(--tap) var(--tap) var(--tap) var(--tap);
+    gap: 4px 2px;
+  }
+  .view-tip { display: none; }
 }
