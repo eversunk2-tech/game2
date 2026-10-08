@@ -122,7 +122,7 @@ test('1366×680: 예시 게임과 전개도 게임의 결과 화면(칭호·새 
   await page.waitForTimeout(2100); // 연출이 끝난 뒤에도
   await noScroll();
 
-  // 전개도 게임: 차시 끝 단계(면 붙이기)를 마침 → "이 차시를 마쳤어요!" + 새 도장
+  // 전개도 게임: 면 붙이기(3문항)를 마침 → "단계 성공!" + 새 도장 (차시 끝 "이 차시를 마쳤어요!"는 4단계 자유 배치 — net-workshop.spec.js)
   const questions = makeQuestions(STAGES.find((s) => s.id === 'cube-complete'), createRng('1:cube-complete'));
   await page.goto(fileUrl('net-workshop.html', '?lesson=cube&unlock=all&seed=1&sound=off&stage=cube-complete'));
   for (const q of questions) {
@@ -130,8 +130,8 @@ test('1366×680: 예시 게임과 전개도 게임의 결과 화면(칭호·새 
     await page.locator(`.net-slot[data-cell="${q.slots.find((x) => x.ok).key}"]`).click();
     await page.locator('.next-btn').click();
   }
-  await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
-  await expect(page.locator('.new-badge')).toContainText('꼼꼼한 눈');
+  await expect(page.getByRole('heading', { name: '단계 성공!' })).toBeVisible();
+  await expect(page.locator('.new-badge')).toContainText('첫 발걸음');
   await noScroll();
   await page.waitForTimeout(2100);
   await noScroll();

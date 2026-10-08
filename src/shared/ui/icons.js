@@ -4,6 +4,7 @@
  * 그림일 뿐이라 늘 aria-hidden="true"다. 뜻은 버튼·옆 글자로 전한다.
  *
  *   icon('sound')                  → <svg class="icon icon-sound">
+ *   icon('ring') / icon('cross')   → 답 버튼의 ○ · ✕ (이모지 ⭕❌ 대신)
  *   icon('check', { class: 'big' }) → 클래스 더하기
  *   starIcon(true)                 → 찬 별 (빈 별은 false). 테두리만 있는 별 아이콘은 icon('star')
  */
@@ -45,6 +46,8 @@ export const ICONS = {
   // D2: 도장판·도감
   rise: [['path', { d: 'M4 18l5.5-5.5 4 4L20 10' }], ['path', { d: 'M15 10h5v5' }]],
   star: [['path', { d: 'M12 3.4l2.6 5.4 5.9.8-4.3 4.1 1.1 5.9L12 16.8l-5.3 2.8 1.1-5.9-4.3-4.1 5.9-.8z' }]],
+  // 답 버튼의 ○(돼요)·✕(안 돼요)는 이모지(⭕❌) 대신 ring·cross
+  ring: [['circle', { cx: 12, cy: 12, r: 7.2 }]],
 };
 
 export const STAR_PATH = 'M12 2.6l2.85 5.9 6.45.85-4.75 4.45 1.2 6.4L12 17.1l-5.75 3.1 1.2-6.4L2.7 9.35l6.45-.85z';

@@ -118,21 +118,23 @@ test('예시 게임은 코드를 고치지 않아도 솜씨 점수·칭호·도�
   await expect(page.locator('.rank-chip')).toContainText('32점');
   await expect(page.locator('[role="status"]')).toContainText('새 도장: 첫 발걸음, 꼼꼼한 눈');
 
-  // 같은 단계를 다시 하면 답 점수만 받는다(단계 완료·별 점수 없음). 53점이 되어 칭호가 오른다
+  // 별 3개를 받은 단계를 다시 하면 연습 점수가 없다(단계 완료·별 점수도 없음). 칭호 칩 점수는 그대로
   await page.getByRole('button', { name: '다시 하기' }).click();
   await solveAll(page);
-  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+21');
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+0');
+  await expect(page.locator('.practice-note')).toHaveText('별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.');
   await expect(page.locator('.xp-line')).toContainText('별이 처음 늘 때만');
   await expect(page.locator('.new-badge')).toHaveCount(0);
-  await expect(page.locator('.rank-card')).toContainText('칭호가 올랐어요');
-  await expect(page.locator('.rank-chip')).toContainText('탐험가');
+  await expect(page.locator('.rank-card')).not.toContainText('칭호가 올랐어요');
+  await expect(page.locator('.rank-chip')).toContainText('새싹');
+  await expect(page.locator('.rank-chip')).toContainText('32점');
 
   // 학습 기록: 칭호·솜씨 점수 칸, 도장판(받은 도장 2개, 나머지는 받는 방법이 보임)
   await page.getByRole('button', { name: '단계 선택' }).click();
   await page.getByRole('button', { name: '처음 화면' }).click();
   await expect(page.locator('.workshop-card')).toContainText('도장 2 / 6');
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.tile', { hasText: '칭호·솜씨 점수' })).toContainText('탐험가 53점');
+  await expect(page.locator('.tile', { hasText: '칭호·솜씨 점수' })).toContainText('새싹 32점');
   await expect(page.locator('.badge-item.is-earned')).toHaveCount(2);
   await expect(page.locator('.badge-item.is-locked')).toHaveCount(4);
   await expect(page.locator('.badge-item[data-badge="try-again"]')).toContainText('틀린 문제를 다시 도전해 3번 맞혀요');

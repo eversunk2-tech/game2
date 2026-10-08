@@ -132,6 +132,79 @@ test('플레이 머리: 이번 판 솜씨 점수와 연속(2 이상일 때만), 
   expect(await page.evaluate(() => window.lastXp)).toBe(0);
 });
 
+test('다시 하기 점수: 별 3개 단계를 다시 하면 연습 점수 0(칭호 칩 그대로), 새로 찾음 +5는 그대로, 별 3개가 안 된 단계는 점수가 있다', async ({ page }) => {
+  const errors = collectErrors(page);
+  const NOTE = '별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.';
+  await page.goto(URL);
+  await page.evaluate(() => {
+    localStorage.setItem('edu:engine-test:stars', JSON.stringify({ a1: 3, a2: 2 }));
+    localStorage.setItem('edu:engine-test:rewards', JSON.stringify({ v: 1, xp: 20 }));
+  });
+  const xp = page.locator('.meta-xp b');
+  const chip = page.locator('.rank-chip small');
+  const storedXp = () => page.evaluate(() => JSON.parse(localStorage.getItem('edu:engine-test:rewards')).xp);
+
+  // 별 3개 단계(a1) 다시 하기: 맞힘·다시 도전·다시 일어서기·연속·설명 모두 점수 없음. "연속 n" 글자는 보여도 된다
+  await page.goto(`${URL}?stage=a1&sound=off`);
+  await expect(chip).toHaveText('20점');
+  for (let i = 0; i < 3; i += 1) await btn(page, '맞힘').click();
+  await expect(page.locator('.meta-streak')).toHaveText('연속 3');
+  await btn(page, '틀림').click();
+  await btn(page, '맞힘').click(); // 다시 도전
+  await btn(page, '맞힘').click(); // 다시 일어서기
+  await btn(page, '설명 맞힘').click();
+  expect(await page.evaluate(() => window.lastXp)).toBe(0);
+  await expect(xp).toHaveText('+0');
+  await expect(chip).toHaveText('20점');
+  // 처음 찾은 도감 칸은 별 3개 단계에서도 +5 (한 번만)
+  await btn(page, '세모 찾기').click();
+  await expect(xp).toHaveText('+5');
+  await expect(chip).toHaveText('25점');
+  await btn(page, '세모 찾기').click();
+  await expect(xp).toHaveText('+5');
+  await btn(page, '끝내기').click();
+  await expect(page.getByRole('heading', { name: '단계 성공!' })).toBeVisible();
+  await expect(page.locator('.practice-note')).toHaveText(NOTE);
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+5');
+  await expect(page.locator('.behavior', { hasText: '처음에 맞힘' }).locator('.b-xp')).toHaveText('+0');
+  await expect(page.locator('.behavior', { hasText: '설명 맞힘' }).locator('.b-xp')).toHaveText('+0');
+  await expect(page.locator('.behavior', { hasText: '새로 찾음' }).locator('.b-xp')).toHaveText('+5');
+  await expect(page.locator('[role="status"]')).toContainText(NOTE);
+  await expect(chip).toHaveText('25점');
+  expect(await storedXp()).toBe(25);
+
+  // 같은 단계를 또 다시 해도 그대로
+  await btn(page, '다시 하기').click();
+  await btn(page, '맞힘').click();
+  await btn(page, '설명 맞힘').click();
+  await expect(xp).toHaveText('+0');
+  await btn(page, '끝내기').click();
+  await expect(page.locator('.practice-note')).toBeVisible();
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+0');
+  await expect(chip).toHaveText('25점');
+  expect(await storedXp()).toBe(25);
+
+  // 별 2개 단계(a2): 지금처럼 점수가 있고, 이번 판에 처음 별 3개를 받아도 이번 판 점수는 준다
+  await page.goto(`${URL}?stage=a2&sound=off`);
+  await btn(page, '맞힘').click();
+  await expect(xp).toHaveText('+2');
+  await btn(page, '설명 맞힘').click();
+  await expect(xp).toHaveText('+4');
+  await btn(page, '끝내기').click();
+  await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
+  await expect(page.locator('.practice-note')).toHaveCount(0);
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+6'); // 연습 4 + 별 1개 더 +2
+  expect(await storedXp()).toBe(31);
+  // 이제 별 3개가 됐으니 다음 판부터는 연습 점수 없음
+  await btn(page, '다시 하기').click();
+  await btn(page, '맞힘').click();
+  await expect(xp).toHaveText('+0');
+  await btn(page, '끝내기').click();
+  await expect(page.locator('.practice-note')).toHaveText(NOTE);
+  expect(await storedXp()).toBe(31);
+  expect(errors).toEqual([]);
+});
+
 test('도전 주문서: 차시의 일반 단계를 모두 마치면 열리고, 다음 단계를 막지 않으며, 별 합계에 넣지 않는다. 시간 재기는 켜는 학생만', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(`${URL}?sound=off`);

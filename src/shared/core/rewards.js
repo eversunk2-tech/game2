@@ -175,11 +175,21 @@ export function scoreAnswers(answers) {
 
 // ── 한 판 전체: 답 + 학습 행동 이벤트 ───────────────────────
 
+/** 다시 하기 점수 규칙: 판을 시작할 때 그 단계 별이 이만큼이면 연습 점수가 없다 (docs/design/spec.md "결정" 다시 하기 점수) */
+export const MASTERED_STARS = 3;
+
+/** 판을 시작할 때의 별 수로 연습 점수(처음 맞힘·다시 도전·다시 일어서기·연속·설명)를 줄지 정한다 */
+export const practiceAllowed = (startStars = 0) => (Number(startStars) || 0) < MASTERED_STARS;
+
 /**
  * 한 판(단계 하나를 플레이하는 동안)의 솜씨 점수.
  * answer(): 답, event('explain'|'inspect', data): 학습 행동, discovered(): 도감에 새로 등록(+5는 바로 저장된다)
+ * startStars: 판을 시작할 때 그 단계의 별. 이미 별 3개인 단계를 다시 하면 연습 점수(답·연속·다시 일어서기·설명)는 0이다.
+ *   별이 3개가 안 된 단계는 그대로 준다(복습 보상). 이번 판에서 처음 별 3개를 받아도 이번 판 점수는 준다(시작할 때 기준).
+ *   새로 찾음(+5)은 원래 처음 한 번뿐이라 별과 상관없이 준다.
  */
-export function createPlayReward() {
+export function createPlayReward({ startStars = 0 } = {}) {
+  const practice = practiceAllowed(startStars);
   const tracker = createAnswerTracker();
   const explained = new Set();
   const explain = { count: 0, xp: 0 };
@@ -187,19 +197,29 @@ export function createPlayReward() {
   let inspect = 0;
 
   return {
-    answer: (entry) => tracker.answer(entry),
+    /** 답 하나 → 이번에 생긴 일. 연습 점수가 없는 판이면 xp는 0 (연속 수·종류는 그대로) */
+    answer: (entry) => {
+      const step = tracker.answer(entry);
+      return practice ? step : { ...step, xp: 0 };
+    },
     streak: () => tracker.streak(),
     bounceReady: () => tracker.bounceReady(),
-    /** 학습 행동 알림. 점수를 주는 것은 'explain'(맞혔을 때, 문항마다 한 번)뿐이다. → 이번에 받은 점수 */
+    /** 이 판에서 연습 점수를 주는지 (시작할 때 별 3개였으면 false) */
+    practice: () => practice,
+    /**
+     * 학습 행동 알림. 점수를 주는 것은 'explain'(맞혔을 때, 문항마다 한 번)뿐이다. → 이번에 받은 점수
+     * explain은 itemId가 꼭 있어야 한다. 없으면 어느 문항의 설명인지 몰라 반복으로 쌓일 수 있으므로 점수·횟수 모두 없다.
+     */
     event(name, data = {}) {
       if (name === 'explain') {
-        if (!data?.correct) return 0;
-        const key = data.itemId == null ? null : String(data.itemId);
-        if (key != null && explained.has(key)) return 0;
-        if (key != null) explained.add(key);
+        if (!data?.correct || data.itemId == null) return 0;
+        const key = String(data.itemId);
+        if (explained.has(key)) return 0;
+        explained.add(key);
+        const xp = practice ? XP.explain : 0;
         explain.count += 1;
-        explain.xp += XP.explain;
-        return XP.explain;
+        explain.xp += xp;
+        return xp;
       }
       if (name === 'inspect') inspect += 1;
       return 0;
@@ -210,8 +230,12 @@ export function createPlayReward() {
       return XP.discover;
     },
     /** 지금까지 이 판에서 받은 점수 (단계 완료·별 점수는 아직 없음) */
-    xp: () => tracker.totals().xp + explain.xp + discover.xp,
-    summary: () => ({ answers: tracker.totals(), explain: { ...explain }, discover: { ...discover }, inspect }),
+    xp: () => (practice ? tracker.totals().xp : 0) + explain.xp + discover.xp,
+    /** answers.xp는 이 판에서 실제로 받은 답 점수(연습 점수가 없는 판이면 0). practice: 연습 점수를 주는 판인지 */
+    summary: () => {
+      const answers = tracker.totals();
+      return { answers: practice ? answers : { ...answers, xp: 0 }, explain: { ...explain }, discover: { ...discover }, inspect, practice };
+    },
   };
 }
 
@@ -280,19 +304,29 @@ export function normalizeBadges(extra = []) {
 }
 
 /**
- * 도장 test(state)에 주는 상태.
+ * 도장 test(state)에 주는 상태 (design/spec.md 4절: 기록·이벤트 횟수·도감).
  *   stars: { 단계 id: 별 }, clearedCount: 별이 있는 단계 수, lessons: [{ id, ids(일반 단계 id) }],
- *   counters: { bounce, retryFix, explain, inspect, discover }, collections: { id: { count, total } },
+ *   counters: { bounce, retryFix, explain, inspect, discover }, collections: { id: { count, total, found: [칸 id] } },
+ *   records: 학습 기록(방금 마친 판 포함) [{ stageId, cleared, stars, answers: [{ itemId, correct, given, expected, tag }] }],
  *   xp, play: 방금 마친 판 { stageId, attempts, correct, wrong, firstTry, cleared, stars, challenge } 또는 null
  */
-export function badgeState({ stars = {}, lessons = [], counters = {}, collections = {}, xp = 0, play = null }) {
+export function badgeState({ stars = {}, lessons = [], counters = {}, collections = {}, records = [], xp = 0, play = null }) {
   const counts = Object.fromEntries(COUNTER_NAMES.map((n) => [n, Number(counters[n]) || 0]));
+  const list = (v) => (Array.isArray(v) ? v : []);
   return {
     stars: { ...stars },
     clearedCount: Object.values(stars).filter((n) => n > 0).length,
     lessons: lessons.map((l) => ({ id: l.id, ids: [...l.ids] })),
     counters: counts,
-    collections: { ...collections },
+    collections: Object.fromEntries(Object.entries(collections).map(([id, c]) => [id, { count: 0, total: 0, ...c, found: [...list(c?.found)] }])),
+    records: list(records).map((r) => ({
+      stageId: r?.stageId ?? null,
+      cleared: Boolean(r?.cleared),
+      stars: Number(r?.stars) || 0,
+      answers: list(r?.answers).map((a) => ({
+        itemId: a?.itemId ?? null, correct: Boolean(a?.correct), given: a?.given ?? null, expected: a?.expected ?? null, tag: a?.tag ?? null,
+      })),
+    })),
     xp,
     play: play ? { ...play } : null,
   };
@@ -318,8 +352,6 @@ export function evaluateBadges(defs, state, earned = {}, { onError = null } = {}
 }
 
 // ── 저장 (createStorage(game.id)의 'rewards') ─────────────
-
-export const EMPTY_REWARDS = Object.freeze({ v: 1, xp: 0, badges: {}, counters: {}, best: {} });
 
 /** 저장된 값을 안전한 모양으로. 깨진 값은 비운다. */
 export function normalizeRewardState(raw) {
@@ -382,7 +414,6 @@ export function createRewardStore({ storage = null, ranks = DEFAULT_RANKS, thres
       }
       return { ms: value, prevMs };
     },
-    snapshot: () => JSON.parse(JSON.stringify(state)),
     reset() {
       state = normalizeRewardState(null);
       save();

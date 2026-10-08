@@ -63,9 +63,13 @@ src/games/<게임-id>/
 | `color` | `"#2f6f5e"` | (선택) 게임 색. 처음 화면 그림의 매트와 게임 모음 표지 바탕에 쓴다. `#` 뒤 16진수 6자리. 없으면 기본 초록 매트 |
 
 **표지 `cover.svg`** (선택): 게임 모음 카드 왼쪽에 그대로 들어가는 SVG 한 장(게임 색 모눈 바탕 위, 가로 약 170px).
-파일 하나 규칙 때문에 `<script>`·`<image>`·`<use>`·`<style>`·`@import`·`href`·`url()`·`id`·바깥 주소(`http…`)는 쓸 수 없다(빌드가 검사).
-`<style>`은 게임 모음 페이지 전체에 적용되고 `@import`로 바깥 파일을 부를 수 있어서 막는다. 색은 `#ffd86b`처럼 직접 쓰고,
-글자를 넣으면 `font-family="'Do Hyeon', sans-serif"`. 없으면 게임 색 무늬 위에 게임 이름 첫 글자 종이가 나온다.
+빌드는 **허용 목록**으로 읽어 받은 것만으로 SVG를 새로 쓴다(`scripts/lib/games.mjs`의 `prepareCover`). 그래서 스크립트·링크·바깥 요청·애니메이션은 원천적으로 들어가지 않는다.
+
+- 받는 요소: `svg g rect circle ellipse line polyline polygon path text tspan title desc`
+- 받는 속성: 모양(`viewBox width height x y x1 y1 x2 y2 cx cy r rx ry points d dx dy`), 색·선(`fill stroke stroke-width stroke-linejoin stroke-linecap stroke-dasharray opacity fill-opacity stroke-opacity fill-rule`), `transform`(matrix·translate·scale·rotate·skew만), 글자(`font-family font-size font-weight text-anchor dominant-baseline letter-spacing`), `preserveAspectRatio`, 뿌리 `svg`의 `xmlns`(SVG 이름공간만)
+- 그 밖은 모두 빌드 오류: `style`·`href`·`id`·`class`·`on…` 속성, `<style>`·`<script>`·`<a>`·`<use>`·`<image>`·`<animate>`·`<set>`·`<filter>`, DOCTYPE·ENTITY·CDATA, `&#` 문자 참조, `url()`·`@import`·바깥 주소(`http`, `//`)
+
+색은 `fill="#ffd86b"`처럼 속성으로 쓰고, 글자를 넣으면 `font-family="'Do Hyeon', sans-serif"`. 없으면 게임 색 무늬 위에 게임 이름 첫 글자 종이가 나온다.
 
 ## 2. createGameApp
 
@@ -104,17 +108,22 @@ createGameApp({
 | `ctx.feedback.correct(문장, 요소)` | 초록 알림(✓) + 요소 튀기기 |
 | `ctx.feedback.wrong(문장, 요소)` | 벽돌색 알림(✗) + 요소 흔들기. **왜 틀렸는지** 쓴다 |
 | `ctx.feedback.info(문장)` | 안내 알림 |
-| `ctx.feedback.anchor(요소)` | 넓은 화면(901px 이상)에서 알림을 그 요소(예: 게임 무대)의 아래쪽 가운데에 띄운다. 옆 판의 버튼을 가리지 않게 할 때. `null`이면 기본 자리(화면 아래 가운데). 화면이 바뀌면 엔진이 되돌린다 |
+| `ctx.feedback.anchor(요소, { lift, narrow })` | 넓은 화면(901px 이상)에서 알림을 그 요소(예: 게임 무대)의 아래쪽 가운데에 띄운다. 옆 판의 버튼을 가리지 않게 할 때. `lift`(px): 요소 아래쪽에 조작 띠가 있으면 그만큼 더 위에. `narrow: 'below'`: 좁은 화면(900px 이하: 태블릿 세로·휴대폰)에서는 요소 바로 밑(요소 밖)에 띄워 무대 안의 면·조작을 가리지 않는다(없으면 화면 아래 가운데). `null`이면 기본 자리. 화면이 바뀌면 엔진이 되돌린다 |
 | `ctx.feedback.celebrate({ kind, at, text })` | 작은 축하: 색종이 8~12개(`at` 요소 위쪽에서) + 소리(`kind`: `'discover'` `'combo'` `'stamp'` `'clear'` `'correct'` `'rankup'` `'unlock'`) + 화면 읽기 안내(`text`). 움직임 줄이기·`?fx=low`면 색종이 없이 소리·안내만 |
 | `ctx.feedback.announce(문장)` | 토스트 없이 화면 읽기 프로그램에만 알림 |
+| `ctx.feedback.clear()` | 지금 떠 있는 알림을 지운다(예: 결과 장면에서 다시 놓는 판으로 돌아갈 때) |
 | `ctx.sfx.play(이름, n?)` | 효과음: `click` `correct` `wrong` `clear` `stamp` `combo`(n = 연속 단계, 높을수록 높은 음) `discover` `rankup` `fold` `unlock` |
 | `ctx.h` | 요소 만들기 도우미 (아래) |
 | `ctx.finish({ stars?, cleared?, highlights? })` | 단계 끝. `stars`를 생략하면 정답률로 정한다(90%↑ ★3, 70%↑ ★2, 나머지 ★1). 실패는 `{ cleared: false }`. `highlights: [{ icon, label, value, xp }]`로 결과의 "오늘의 솜씨" 칸을 게임이 채운다(보여 주기만. 실제 점수는 엔진이 행동으로 계산). 없으면 엔진이 답 기록에서 만든다 |
-| `ctx.reward.event(이름, data)` | 학습 행동 알림: `'explain'`(설명, `{ correct, itemId }`, 맞으면 문항마다 한 번 +2), `'inspect'`(까닭 장면을 돌려 보거나 접어 봄, 횟수만 셈). 돌려주는 값은 받은 점수 |
-| `ctx.reward.peek()` | `{ on, xp(이번 판), streak, bounceReady(다음 문항을 맞히면 다시 일어서기 +1), counters(누적 횟수) }` — "다음 문제를 맞히면 +1, 도장까지 2/5" 같은 쪽지를 그릴 때 |
+| `ctx.reward.event(이름, data)` | 학습 행동 알림: `'explain'`(설명, `{ correct, itemId }`, 맞으면 문항마다 한 번 +2. **`itemId`가 없으면 점수·횟수 모두 없다**), `'inspect'`(까닭 장면을 돌려 보거나 접어 봄, 횟수만 셈). 돌려주는 값은 받은 점수 |
+| `ctx.reward.peek()` | `{ on, xp(이번 판), streak, bounceReady(다음 문항을 맞히면 다시 일어서기 +1), practice(false면 별 3개 단계 다시 하기라 연습 점수 없음), counters(누적 횟수) }` — "다음 문제를 맞히면 +1, 도장까지 2/5" 같은 쪽지를 그릴 때 |
 | `ctx.streak()` | 지금 연속 수(처음 시도에 연달아 맞힌 수) |
 | `ctx.collect(도감 id, 칸 id)` | 도감에 등록 → `{ isNew, count, total }`. 처음이면 +5, "새로 찾았어요" 안내, 소리 |
 | `ctx.collection(도감 id)` | `{ found: Set(칸 id), total }` |
+| `ctx.setProgress(current, total, { label, done, check })` | 플레이 머리에 "문제 3 / 6"과 점 막대(마친 칸은 잉크, 지금 칸은 노랑). `label`(기본 `'문제'`), `done`(마친 수, 기본 `current − 1`), `check: true`면 마친 칸에 ✓(예: `setProgress(1, 3, { label: '찾은 전개도', done: 1, check: true })`). 휴대폰 폭에서는 다른 머리 상자처럼 숨는다 |
+| `ctx.ui.order({ kind, counter, label })` | 작업 지시서(문제 판) 틀: 테이프 붙은 종이 + 주문 도장(`kind`, 예 '검사 주문') + 문제 번호. → `{ el, counter, setCounter(글) }`. 게임이 `el`에 물음·답·쪽지를 넣는다(선택 부품) |
+| `ctx.ui.note({ type, title, text, tip })` | 까닭 쪽지: `type` `'wrong'`(벽돌색 ✗) · `'correct'`(초록 ✓) · `'info'`, 제목·문장·살펴볼 거리(돋보기 한 줄) |
+| `ctx.ui.bonus(…내용)` | 노랑 점선 보너스 쪽지("다시 일어서기 · 다음 문제를 맞히면 +1, 도장까지 2 / 5"). 점수는 엔진이 행동으로 계산하고, 쪽지는 보여 주기만 한다(`ctx.reward.peek()`로 문장을 만든다) |
 
 ### 단계 필드 (선택)
 
@@ -136,7 +145,7 @@ createGameApp({
 - 머리: 게임 이름(왼쪽 노랑 네모에 첫 글자) + 칭호 칩(도장 + "새싹 32점") + [소리 켬/끔]
 - 처음 화면: 윗줄(`.eyebrow` = 차시 제목 또는 `subtitle`) + 학년 칩, 게임 이름(마지막 낱말에 형광펜), 요약, [시작하기 ▶]·[놀이 방법]·[학습 기록], 그 아래 **내 공방 카드**(칭호 도장, 다음 칭호까지 점수 막대, 별·도감·도장 수), 오른쪽 그림
 - 단계 지도: 차시마다 종이 판(`.lesson-group`, "1차시" 칩 + 차시 제목 h3 + 도감·시간 칩) 안에 점선 길로 이은 단계 카드(`.stage-path .stage-card`). 카드 상태는 마쳤어요 ✓ / 지금 할 곳(파랑 테두리 + "여기부터!") / 잠김(점선 + 자물쇠, `disabled`). 그 아래 **도전 주문서** 줄(`.challenge-card`, 이것도 `.stage-card`. 일반 단계 카드가 먼저)
-- 플레이 머리: [← 단계 선택] · 단계 제목 + 칩 · 목표 · 오른쪽에 연속(2 이상일 때)·이번 판 솜씨 점수(휴대폰 폭에서는 숨김). 아래가 `ctx.el`(`.play-area`)
+- 플레이 머리: [← 단계 선택] · 단계 제목 + 칩 · 목표 · 오른쪽에 문제 n / N 점 막대(`ctx.setProgress`를 부를 때)·연속(2 이상일 때)·이번 판 솜씨 점수(휴대폰 폭에서는 숨김). 아래가 `ctx.el`(`.play-area`)
 - 결과: 증명서(단계 이름, 제목, 도장, 별, 별 기준 안내, **오늘의 솜씨** 칸, 단계 완료·별 점수 줄, 정답률·맞힘·시간, 버튼) + 오른쪽 칭호 카드(이번에 모은 점수, 점수 막대, 칭호 오름)·새 도장 카드·다시 살펴볼 점·"도전 주문서가 열렸어요" 칩
 - 학습 기록: 요약 칸 4개(한 판 수·정답률·모은 별·칭호와 솜씨 점수), 기록 표, 자주 틀린 개념, **도장판**, 아래에 이름 칸·지우기. 도감이 있으면 머리에 [도감 이름 n / m] → 도감 화면
 
@@ -190,7 +199,9 @@ h('div', { dataset: { value: 3 }, 'aria-label': '3번 카드' });
 | `btn`, `btn-primary`, `btn-lg`, `btn-small` | 두꺼운 종이 버튼(누르면 내려앉음). 비활성은 점선 + 회색 종이 |
 | `panel` | 정보 판(옅은 선, 부드러운 그림자) |
 | `sheet`, `tape` | 종이 한 장(잉크 테두리, 비스듬한 그림자), 위쪽 가운데 마스킹 테이프 |
-| `note`, `note-wrong`, `note-correct`, `note-title` | 까닭 쪽지(벽돌색·초록, ✓✗ 아이콘·글자와 함께) |
+| `note`, `note-wrong`, `note-correct`, `note-title`, `note-text`, `note-tip` | 까닭 쪽지(벽돌색·초록, ✓✗ 아이콘·글자와 함께). `ctx.ui.note()`가 만든다 |
+| `order`, `order-head`, `order-kind`, `order-counter` | 작업 지시서(테이프 붙은 문제 판, 주문 도장 + 문제 번호). `ctx.ui.order()`가 만든다 |
+| `bonus-note` | 노랑 점선 보너스 쪽지. `ctx.ui.bonus()`가 만든다 |
 | `chip`, `chip-ink`, `chip-butter`, `chip-primary`, `chip-lg` | 작은 꼬리표 |
 | `stamp` | 둥근 도장(`--size`로 크기) |
 | `actions`, `actions-start`, `muted`, `display`(제목 글꼴), `sr-only` | |
@@ -206,7 +217,8 @@ h('div', { dataset: { value: 3 }, 'aria-label': '3번 카드' });
 ```js
 import { icon, starIcon } from '../../shared/ui/icons.js';
 h('button', { type: 'button', class: 'btn' }, icon('rotr'), '돌려 보기');
-// 이름: back sound mute lock check cross info rotl rotr play unfold bulb book stamp spark clock user target search cube trash undo hand shield grid flag arrow copy home rise star
+// 이름: back sound mute lock check cross info rotl rotr play unfold bulb book stamp spark clock user target search cube trash undo hand shield grid flag arrow copy home rise star ring
+// 답 버튼의 ○ · ✕ 는 이모지(⭕❌) 대신 icon('ring') · icon('cross')
 ```
 
 ## 4. 끌어다 놓기
@@ -320,10 +332,16 @@ ctx.rng.shuffle(list);  ctx.rng.sample(list, 3);  ctx.rng.int(1, 6);  ctx.rng.pi
 | 별 (늘어난 만큼만) | 별 1개당 +2 |
 | 도전 주문서 처음 성공 (단계 완료 대신) | +10 |
 | 도감에 처음 등록 (`ctx.collect`) | +5 |
-| 설명 맞힘 (`ctx.reward.event('explain', { correct: true, itemId })`, 문항마다 한 번) | +2 |
+| 설명 맞힘 (`ctx.reward.event('explain', { correct: true, itemId })`, 문항마다 한 번. `itemId`가 없으면 0) | +2 |
 | 빠르기 | 0 |
 
-- 같은 단계를 다시 하면 답 점수(연습)는 받지만 단계 완료·별 점수는 별이 늘 때만 받는다.
+- **다시 하기 점수**: 판을 시작할 때 이미 별 3개(`MASTERED_STARS`)인 단계를 다시 하면 연습 점수(처음 맞힘·다시 도전·다시 일어서기·연속·설명)는 0이다.
+  별 3개가 안 된 단계는 다시 해도 연습 점수를 그대로 받는다(어려워하는 학생의 복습은 계속 보상). 기준은 **판을 시작할 때**의 별이라 이번 판에 처음 별 3개를 받으면 이번 판 점수는 받는다.
+  도감에 처음 등록(+5)·도전 주문서 처음 성공(+10)은 원래 처음 한 번뿐이라 그대로 받는다. "연속 n" 글자와 소리는 보이지만 머리 점수는 오르지 않는다.
+  결과 화면 "오늘의 솜씨" 아래에 까닭 "별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요."를 보이고 화면 읽기로도 알린다.
+  엔진이 `createPlayReward({ startStars })`(`core/rewards.js`, `practiceAllowed(startStars)`)에 시작 별을 넘기고, 게임은 `ctx.reward.peek().practice`(`false`면 연습 점수 없음)로 "+1" 쪽지·"예상이 맞으면 +2" 같은 점수 안내를 숨긴다.
+  게임이 `ctx.finish({ highlights })`로 솜씨 칸 점수를 직접 줄 때도 연습 칸은 `peek().practice`가 `false`면 0으로 적는다.
+- 단계 완료·별 점수는 별이 늘 때만 받는다(별 3개가 안 된 단계를 다시 하면 답 점수는 받는다).
 - 플레이 중 점수는 단계를 마칠 때 저장한다(중간에 나가면 저장하지 않음). 새로 찾음 +5만 칸과 함께 바로 저장한다.
 
 **칭호**: 기본 새싹(0) → 탐험가(40) → 해결사(100) → 척척박사(180) → 으뜸 박사(300). 차시 하나(문항 15개 정도)를 잘 하면 한 번은 오른다.
@@ -355,7 +373,9 @@ createGameApp({
 | `all-stars` | 별 부자 | 한 차시의 일반 단계를 모두 별 3개 |
 
 게임 도장의 `test(state)`는 순수 함수다. `state`: `stars`(단계 id → 별, 모든 차시), `clearedCount`, `lessons`(`[{ id, ids }]`), `counters`(`bounce` `retryFix` `explain` `inspect` `discover` 누적),
-`collections`(도감 id → `{ count, total }`), `xp`, `play`(방금 마친 판 `{ stageId, attempts, correct, wrong, firstTry, cleared, stars, challenge }`). 단계를 마칠 때 판정한다.
+`collections`(도감 id → `{ count, total, found: [칸 id] }`), `records`(학습 기록, 방금 마친 판 포함 `[{ stageId, cleared, stars, answers: [{ itemId, correct, given, expected, tag }] }]`),
+`xp`, `play`(방금 마친 판 `{ stageId, attempts, correct, wrong, firstTry, cleared, stars, challenge }`). 단계를 마칠 때 판정한다.
+예: "안 되는 것을 5번 맞힘" = `records`의 답에서 `expected === 'no' && correct`를 센다. "기록 모두 지우기" 뒤에는 `records`도 비므로 도장 조건도 처음부터다.
 `icon`은 `icons.js` 아이콘 이름.
 
 **도감 틀**: 여러 가지를 새로 찾는 게임에서 쓴다.

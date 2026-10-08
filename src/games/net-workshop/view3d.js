@@ -1,10 +1,12 @@
 /**
  * CSS 3D 무대 (브라우저). 면은 <button>을 형제로 나란히 두고, foldNet이 준 4×4 행렬을 matrix3d()로 넣는다.
  * 경첩마다 DOM을 겹쳐 넣지 않아서 clip-path·opacity가 3D를 평평하게 만드는 문제가 없다.
+ * 모습: 재단 매트(.mat, 게임 색) 위의 색종이 면(var(--face-n), 잉크 테두리). 접기 조작은 매트 아래쪽 띠(.mat-tools).
  *
  * 무대 상태: .fold-stage[data-fold] = flat(펼침) · folding(접는 중) · half(반 접힘) · partial · done(다 접음)
  * 움직임 줄이기(prefers-reduced-motion)면 애니메이션 대신 펼침 → 반 접힘 → 다 접힘 3장면.
  */
+import { icon } from '../../shared/ui/icons.js';
 import { LABELS, foldNet, fullVertices, missingSlots, overlappingPairs } from './fold.js';
 import {
   add,
@@ -29,9 +31,12 @@ const MAX_UNIT = 116;
 const MIN_UNIT = 30;
 const TAP = 48; // 누르는 곳(빈 자리 버튼) 최소 크기(px)
 const MAX_ZOOM = 1.7; // 다 접은 입체를 이만큼까지 크게 본다
-const STUCK_AT = 0.72; // 한 꼭짓점에 네 면이 모인 전개도는 덩어리에 붙은 경첩만 약 65°까지 접히고 멈춘다
+// 한 꼭짓점에 네 면이 모인 전개도는 덩어리에 붙은 경첩만 약 56°까지 접히고 멈춘다.
+// (65°에서는 덩어리 양쪽에 접힌 면이 비스듬해 좁게 보였다 — net-workshop 재검토 2 R3)
+const STUCK_AT = 0.62;
 const LIGHT = normalize([-0.45, -0.55, 1]);
-const FACE_COLORS = ['#ffe6a8', '#cfe6ff', '#d5f0cd', '#ffd9e2', '#e3dafb', '#ffe0c2', '#cdeeea', '#eeeeee'];
+/** 색종이 면 색: 디자인 토큰 --face-1 ~ --face-8 (가 노랑, 나 하늘, 다 연두, 라 분홍, 마 보라, 바 귤색 …) */
+export const faceColor = (label) => `var(--face-${(Math.max(0, LABELS.indexOf(label)) % 8) + 1})`;
 
 export const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
@@ -79,12 +84,19 @@ const TURNS = [0, 90, 180, 270];
 const FINE_TURNS = Array.from({ length: 24 }, (_, i) => i * 15);
 
 // 2×2 장면의 기울기 후보(큰 것부터). 접힌 면이 덩어리 양쪽에 있으면 조금 덜 기울여 내려다봐야 둘 다 잘 보인다.
-const BLOCK_TILTS = [TILT, 48, 40, 32];
-const WELL_SEEN = 0.3; // 면의 법선이 보는 쪽을 이만큼 이상 향하면 "잘 보인다"
+const BLOCK_TILTS = [TILT, 48, 40, 34, 28, 22];
+const WELL_SEEN = 0.5; // 면의 법선이 보는 쪽을 이만큼 이상 향하면 "잘 보인다" (≈ 펼친 넓이의 절반 이상이 보임)
+
+/** 덩어리(바닥) 면의 글자가 화면에서 바로 서 있는 정도: 1이면 똑바로, -1이면 거꾸로 */
+const uprightness = (turn, tilt) => {
+  const down = viewDirection([0, 1, 0], turn, tilt);
+  return down[1] / (Math.hypot(down[0], down[1]) || 1);
+};
 
 /**
  * 2×2 덩어리 전개도: 덩어리 면을 바닥에 두고(펼친 채), 접히다 멈춘 면들이 모두 보는 쪽을 향하게 돌린다.
  * 가장 덜 보이는 면이 가장 잘 보이는 각도(turn)를 고르고, 그래도 잘 안 보이면 기울기(tilt)를 줄인다.
+ * 거의 같게(0.02 안) 잘 보이는 각도가 여럿이면 덩어리 글자가 바로 서는 각도를 고른다 (재검토 2 R3).
  */
 function displayBlocked(net, blocked) {
   const blockFaces = new Set(blocked.flatMap((v) => v.faces));
@@ -93,13 +105,14 @@ function displayBlocked(net, blocked) {
   const folded = foldNet(candidate, 1, { tOf: stuckTOf(candidate, blocked) });
   let best = null;
   for (const tilt of BLOCK_TILTS) {
-    best = { turn: 0, tilt, worst: -Infinity, sum: -Infinity };
-    for (const turn of FINE_TURNS) {
+    const scored = FINE_TURNS.map((turn) => {
       const zs = folded.faces.map((f) => viewDirection(f.normal, turn, tilt)[2]);
-      const worst = Math.min(...zs);
-      const sum = zs.reduce((a, b) => a + b, 0);
-      if (worst > best.worst + 1e-9 || (Math.abs(worst - best.worst) <= 1e-9 && sum > best.sum + 1e-9)) best = { turn, tilt, worst, sum };
-    }
+      return { turn, tilt, worst: Math.min(...zs), sum: zs.reduce((a, b) => a + b, 0), upright: uprightness(turn, tilt) };
+    });
+    const top = Math.max(...scored.map((x) => x.worst));
+    best = scored
+      .filter((x) => x.worst >= top - 0.02)
+      .reduce((a, b) => (b.upright > a.upright + 1e-9 || (Math.abs(b.upright - a.upright) <= 1e-9 && b.sum > a.sum + 1e-9) ? b : a));
     if (best.worst >= WELL_SEEN) break;
   }
   return { net: candidate, turn: best.turn, tilt: best.tilt };
@@ -149,15 +162,19 @@ export function displayNet(net, { focus = [] } = {}) {
  * @param {Function} p.h               요소 만들기 도우미
  * @param {boolean} [p.interactive]    면을 눌러 답하는 단계면 true (Tab으로 면에 갈 수 있다)
  * @param {(faceId: string) => void} [p.onFaceClick]
+ * @param {{ play: Function }} [p.sfx] 주면 접기 시작할 때 'fold' 소리 (ctx.sfx)
+ * @param {boolean} [p.still]          그림으로만 쓰는 무대(처음 화면): 초점·키보드·화면 읽기에서 빠진다
  */
-export function createNetView({ h, interactive = false, onFaceClick = null }) {
+export function createNetView({ h, interactive = false, onFaceClick = null, sfx = null, still = false }) {
   const scene = h('div', { class: 'net-scene' });
   const badge = h('p', { class: 'stage-badge', hidden: true });
   const el = h('div', {
-    class: 'fold-stage',
-    tabindex: '0',
-    role: 'group',
-    'aria-label': '전개도 무대. 왼쪽·오른쪽 방향키로 돌려 볼 수 있어요.',
+    class: `fold-stage${still ? ' is-still' : ''}`,
+    tabindex: still ? null : '0',
+    role: still ? null : 'group',
+    'aria-label': still ? null : '전개도 무대. 왼쪽·오른쪽 방향키로 돌려 볼 수 있어요.',
+    'aria-hidden': still ? 'true' : null,
+    inert: still,
     dataset: { fold: 'flat' },
   }, scene, badge);
 
@@ -172,6 +189,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   let revealed = false;
   let tOf = null;
   let blocked = []; // 한 꼭짓점에 네 면이 모인 곳
+  let layout = null; // { unit, origin: [x, y] } 펼친 상태를 놓는 판의 칸과 같은 자리·크기로 (자유 배치)
+  let layoutBox = null; // layout을 맞춘 때의 무대 크기
   let faceEls = new Map();
   let slotEls = new Map();
   let markEls = [];
@@ -212,19 +231,26 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     return pts;
   }
 
+  let boxSize = { width: 600, height: 400 };
   function measure() {
     if (!net) return;
     const { min, max } = bounds(flatPoints());
     const box = el.getBoundingClientRect();
     const width = box.width || 600;
     const height = box.height || 400;
+    boxSize = { width, height };
     const fit = (margin) => Math.floor(Math.min(width / (max[0] - min[0] + margin), height / (max[1] - min[1] + margin)));
     let size = fit(0.9);
     // 빈 자리 버튼이 있으면 가장자리 여백을 줄여서라도 48px 이상으로 (좁은 휴대폰)
     if (slots.length > 0 && size < TAP) size = Math.max(size, Math.min(TAP, fit(0.1)));
-    unit = Math.max(MIN_UNIT, Math.min(MAX_UNIT, size));
+    unit = layout ? layout.unit : Math.max(MIN_UNIT, Math.min(MAX_UNIT, size));
     zoom = blocked.length > 0 ? 1 : Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
     scene.style.setProperty('--unit', `${unit}px`);
+  }
+
+  /** layout이 있으면 펼친 상태(t = 0)에서 판의 칸 (x, y)가 화면의 같은 자리에 오도록 하는 가운데 점 */
+  function layoutCenter() {
+    return [(boxSize.width / 2 - layout.origin[0]) / unit, (boxSize.height / 2 - layout.origin[1]) / unit, 0];
   }
 
   // ── 그리기 ───────────────────────────
@@ -242,7 +268,9 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     const pts = folded.faces.flatMap((f) => f.points);
     if (t <= 1e-6) for (const s of slots) pts.push([...s.cell, 0], [s.cell[0] + 1, s.cell[1] + 1, 0]);
     const { min, max } = bounds(pts);
-    const center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    let center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    // 놓는 판에서 이어 접을 때: 펼친 상태는 판의 칸 자리 그대로, 접을수록 무대 가운데로 (면이 튀지 않게)
+    if (layout) center = add(scaleVec(layoutCenter(), 1 - t), scaleVec(center, t));
     const tilt = baseTilt * t;
     const turn = spin + (SPIN + baseTurn) * t;
     const z = (1 + (zoom - 1) * t).toFixed(4);
@@ -304,7 +332,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     }
     badge.hidden = true;
     marksShown = false;
-    el.classList.remove('marks-on');
+    el.classList.remove('marks-on', 'marks-blocked');
   }
 
   function addMark(markEl, place) {
@@ -351,6 +379,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     if (!full) return;
     marksShown = true;
     el.classList.add('marks-on');
+    // 2×2 덩어리 장면: 면 글자가 비스듬하거나 거꾸로 보이지 않게 모든 면의 글자를 보는 쪽으로 바로 세운다 (재검토 2 R3)
+    el.classList.toggle('marks-blocked', blocked.length > 0);
     const folded = foldNet(net, 1, { tOf });
     const pairs = overlappingPairs(folded);
     const missing = blocked.length > 0 ? [] : missingSlots(net, folded);
@@ -363,10 +393,11 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     const ok = pairs.length === 0 && missing.length === 0 && blocked.length === 0 && net.faces.length === 6;
     badge.hidden = false;
     badge.classList.toggle('is-wrong', !ok);
-    badge.textContent = ok ? '✓ 정육면체가 됐어요' : blocked.length > 0 ? '✗ 네 면이 한 점에 모여 접을 수 없어요' : '✗ 정육면체가 안 돼요';
+    const text = ok ? '정육면체가 됐어요' : blocked.length > 0 ? '네 면이 한 점에 모여 접을 수 없어요' : '정육면체가 안 돼요';
+    badge.replaceChildren(h('span', { class: 'badge-main' }, icon(ok ? 'check' : 'cross'), text));
     // 빈 자리가 겹친 자리의 정반대라 지금 시점에서 안 보이면 돌려 보라고 알려 준다
     const hiddenMissing = missing.some((s) => viewDir(s.normal, baseTilt, SPIN + baseTurn + spin)[2] < 0.05);
-    if (hiddenMissing) badge.append(h('span', { class: 'badge-hint' }, '↻ 돌려 보면 빈 자리가 보여요'));
+    if (hiddenMissing) badge.append(h('span', { class: 'badge-hint' }, icon('rotr'), '돌려 보면 빈 자리가 보여요'));
     for (const fn of markListeners) fn({ ok, hiddenMissing });
   }
 
@@ -380,11 +411,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   // ── 면 만들기 ─────────────────────────
   function buildFace(f) {
     const { min, max } = bounds(f.poly);
-    const color = FACE_COLORS[Math.max(0, LABELS.indexOf(f.label)) % FACE_COLORS.length];
     const faceEl = h('button', {
       type: 'button',
       class: 'net-face',
-      tabindex: interactive ? null : '-1',
+      tabindex: interactive && !still ? null : '-1',
       'aria-label': `${f.label} 면`,
       dataset: { face: f.id, label: f.label },
       style: { width: `calc(var(--unit) * ${max[0] - min[0]})`, height: `calc(var(--unit) * ${max[1] - min[1]})` },
@@ -395,7 +425,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
         h('span', { class: 'face-mark', 'aria-hidden': 'true' }),
       ),
     );
-    faceEl.style.setProperty('--face-color', color);
+    faceEl.style.setProperty('--face-color', faceColor(f.label));
     if (!isAxisRect(f.poly)) {
       const pts = f.poly.map(([x, y]) => `calc(var(--unit) * ${x - min[0]}) calc(var(--unit) * ${y - min[1]})`);
       faceEl.style.clipPath = `polygon(${pts.join(', ')})`;
@@ -415,11 +445,14 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   /**
    * 새 전개도를 펼친 상태로 보인다. slots: [{ key, cell, label }] 면을 붙일 빈 자리.
    * focus: 다 접었을 때 잘 보여야 할 면 id ([★ 면, 정답 면]) — displayNet 참고
+   * layout: { unit(칸 한 변 px), origin([x, y] 무대 안에서 칸 (0, 0)의 왼쪽 위 px) } — 놓는 판의 칸 크기·자리를 그대로 써서
+   *   판에서 무대로 바뀔 때 면이 튀지 않는다(자유 배치). 무대 크기가 바뀌면 보통 크기로 돌아간다.
    */
-  function setNet(nextNet, { slots: nextSlots = [], focus = [] } = {}) {
+  function setNet(nextNet, { slots: nextSlots = [], focus = [], layout: nextLayout = null } = {}) {
     stopAnimation();
     clearMarks();
     marksKey = '';
+    layout = nextLayout && nextLayout.unit > 0 && Array.isArray(nextLayout.origin) ? { unit: nextLayout.unit, origin: [...nextLayout.origin] } : null;
     ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus }));
     slots = nextSlots;
     revealed = false;
@@ -432,6 +465,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
     scene.replaceChildren(...faceEls.values(), ...slotEls.values());
     el.dataset.fold = 'flat';
     measure();
+    layoutBox = layout ? { ...boxSize } : null;
     setT(0);
   }
 
@@ -459,6 +493,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
           done();
           return;
         }
+        sfx?.play('fold');
         if (t < 0.5) {
           setT(0.5); // data-fold = half, 다음 장면까지 그대로
           later(() => {
@@ -472,6 +507,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
         return;
       }
       const from = t;
+      if (target > from) sfx?.play('fold');
       const ms = DURATION * Math.abs(target - from);
       const start = performance.now();
       el.dataset.fold = 'folding';
@@ -499,7 +535,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   }
 
   function onKey(event) {
-    if (event.target instanceof HTMLInputElement) return;
+    if (still || event.target instanceof HTMLInputElement) return;
     if (event.key === 'ArrowLeft') rotate(-15);
     else if (event.key === 'ArrowRight') rotate(15);
     else return;
@@ -509,6 +545,9 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
 
   const resizer = typeof ResizeObserver === 'function'
     ? new ResizeObserver(() => {
+      const box = el.getBoundingClientRect();
+      // 판 자리를 맞춘 뒤 무대 크기가 바뀌었으면 판 자리 맞추기(layout)를 그만두고 보통 크기로
+      if (layout && layoutBox && (Math.abs(box.width - layoutBox.width) > 1 || Math.abs(box.height - layoutBox.height) > 1)) layout = null;
       measure();
       render();
     })
@@ -554,17 +593,18 @@ export function createNetView({ h, interactive = false, onFaceClick = null }) {
   };
 }
 
-/**
- * 오른쪽 문제 판: 문제 번호, 물음, 답 칸(단계가 채움), 접기 조작, 까닭 칸, 다음 버튼.
- * 답하기 전에는 접기 막대가 잠긴다. hint면 틀린 뒤 [반만 접어 보기]가 열린다.
- */
-export function createWorkbench({ ctx, view, total, hint = false }) {
-  const { h } = ctx;
-  const counter = h('p', { class: 'q-counter' });
-  const prompt = h('p', { class: 'q-prompt' });
-  const answerBox = h('div', { class: 'q-answer' });
+/** 매트 아래쪽 접기 조작 띠의 높이만큼 알림을 띄운다(넓은 화면에서 알림이 조작 띠를 가리지 않게) */
+export const MAT_TOOLS_LIFT = 64;
 
-  const foldButton = h('button', { type: 'button', class: 'btn fold-toggle', onclick: () => toggleFold() }, '▶ 접어 보기');
+/**
+ * 재단 매트 아래쪽 띠의 접기 조작: [접어 보기 / 펴기] [접는 정도 막대] [↺] [↻]
+ * → { el, lock(잠금), turnRight }
+ */
+export function createFoldTools({ ctx, view }) {
+  const { h } = ctx;
+  const toggleIcon = h('span', { class: 'btn-ico', 'aria-hidden': 'true' }, icon('play'));
+  const toggleText = h('span', null, '접어 보기');
+  const foldButton = h('button', { type: 'button', class: 'btn fold-toggle', onclick: () => toggleFold() }, toggleIcon, toggleText);
   const slider = h('input', {
     type: 'range',
     class: 'fold-range',
@@ -575,53 +615,33 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     'aria-label': '접는 정도',
     oninput: () => view.setT(Number(slider.value) / 100),
   });
-  const rotateButton = (label, deg, text) => h('button', {
+  const rotateButton = (label, deg, name) => h('button', {
     type: 'button',
     class: 'btn btn-icon',
     'aria-label': label,
     title: label,
     onclick: () => view.rotate(deg),
-  }, text);
-  const turnRight = rotateButton('오른쪽으로 돌려 보기', 30, '↻');
-  // 빈 자리가 안 보이는 쪽에 있으면 [↻]를 잠깐 강조한다 (배지에도 "↻ 돌려 보면 빈 자리가 보여요")
+  }, icon(name));
+  const turnRight = rotateButton('오른쪽으로 돌려 보기', 30, 'rotr');
+  // 빈 자리가 안 보이는 쪽에 있으면 [↻]를 잠깐 강조한다 (이름표에도 "돌려 보면 빈 자리가 보여요")
   let hintTimer = null;
   view.onMarks(({ hiddenMissing }) => {
     clearTimeout(hintTimer);
     turnRight.classList.toggle('is-hint', hiddenMissing);
     if (hiddenMissing) hintTimer = setTimeout(() => turnRight.classList.remove('is-hint'), 4000);
   });
-  const halfButton = hint
-    ? h('button', { type: 'button', class: 'btn btn-small hint-btn', hidden: true, onclick: () => useHint() }, '반만 접어 보기')
-    : null;
-  const lockNote = h('p', { class: 'fold-note' }, '답한 뒤에 접어 볼 수 있어요.');
-  const reasonText = h('p', { class: 'reason-text' });
-  const reason = h('div', { class: 'reason', hidden: true }, h('h3', { class: 'reason-title' }, '까닭'), reasonText);
-  const nextButton = h('button', { type: 'button', class: 'btn btn-primary next-btn', hidden: true });
-  let onNext = null;
-  nextButton.addEventListener('click', () => {
-    ctx.sfx.play('click');
-    onNext?.();
-  });
-
-  const panel = h('section', { class: 'net-panel', 'aria-label': '문제 판' },
-    h('div', { class: 'q-head' }, counter, prompt),
-    answerBox,
-    h('div', { class: 'fold-tools' },
-      h('div', { class: 'fold-row' }, foldButton, rotateButton('왼쪽으로 돌려 보기', -30, '↺'), turnRight),
-      slider,
-      lockNote,
-      halfButton,
-    ),
-    reason,
-    nextButton,
+  const el = h('div', { class: 'mat-tools' },
+    foldButton,
+    h('label', { class: 'fold-slider' }, h('span', { class: 'fold-slider-label' }, '접는 정도'), slider),
+    rotateButton('왼쪽으로 돌려 보기', -30, 'rotl'),
+    turnRight,
   );
-  ctx.el.append(h('div', { class: 'workbench' }, view.el, panel));
-  // 넓은 화면에서 엔진 알림(토스트)을 무대 아래쪽 가운데에 띄워 오른쪽 문제 판을 가리지 않게 한다
-  ctx.feedback.anchor?.(view.el);
 
   const sync = (value) => {
     slider.value = String(Math.round(value * 100));
-    foldButton.textContent = value >= 1 - 1e-6 ? '◀ 펴기' : '▶ 접어 보기';
+    const done = value >= 1 - 1e-6;
+    toggleText.textContent = done ? '펴기' : '접어 보기';
+    toggleIcon.replaceChildren(icon(done ? 'unfold' : 'play'));
   };
   view.onChange(sync);
 
@@ -629,6 +649,58 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     ctx.sfx.play('click');
     view.animateTo(view.getT() >= 1 - 1e-6 ? 0 : 1);
   }
+
+  return {
+    el,
+    turnRight,
+    lock(value) {
+      foldButton.disabled = value;
+      slider.disabled = value;
+    },
+    reset() {
+      sync(0);
+      clearTimeout(hintTimer);
+      turnRight.classList.remove('is-hint');
+    },
+    destroy() {
+      clearTimeout(hintTimer);
+    },
+  };
+}
+
+/**
+ * 판별·마주 보는 면·면 붙이기 화면의 틀: 왼쪽 재단 매트(3D 무대 + 접기 조작 띠), 오른쪽 작업 지시서(엔진 ctx.ui.order).
+ * 작업 지시서: 주문 도장 + 문제 번호, 물음, 답 칸(단계가 채움), 까닭 쪽지, 보너스 쪽지, 다음 버튼.
+ * 답하기 전에는 접기 막대가 잠긴다. hint면 틀린 뒤 [반만 접어 보기]가 열린다.
+ */
+export function createWorkbench({ ctx, view, total, hint = false }) {
+  const { h } = ctx;
+  const tools = createFoldTools({ ctx, view });
+  const order = ctx.ui.order({ kind: ctx.stage.order ?? '', label: '문제 판' });
+  order.counter.classList.add('q-counter');
+  const prompt = h('p', { class: 'q-prompt' });
+  const answerBox = h('div', { class: 'q-answer' });
+
+  const halfButton = hint
+    ? h('button', { type: 'button', class: 'btn btn-small hint-btn', hidden: true, onclick: () => useHint() }, icon('bulb'), '반만 접어 보기')
+    : null;
+  const lockNote = h('p', { class: 'fold-note' }, icon('lock'), '답한 뒤에 접어 볼 수 있어요.');
+  const reasonSlot = h('div', { class: 'reason-slot' });
+  const bonusSlot = h('div', { class: 'bonus-slot' });
+  const nextLabel = h('span', null, '');
+  const nextButton = h('button', { type: 'button', class: 'btn btn-primary btn-lg next-btn', hidden: true }, nextLabel);
+  let onNext = null;
+  nextButton.addEventListener('click', () => {
+    ctx.sfx.play('click');
+    onNext?.();
+  });
+
+  const mat = h('div', { class: 'mat' }, view.el, tools.el);
+  order.el.classList.add('net-panel');
+  order.el.append(...[prompt, answerBox, lockNote, halfButton, reasonSlot, bonusSlot, nextButton].filter(Boolean));
+  ctx.el.append(h('div', { class: 'workbench' }, mat, order.el));
+  // 알림(토스트): 넓은 화면은 매트 아래쪽(조작 띠 위) 가운데, 좁은 화면(태블릿 세로·휴대폰)은 매트 바로 밑 — 무대의 면·조작을 가리지 않게
+  ctx.feedback.anchor?.(mat, { lift: MAT_TOOLS_LIFT, narrow: 'below' });
 
   let hintUsed = false;
   let locked = true;
@@ -642,25 +714,47 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     hintUsed = true;
     halfButton.disabled = true;
     ctx.sfx.play('click');
+    ctx.reward.event('inspect');
     view.peek(0.5);
   }
 
   function lockFold(value) {
     locked = value;
-    foldButton.disabled = locked;
-    slider.disabled = locked;
+    tools.lock(locked);
     updateNote();
   }
 
+  /** 까닭 쪽지 (.reason): 맞으면 초록 ✓, 틀리면 벽돌색 ✗ + 살펴볼 거리 */
+  function showReason(text, correct, { title = correct ? '맞아요' : '까닭', tip = '' } = {}) {
+    const note = ctx.ui.note({ type: correct ? 'correct' : 'wrong', title, text, tip });
+    note.classList.add('reason', correct ? 'is-correct' : 'is-wrong');
+    note.setAttribute('role', 'status');
+    reasonSlot.replaceChildren(note);
+  }
+
+  /** 보너스 쪽지: 틀린 뒤 "다시 일어서기" 기회를 글로 보인다 (점수는 엔진이 행동으로 계산) */
+  function showBounce({ retry = false } = {}) {
+    const peek = ctx.reward.peek?.();
+    // 보상이 꺼졌거나, 별 3개 단계를 다시 하는 판(연습 점수 없음)이면 점수 쪽지를 보이지 않는다
+    if (!peek?.on || peek.practice === false) return;
+    const toBadge = Math.min(5, peek.counters.bounce ?? 0);
+    const badgeText = toBadge < 5 ? `, 도장까지 ${toBadge} / 5` : '';
+    bonusSlot.replaceChildren(retry
+      ? ctx.ui.bonus(h('b', null, '다시 도전'), ' · 까닭을 보고 다시 맞히면 +1, 다음 문제도 맞히면 다시 일어서기 +1')
+      : ctx.ui.bonus(h('b', null, '다시 일어서기'), ` · 다음 문제를 맞히면 +1${badgeText}`));
+  }
+
   return {
-    panel,
+    panel: order.el,
+    mat,
+    tools,
     answerBox,
     setQuestion(number, text) {
-      counter.textContent = `문제 ${number} / ${total}`;
+      order.setCounter(`문제 ${number} / ${total}`);
+      ctx.setProgress?.(number, total);
       prompt.textContent = text;
-      reason.hidden = true;
-      reasonText.textContent = '';
-      reason.classList.remove('is-correct', 'is-wrong');
+      reasonSlot.replaceChildren();
+      bonusSlot.replaceChildren();
       nextButton.hidden = true;
       onNext = null;
       hintUsed = false;
@@ -669,15 +763,12 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
         halfButton.disabled = false;
       }
       lockFold(true);
-      sync(0);
-      clearTimeout(hintTimer);
-      turnRight.classList.remove('is-hint');
+      tools.reset();
     },
-    showReason(text, correct) {
-      reason.hidden = false;
-      reason.classList.toggle('is-correct', correct);
-      reason.classList.toggle('is-wrong', !correct);
-      reasonText.textContent = `${correct ? '✓' : '✗'} ${text}`;
+    showReason,
+    showBounce,
+    clearBonus() {
+      bonusSlot.replaceChildren();
     },
     lockFold,
     /** 틀린 뒤 [반만 접어 보기]를 연다 (문항마다 1번) */
@@ -689,8 +780,9 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
       if (halfButton) halfButton.hidden = true;
       updateNote();
     },
-    showNext(label, fn, { primary = true } = {}) {
-      nextButton.textContent = label;
+    showNext(label, fn, { primary = true, iconName = null } = {}) {
+      nextLabel.textContent = label;
+      nextButton.replaceChildren(...(iconName === 'unfold' ? [icon('unfold'), nextLabel] : [nextLabel, iconName ? icon(iconName) : null].filter(Boolean)));
       nextButton.classList.toggle('btn-primary', primary);
       nextButton.hidden = false;
       onNext = fn;
@@ -701,6 +793,9 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     },
     focusNext() {
       nextButton.focus({ preventScroll: true });
+    },
+    destroy() {
+      tools.destroy();
     },
   };
 }

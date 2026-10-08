@@ -113,19 +113,26 @@ function badgeLessons(stages, lessons) {
   return lessons.map((l) => ({ id: l.id, ids: regular(stages.filter((s) => s.lesson === l.id)) }));
 }
 
-/** 결과 화면 "오늘의 솜씨" 기본 칸: 답 기록에서 만든다(맞힘, 다시 일어서기, 연속) + 새로 찾음·설명 */
+/**
+ * 결과 화면 "오늘의 솜씨" 기본 칸: 답 기록에서 만든다(맞힘, 다시 일어서기, 연속) + 새로 찾음·설명
+ * 연습 점수가 없는 판(별 3개 단계를 다시 함, summary.practice === false)이면 연습 칸의 점수는 0
+ */
 export function defaultHighlights(summary) {
   const a = summary.answers;
+  const k = summary.practice === false ? 0 : 1;
   const list = [];
-  if (a.attempts > 0) list.push({ icon: 'target', label: '처음에 맞힘', value: `${a.firstTry} / ${a.items}`, xp: a.firstTry * XP.first });
+  if (a.attempts > 0) list.push({ icon: 'target', label: '처음에 맞힘', value: `${a.firstTry} / ${a.items}`, xp: k * a.firstTry * XP.first });
   if (summary.discover.count > 0) list.push({ icon: 'book', label: '새로 찾음', value: `${summary.discover.count}가지`, xp: summary.discover.xp });
   if (summary.explain.count > 0) list.push({ icon: 'bulb', label: '설명 맞힘', value: `${summary.explain.count}번`, xp: summary.explain.xp });
   if (a.attempts > 0) {
-    list.push({ icon: 'rise', label: '다시 일어서기', value: `${a.retryFix + a.bounce}번`, xp: a.retryFix * XP.retry + a.bounce * XP.bounce });
-    list.push({ icon: 'spark', label: '연속 최고', value: `${a.bestStreak}번`, xp: a.streakBonus * XP.streakBonus });
+    list.push({ icon: 'rise', label: '다시 일어서기', value: `${a.retryFix + a.bounce}번`, xp: k * (a.retryFix * XP.retry + a.bounce * XP.bounce) });
+    list.push({ icon: 'spark', label: '연속 최고', value: `${a.bestStreak}번`, xp: k * a.streakBonus * XP.streakBonus });
   }
   return list;
 }
+
+/** 별 3개 단계를 다시 할 때 결과 화면에 보이는 까닭 */
+export const PRACTICE_OFF_TEXT = '별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.';
 
 /** 결과 화면의 단계 완료·별 점수 줄 */
 export function stageXpLine(sx, { challenge = false } = {}) {
@@ -571,6 +578,34 @@ export function createGameApp({
     );
   }
 
+  /**
+   * 작업 지시서(문제 판) 도우미 — 테이프 붙은 종이 한 장에 주문 도장 + 문제 번호 (design/spec.md 3절 "문제 판")
+   *   order({ kind: '검사 주문', counter: '문제 3 / 6', label }) → { el, counter(요소), setCounter(글) }
+   *   note({ type: 'wrong'|'correct'|'info', title, text, tip }) → 까닭 쪽지(✓✗ 아이콘·제목·문장·살펴볼 거리)
+   *   bonus(글 또는 요소들) → 노랑 점선 보너스 쪽지("다시 일어서기 · 다음 문제를 맞히면 +1")
+   */
+  const NOTE_ICONS = { wrong: 'cross', correct: 'check', info: 'info' };
+  const workOrderUi = {
+    order({ kind = '', counter = '', label = '문제 판' } = {}) {
+      const counterEl = h('span', { class: 'order-counter' }, counter);
+      const el = h('section', { class: 'sheet tape order', 'aria-label': label },
+        h('div', { class: 'order-head' }, kind ? h('span', { class: 'order-kind' }, kind) : h('span'), counterEl),
+      );
+      return { el, counter: counterEl, setCounter: (text) => { counterEl.textContent = text; } };
+    },
+    note({ type = 'info', title = '', text = '', tip = '' } = {}) {
+      const kind = NOTE_ICONS[type] ? type : 'info';
+      return h('div', { class: `note note-${kind}` },
+        title && h('p', { class: 'note-title' }, icon(NOTE_ICONS[kind]), title),
+        text && h('p', { class: 'note-text' }, text),
+        tip && h('p', { class: 'note-tip' }, icon('search'), tip),
+      );
+    },
+    bonus(...content) {
+      return h('p', { class: 'bonus-note' }, icon('spark'), h('span', null, content));
+    },
+  };
+
   /** m:ss (시간 재기 시계) */
   const clockText = (ms) => {
     const total = Math.max(0, Math.floor(ms / 1000));
@@ -602,7 +637,8 @@ export function createGameApp({
 
     log.startStage(stage);
     const startedAt = Date.now();
-    const play = createPlayReward();
+    // 다시 하기 점수 규칙: 판을 시작할 때 이미 별 3개인 단계는 연습 점수가 없다 (새로 찾음은 그대로)
+    const play = createPlayReward({ startStars: progress.getStars(stage.id) });
     const startXp = rewardStore.xp();
     const timers = [];
     const later = (fn, ms) => timers.push(setTimeout(fn, ms));
@@ -611,6 +647,27 @@ export function createGameApp({
       clearInterval(t);
     }));
     let finished = false;
+
+    // 문제 n / N 점 막대 (게임이 ctx.setProgress로 알려 줄 때만 보인다)
+    const progressBox = h('span', { class: 'meta-box meta-progress', hidden: true });
+    meta.append(progressBox);
+    function setProgress(current, total, { label = '문제', done = Number(current) - 1, check = false } = {}) {
+      const n = Math.max(0, Math.floor(Number(total) || 0));
+      const at = Math.max(0, Math.floor(Number(current) || 0));
+      const finishedCount = Math.max(0, Math.min(n, Math.floor(Number(done) || 0)));
+      if (n === 0) {
+        progressBox.hidden = true;
+        return;
+      }
+      progressBox.hidden = false;
+      progressBox.replaceChildren(
+        h('small', null, `${label} ${at} / ${n}`),
+        h('span', { class: `q-dots${check ? ' is-check' : ''}`, 'aria-hidden': 'true' }, Array.from({ length: n }, (_, i) => {
+          const state = i < finishedCount ? 'is-done' : !check && i === finishedCount ? 'is-now' : '';
+          return h('i', { class: state || null }, check && i < finishedCount ? icon('check') : null);
+        })),
+      );
+    }
 
     // 시간 재기 (점수 없음): 첫 답 전에만 켤 수 있고, 켜면 머리에 걸린 시간이 보인다
     let timerOn = false;
@@ -706,7 +763,7 @@ export function createGameApp({
           updateMeta();
           return rewardsOn ? xp : 0;
         },
-        /** 지금 상태: 이번 판 점수, 연속, 다시 일어서기 기회, 누적 횟수(도장까지 몇 번 남았는지 보일 때) */
+        /** 지금 상태: 이번 판 점수, 연속, 다시 일어서기 기회, 연습 점수를 주는 판인지, 누적 횟수(도장까지 몇 번 남았는지 보일 때) */
         peek() {
           const stored = rewardStore.counters();
           const a = play.summary().answers;
@@ -715,6 +772,7 @@ export function createGameApp({
             xp: play.xp(),
             streak: play.streak(),
             bounceReady: play.bounceReady(),
+            practice: play.practice(), // false: 별 3개 단계를 다시 하는 판이라 연습 점수가 없다
             counters: { ...stored, bounce: stored.bounce + a.bounce, retryFix: stored.retryFix + a.retryFix },
           };
         },
@@ -722,6 +780,10 @@ export function createGameApp({
       collect: collectionsCtx.collect,
       collection: collectionsCtx.collection,
       streak: () => play.streak(),
+      /** 플레이 머리의 "문제 n / N" 점 막대. done(마친 수, 기본 current − 1), check면 마친 칸에 ✓(예: 찾은 전개도 1 / 3) */
+      setProgress,
+      /** 작업 지시서 도우미 (선택): 오른쪽 문제 판·까닭 쪽지·보너스 쪽지 */
+      ui: workOrderUi,
       feedback: { ...feedback, celebrate },
       sfx,
       h,
@@ -774,8 +836,9 @@ export function createGameApp({
       counters: rewardStore.counters(),
       collections: Object.fromEntries(collections.map((c) => {
         const s = collectionStatus(collectionState, c);
-        return [c.id, { count: s.count, total: s.total }];
+        return [c.id, { count: s.count, total: s.total, found: [...s.found] }];
       })),
+      records: log.records(), // 방금 마친 판까지 (기록 모두 지우기 뒤에는 비어 있다)
       xp: rewardStore.xp(),
       play: { stageId: stage.id, attempts: a.attempts, correct: a.correct, wrong: a.wrong, firstTry: a.firstTry, cleared, stars, challenge: Boolean(stage.challenge) },
     });
@@ -850,6 +913,7 @@ export function createGameApp({
           starsEl(record.stars, 'stars-big'),
           hint && h('p', { class: 'star-hint' }, hint),
           reward && highlightTiles(highlights ?? defaultHighlights(reward.summary)),
+          reward && !reward.summary.practice && h('p', { class: 'practice-note' }, icon('info'), PRACTICE_OFF_TEXT),
           reward && h('p', { class: 'xp-line' }, stageXpLine(reward.sx, { challenge: Boolean(stage.challenge) })),
           time && h('p', { class: 'time-line' }, icon('clock'), timeRecordText(time)),
           h('dl', { class: 'result-stats' },
@@ -885,6 +949,7 @@ export function createGameApp({
     const said = [`별 ${MAX_STARS}개 중 ${record.stars}개`];
     if (reward) {
       said.push(`솜씨 점수 ${reward.gained}점을 모았어요`);
+      if (!reward.summary.practice) said.push(PRACTICE_OFF_TEXT);
       if (reward.rankUp) said.push(`칭호가 올랐어요: ${reward.after.name}`);
       if (reward.newBadges.length) said.push(`새 도장: ${reward.newBadges.map((b) => b.title).join(', ')}`);
     }

@@ -7,7 +7,7 @@ import { createNetView, createWorkbench } from './view3d.js';
 
 export function playPick(stage, ctx, questions) {
   const { h } = ctx;
-  const view = createNetView({ h, interactive: true, onFaceClick: (id) => pick(id) });
+  const view = createNetView({ h, interactive: true, onFaceClick: (id) => pick(id), sfx: ctx.sfx });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
   bench.answerBox.append(h('p', { class: 'answer-tip' }, '전개도에서 면을 눌러요. (키보드: Tab으로 고르고 Enter)'));
 
@@ -56,6 +56,7 @@ export function playPick(stage, ctx, questions) {
       ctx.feedback.wrong(result.message, inner(faceEl));
       mark(faceEl, false);
       bench.offerHint();
+      bench.showBounce({ retry: true });
       return;
     }
     solved = true;
@@ -63,11 +64,12 @@ export function playPick(stage, ctx, questions) {
     ctx.feedback.correct(result.message, inner(faceEl));
     mark(faceEl, true);
     bench.hideHint();
+    bench.clearBonus();
     view.reveal();
     bench.lockFold(false);
     view.animateTo(1);
     const last = index + 1 >= questions.length;
-    bench.showNext(last ? '결과 보기' : '다음 문제 ▶', next);
+    bench.showNext(last ? '결과 보기' : '다음 문제', next, { iconName: 'play' });
     bench.focusNext();
   }
 
@@ -81,5 +83,8 @@ export function playPick(stage, ctx, questions) {
   }
 
   showQuestion();
-  return () => view.destroy();
+  return () => {
+    bench.destroy();
+    view.destroy();
+  };
 }

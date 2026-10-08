@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { splitTitleMark } from '../../src/shared/core/title-mark.js';
 import { createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
-import { defaultHighlights, gradeLabel, readUrlOptions, stageXpLine, starHint, stageStates, timeRecordText } from '../../src/shared/ui/app.js';
+import { PRACTICE_OFF_TEXT, defaultHighlights, gradeLabel, readUrlOptions, stageXpLine, starHint, stageStates, timeRecordText } from '../../src/shared/ui/app.js';
 import { SOUNDS } from '../../src/shared/ui/audio.js';
 import { CONFETTI_MAX, RESULT_MS, confettiSpecs, isLowFx } from '../../src/shared/ui/celebrate.js';
-import { anchorPlacement } from '../../src/shared/ui/feedback.js';
+import { anchorPlacement, belowPlacement } from '../../src/shared/ui/feedback.js';
 import { ICONS, STAR_PATH } from '../../src/shared/ui/icons.js';
 
 test('형광펜 낱말: 마지막 낱말, 괄호로 시작하면 그 앞 낱말, 이어 붙이면 원래 이름', () => {
@@ -63,12 +63,23 @@ test('토스트 기준 자리: 요소 아래쪽 가운데, 화면 안으로', ()
   assert.equal(anchorPlacement({ left: 0, right: 100, top: 0, bottom: 300, width: 100, height: 300 }, viewport).left, 136);
   // 요소 아래쪽이 화면 밖이면 화면 아래에 붙인다
   assert.equal(anchorPlacement({ left: 0, right: 800, top: 100, bottom: 1400, width: 800, height: 1300 }, viewport).bottom, 16);
+  // lift: 요소 아래쪽 조작 띠만큼 더 위에
+  assert.equal(anchorPlacement({ left: 83, right: 927, top: 147, bottom: 663, width: 844, height: 516 }, viewport, { lift: 64 }).bottom, 185);
   // 요소가 화면 위쪽에 있어도 너무 높이 뜨지 않는다
   assert.equal(anchorPlacement({ left: 0, right: 800, top: -500, bottom: 40, width: 800, height: 540 }, viewport).bottom, 648);
 });
 
+test('좁은 화면 토스트 자리(anchor narrow: below): 요소 바로 밑(요소 밖), 화면 안으로, 요소가 화면 밖이면 기본 자리', () => {
+  const viewport = { width: 390, height: 844 };
+  // 무대(위 160~520) 바로 밑에: 무대 안의 면을 가리지 않는다
+  assert.deepEqual(belowPlacement({ left: 16, right: 374, top: 160, bottom: 520, width: 358, height: 360 }, viewport), { left: 195, top: 528, width: 374 });
+  // 무대가 위로 지나가 안 보이거나, 밑에 토스트가 들어갈 자리가 없으면 null (기본 자리)
+  assert.equal(belowPlacement({ left: 16, right: 374, top: -500, bottom: -10, width: 358, height: 490 }, viewport), null);
+  assert.equal(belowPlacement({ left: 16, right: 374, top: 300, bottom: 800, width: 358, height: 500 }, viewport), null);
+});
+
 test('아이콘: 기획서 2-6절 이름이 모두 있고, 그림 요소 형식이 맞다', () => {
-  const names = 'back, sound, mute, lock, check, cross, rotl, rotr, play, unfold, bulb, book, stamp, spark, clock, user, target, search, cube, trash, undo, hand, shield, grid, flag, arrow, copy, home'.split(', ');
+  const names = 'back, sound, mute, lock, check, cross, rotl, rotr, play, unfold, bulb, book, stamp, spark, clock, user, target, search, cube, trash, undo, hand, shield, grid, flag, arrow, copy, home, ring'.split(', ');
   for (const name of names) assert.ok(ICONS[name], name);
   for (const [name, parts] of Object.entries(ICONS)) {
     assert.ok(parts.length > 0, name);
@@ -95,6 +106,14 @@ test('결과 "오늘의 솜씨" 기본 칸: 답 기록에서(처음에 맞힘·�
   play.event('explain', { correct: true, itemId: 9 });
   assert.deepEqual(defaultHighlights(play.summary()).map((x) => x.label), ['처음에 맞힘', '새로 찾음', '설명 맞힘', '다시 일어서기', '연속 최고']);
   assert.deepEqual(defaultHighlights(createPlayReward().summary()), []); // 답 기록이 없는 게임
+  // 별 3개 단계를 다시 하는 판: 칸은 그대로 보이고 연습 점수는 0, 새로 찾음은 그대로
+  const replay = createPlayReward({ startStars: 3 });
+  for (const a of [{ itemId: 1, correct: false }, { itemId: 1, correct: true }, { itemId: 2, correct: true }, { itemId: 3, correct: true }, { itemId: 4, correct: true }]) replay.answer(a);
+  replay.discovered();
+  const replayList = defaultHighlights(replay.summary());
+  assert.deepEqual(replayList.map((x) => [x.label, x.xp]), [['처음에 맞힘', 0], ['새로 찾음', 5], ['다시 일어서기', 0], ['연속 최고', 0]]);
+  assert.equal(replayList.reduce((sum, x) => sum + x.xp, 0), replay.xp());
+  assert.match(PRACTICE_OFF_TEXT, /별 3개를 받은 단계라 연습 점수는 없어요/);
 });
 
 test('결과 점수 줄: 단계 완료·별 점수, 반복이면 안내, 늘 "빨리 푼 시간에는 점수가 없어요"', () => {

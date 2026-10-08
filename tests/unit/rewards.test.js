@@ -12,7 +12,9 @@ import {
   createPlayReward,
   createRewardStore,
   evaluateBadges,
+  MASTERED_STARS,
   normalizeBadges,
+  practiceAllowed,
   normalizeRanks,
   normalizeRewardState,
   rankOf,
@@ -188,6 +190,72 @@ test('일부러 틀리는 전략들: 하나 걸러 틀리기, 모두 한 번씩 
   }
 });
 
+// ── 다시 하기 점수 (사용자 결정): 판을 시작할 때 별 3개인 단계는 연습 점수 없음 ─────────────
+
+/** 한 판 점수: startStars(판을 시작할 때 별)에서 시작해 답·설명·새로 찾음을 받고 단계 완료·별까지 */
+function replayTotal(answers, { startStars = 0, explains = [], discoveries = 0 } = {}) {
+  const play = createPlayReward({ startStars });
+  for (const a of answers) play.answer(a);
+  for (const e of explains) play.event('explain', e);
+  for (let i = 0; i < discoveries; i += 1) play.discovered();
+  const t = play.summary().answers;
+  const stars = starsFromAccuracy(t.attempts ? t.correct / t.attempts : null);
+  return play.xp() + stageXp({ prevStars: startStars, stars, cleared: true }).total;
+}
+
+test('다시 하기 점수: 별 3개 단계를 다시 하면 연습 점수(처음 맞힘·다시 도전·다시 일어서기·연속·설명) 0, 새로 찾음 +5는 그대로', () => {
+  assert.equal(MASTERED_STARS, 3);
+  assert.deepEqual([0, 1, 2, 3].map(practiceAllowed), [true, true, true, false]);
+  const play = createPlayReward({ startStars: 3 });
+  assert.equal(play.practice(), false);
+  const steps = [ok('a'), ok('b'), ok('c'), no('d'), ok('d'), ok('e')].map((x) => play.answer(x));
+  assert.ok(steps.every((st) => st.xp === 0));
+  assert.equal(steps[2].streakBonus, true); // 연속 표시·소리는 그대로 (점수만 0)
+  assert.equal(play.streak(), 1);
+  assert.equal(play.event('explain', { correct: true, itemId: 'a' }), 0);
+  assert.equal(play.xp(), 0);
+  assert.equal(play.discovered(), 5); // 도감에 처음 찾은 것은 별과 상관없이
+  assert.equal(play.xp(), 5);
+  const sum = play.summary();
+  assert.equal(sum.practice, false);
+  assert.equal(sum.answers.xp, 0);
+  assert.equal(sum.answers.firstTry, 4); // 기록(횟수)은 그대로 남는다
+  // 단계 완료·별 점수도 별이 늘지 않아 0 → 이 판 전체 = 새로 찾음뿐
+  assert.equal(replayTotal([ok(1), ok(2), ok(3)], { startStars: 3, discoveries: 1 }), 5);
+  assert.equal(replayTotal([ok(1), ok(2), ok(3)], { startStars: 3 }), 0);
+});
+
+test('다시 하기 점수: 별 2개 이하 단계는 지금처럼 주고, 이번 판에서 처음 별 3개를 받아도 이번 판 점수는 준다', () => {
+  for (const startStars of [0, 1, 2]) {
+    const play = createPlayReward({ startStars });
+    assert.equal(play.practice(), true);
+    for (const x of [ok('a'), ok('b'), ok('c')]) play.answer(x);
+    assert.equal(play.event('explain', { correct: true, itemId: 'a' }), 2);
+    assert.equal(play.xp(), 2 * 3 + 1 + 2, `별 ${startStars}개`);
+  }
+  // 별 2개였던 단계를 모두 맞혀 처음 별 3개: 답 점수 + 별 1개 늘어난 점수
+  assert.equal(replayTotal([ok(1), ok(2), ok(3), ok(4)], { startStars: 2 }), 8 + 1 + 2);
+  // 처음 하는 단계는 그대로 (별 3개를 받아도)
+  assert.equal(replayTotal([ok(1), ok(2), ok(3), ok(4)]), 8 + 1 + 5 + 6);
+});
+
+test('다시 하기 점수 규칙에서도 무작위 1,500개: 어떤 답 순서도 모두 처음에 맞힌 것보다 점수가 크지 않다 (일부러 틀려도 이득 없음)', () => {
+  const rng = createRng('rewards-replay');
+  for (let trial = 0; trial < 1500; trial += 1) {
+    const n = rng.int(1, 12);
+    const startStars = rng.int(0, 3);
+    const answers = randomAnswers(rng, n);
+    const explains = Array.from({ length: rng.int(0, n * 2) }, () => ({ correct: rng.next() < 0.6, itemId: `q${rng.int(0, n - 1)}` }));
+    const discoveries = rng.int(0, 2);
+    const got = replayTotal(answers, { startStars, explains, discoveries });
+    const best = replayTotal(Array.from({ length: n }, (_, i) => ok(`q${i}`)), {
+      startStars, explains: Array.from({ length: n }, (_, i) => ({ correct: true, itemId: `q${i}` })), discoveries,
+    });
+    assert.ok(got <= best, `별 ${startStars}개, 문항 ${n}개: ${got} > ${best}`);
+    if (startStars === 3) assert.equal(got, discoveries * XP.discover);
+  }
+});
+
 test('칭호: 기본 5단계 기준 0·40·100·180·300점, 다음 칭호까지 남은 점수와 비율', () => {
   assert.deepEqual([...DEFAULT_RANKS], ['새싹', '탐험가', '해결사', '척척박사', '으뜸 박사']);
   assert.deepEqual([...DEFAULT_THRESHOLDS], [0, 40, 100, 180, 300]);
@@ -270,6 +338,34 @@ test('한 판 점수: 설명은 문항마다 한 번(맞을 때만) +2, 살펴�
   assert.equal(play.xp(), 2 + 5 + 2);
   const s = play.summary();
   assert.deepEqual([s.explain, s.discover, s.inspect], [{ count: 1, xp: 2 }, { count: 1, xp: 5 }, 1]);
+});
+
+test('설명(explain)은 itemId가 있어야 점수: 없으면 몇 번을 불러도 0 (D2 Review 고치면 좋음 2)', () => {
+  const play = createPlayReward();
+  for (let i = 0; i < 10; i += 1) assert.equal(play.event('explain', { correct: true }), 0);
+  assert.equal(play.event('explain', { correct: true, itemId: null }), 0);
+  assert.deepEqual(play.summary().explain, { count: 0, xp: 0 });
+  assert.equal(play.xp(), 0);
+  // itemId가 있으면 문항마다 한 번 +2 (0도 itemId로 본다)
+  assert.equal(play.event('explain', { correct: true, itemId: 0 }), 2);
+  assert.equal(play.event('explain', { correct: true, itemId: 0 }), 0);
+  assert.equal(play.event('explain', { correct: true, itemId: 'q1' }), 2);
+  assert.equal(play.xp(), 4);
+});
+
+test('도장 상태: 학습 기록(records)과 도감에서 찾은 칸(found)도 받는다 (게임 도장이 기록·도감으로 판정)', () => {
+  const state = badgeState({
+    collections: { nets: { count: 2, total: 11, found: ['a', 'b'] }, old: { count: 1, total: 3 } },
+    records: [{ stageId: 's1', cleared: true, stars: 3, startedAt: 5, answers: [{ itemId: 's1:1', correct: true, given: 'no', expected: 'no', tag: null, atMs: 10 }] }],
+  });
+  assert.deepEqual(state.collections.nets, { count: 2, total: 11, found: ['a', 'b'] });
+  assert.deepEqual(state.collections.old.found, []);
+  assert.deepEqual(state.records, [{ stageId: 's1', cleared: true, stars: 3, answers: [{ itemId: 's1:1', correct: true, given: 'no', expected: 'no', tag: null }] }]);
+  assert.deepEqual(badgeState({}).records, []);
+  const detective = { id: 'd', title: '탐정', desc: '안 되는 것을 2번 맞혀요', test: (s) => s.records.flatMap((r) => r.answers).filter((x) => x.expected === 'no' && x.correct).length >= 2 };
+  assert.deepEqual(evaluateBadges(normalizeBadges([detective]), state).map((b) => b.id), []);
+  const more = badgeState({ records: [...state.records, { stageId: 's1', answers: [{ correct: true, expected: 'no' }] }] });
+  assert.ok(evaluateBadges(normalizeBadges([detective]), more).some((b) => b.id === 'd'));
 });
 
 test('저장: 점수·도장·횟수·시간 기록이 남고, 지우면 모두 0. 깨진 값은 비운다', () => {

@@ -187,6 +187,22 @@ test('2×2 덩어리 장면: 모든 면이 보는 쪽을 향하고(법선), 가�
   assert.equal(scenes, 8 * 8);
 });
 
+test('2×2 덩어리 장면(재검토 2 R3): 덩어리 양쪽에 접힌 면도 넓게 보인다 — 가장 덜 보이는 면도 법선 z ≥ 0.5 (펼친 넓이의 절반쯤)', () => {
+  let worstOfAll = 1;
+  for (const n of INVALID_HEXOMINOES.filter((x) => x.shape === 'block')) {
+    for (let k = 0; k < 8; k += 1) {
+      const { net, turn, tilt } = displayNet(fromCells(transformCells(n.cells, k)));
+      const folded = foldNet(net, 1, { tOf: stuckTOf(net) });
+      const worst = Math.min(...folded.faces.map((f) => viewDirection(f.normal, turn, tilt)[2]));
+      assert.ok(worst >= 0.5, `${n.name} k=${k}: ${worst.toFixed(3)}`);
+      worstOfAll = Math.min(worstOfAll, worst);
+      // 덩어리 밖의 면은 접히다 멈춘다(펼친 면과 같은 평면이 아님) — 멈추는 장면이 보인다. block-g(3×2)는 모두 덩어리
+      if (n.name !== 'block-g') assert.ok(folded.faces.some((f) => Math.abs(f.normal[2] - 1) > 0.3), `${n.name} k=${k}`);
+    }
+  }
+  assert.ok(worstOfAll < 0.6); // 기준을 너무 느슨하게 재지 않았는지
+});
+
 test('displayNet focus: 마주 보는 두 면(★·정답)은 위·바닥이 아닌 옆면에 둔다', () => {
   for (const n of CUBE_NETS) {
     for (let k = 0; k < 8; k += 1) {

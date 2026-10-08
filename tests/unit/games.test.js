@@ -66,6 +66,51 @@ test('표지 cover.svg: 게임 모음에 그대로 넣을 수 있는 그림만 �
   // SVG 이름공간(xmlns="http://www.w3.org/2000/svg")은 바깥 참조가 아니다
   assert.deepEqual(prepareCover('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect/></svg>').errors, []);
 
+  // 허용 목록(D2 Review 고치면 좋음 1): 막기 목록을 피하던 길과 흔한 공격 20가지를 모두 거부한다
+  const S = (inner, attrs = '') => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"${attrs}>${inner}</svg>`;
+  const attacks = {
+    'style @import': S('<style>@import "https://e.com/x.css";</style><rect/>'),
+    'STYLE 대문자': S('<STYLE>rect{fill:red}</STYLE><rect/>'),
+    'style="" url(https)': S('<rect style="fill:url(https://e.com/a.svg#g)"/>'),
+    '뿌리 svg style background url': S('<rect/>', ' style="background:url(https://e.com/a.png)"'),
+    'fill="url(#g)" 내부 참조': S('<rect fill="url(#g)"/>'),
+    'image-set 따옴표 주소': S('<rect/>', ` style="background-image:image-set('https://e.com/a.png' 1x)"`),
+    '//주소 (프로토콜 생략)': S('<rect/>', ' style="background-image:image-set(\'//e.com/a.png\' 1x)"'),
+    'xlink:href': S('<a xlink:href="https://e.com"><rect/></a>'),
+    'feImage href': S('<filter><feImage href="https://e.com/a.png"/></filter>'),
+    script: S('<script>alert(1)</script>'),
+    onload: S('<rect onload="alert(1)"/>'),
+    'svg onload': S('<rect/>', ' onload="alert(1)"'),
+    foreignObject: S('<foreignObject><div>x</div></foreignObject>'),
+    iframe: S('<iframe src="https://e.com"></iframe>'),
+    '엔티티로 숨긴 url(https)': S('<rect/>', ' style="background:u&#114;l(h&#116;tps:&#47;&#47;e.com/a.png)"'),
+    '엔티티로 숨긴 주소(fill 값)': S('<rect fill="u&#114;l(h&#116;tps://e.com/x)"/>'),
+    'animate로 href를 javascript:로': S('<a><text y="8">x</text><animate attributeName="href" values="javascript:alert(1)"/></a>'),
+    'set으로 href 바꾸기': S('<a><text y="8">x</text><set attributeName="href" to="javascript:alert(1)"/></a>'),
+    '<a> 링크': S('<a><rect width="10" height="10"/></a>'),
+    'CDATA 안 script': S('<![CDATA[<script>alert(1)</script>]]>'),
+    'DOCTYPE ENTITY': `<!DOCTYPE svg [<!ENTITY x "https://e.com">]>${S('<text>&x;</text>')}`,
+    use: S('<use href="#a"/>'),
+    '따옴표 없는 속성으로 숨기기': S('<rect fill=red onclick=alert(1) />'),
+    'transform에 다른 함수': S('<rect transform="url(https://e.com)"/>'),
+    'id 충돌': S('<rect id="app"/>'),
+    'class로 게임 모음 꾸미기': S('<rect class="hub-card"/>'),
+    'svg 두 개': `${S('<rect/>')}${S('<rect/>')}`,
+    '짝이 안 맞는 태그': S('<g><rect/>'),
+  };
+  assert.ok(Object.keys(attacks).length >= 18);
+  for (const [name, svg] of Object.entries(attacks)) {
+    const r = prepareCover(svg);
+    assert.ok(r.errors.length > 0, `거부하지 않음: ${name}`);
+    assert.equal(r.svg, null, name);
+  }
+  // 받는 것만으로 새로 쓰므로, 통과한 표지에는 위험한 글자가 없다 (글자 안의 <·&도 이스케이프)
+  const good = prepareCover(S('<g transform="rotate(-4 5 5)" font-family="\'Do Hyeon\', sans-serif"><rect width="4" height="4" rx="1" fill="#ffd86b" stroke="#1e2140" stroke-width="0.5"/><text x="5" y="8" text-anchor="middle">1 &lt; 2</text></g><title>표지</title>'));
+  assert.deepEqual(good.errors, []);
+  assert.doesNotMatch(good.svg, /style|href|on\w+=|url\(|<script|&#/i);
+  assert.match(good.svg, /<text x="5" y="8" text-anchor="middle">1 &lt; 2<\/text>/);
+  assert.match(good.svg, /^<svg aria-hidden="true" focusable="false" xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 10 10">/);
+
   // 지금 게임의 표지는 모두 통과하고 loadGames가 읽어 둔다
   const games = await loadGames(GAMES_DIR);
   for (const game of games.filter((g) => g.cover)) assert.match(game.cover, /^<svg aria-hidden="true"/, game.dirName);

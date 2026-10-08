@@ -80,35 +80,43 @@ test('TAGS는 기획서 오개념 표와 같고, problem → tag 표도 그 안�
   assert.equal(josa('면', '과/와'), '면과'); // 문장에 쓰는 조사
 });
 
-test('단계: id가 겹치지 않고, 모두 차시가 있고, 차시마다 3단계', () => {
+test('단계: id가 겹치지 않고, 모두 차시가 있고, 정육면체 차시는 4단계(판별 5 · 마주 보는 면 4 · 면 붙이기 3 · 내 맘대로 전개도 3가지)', () => {
   const ids = STAGES.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(LESSONS.map((l) => l.id), ['cube']);
   for (const s of STAGES) assert.ok(LESSONS.some((l) => l.id === s.lesson), s.id);
-  for (const l of LESSONS) assert.equal(STAGES.filter((s) => s.lesson === l.id).length, 3, l.id);
-  assert.deepEqual(STAGES.map((s) => [s.id, s.count]), [['cube-judge', 6], ['cube-opposite', 5], ['cube-complete', 4]]);
+  for (const l of LESSONS) assert.equal(STAGES.filter((s) => s.lesson === l.id && !s.challenge).length, 4, l.id);
+  assert.deepEqual(STAGES.map((s) => [s.id, s.kind, s.count]), [
+    ['cube-judge', 'judge', 5], ['cube-opposite', 'opposite', 4], ['cube-complete', 'complete', 3], ['cube-free', 'free', 3],
+  ]);
+  // 도전 주문서(cube-dice, cube-dex)는 N2에서 만든다
+  assert.equal(STAGES.filter((s) => s.challenge).length, 0);
+  // 작업 지시서의 주문 이름 (spec 16-3)
+  assert.deepEqual(STAGES.map((s) => s.order), ['검사 주문', '짝 찾기 주문', '수선 주문', '설계 주문']);
 });
 
 test('같은 시드면 같은 문항, 다른 시드면 대체로 다른 문항', () => {
   const summary = (qs) => JSON.stringify(qs.map((q) => [q.itemId, q.net.faces.map((f) => [f.label, f.cell])]));
-  for (const s of STAGES) {
+  assert.deepEqual(makeQuestions(stage('cube-free'), createRng('1:x')), []); // 자유 배치는 학생이 직접 만든다
+  for (const s of STAGES.filter((x) => x.kind !== 'free')) {
     assert.equal(summary(makeQuestions(s, createRng('1:x'))), summary(makeQuestions(s, createRng('1:x'))), s.id);
     const many = new Set(SEEDS.map((seed) => summary(makeQuestions(s, createRng(seed)))));
     assert.ok(many.size > SEEDS.length / 2, s.id);
   }
 });
 
-test('판별 6문항: 유효 3(1-4-1 아닌 꼴 2) · 무효 3(겹침 · 2×2 · 면 개수), 의도한 까닭이 나온다', () => {
+test('판별 5문항: 유효 2(1-4-1 하나 + 1-4-1 아닌 꼴 하나) · 무효 3(겹침 · 2×2 · 면 개수), 의도한 까닭이 나온다', () => {
   for (const seed of SEEDS) {
     const qs = makeQuestions(stage('cube-judge'), createRng(seed));
-    assert.equal(qs.length, 6);
+    assert.equal(qs.length, 5);
     const valid = qs.filter((q) => q.valid);
-    assert.equal(valid.length, 3);
-    assert.equal(valid.filter((q) => q.family !== '1-4-1').length, 2);
+    assert.equal(valid.length, 2);
+    assert.equal(valid.filter((q) => q.family !== '1-4-1').length, 1);
+    assert.equal(valid.filter((q) => q.family === '1-4-1').length, 1);
     for (const q of qs) {
       assert.equal(q.valid, wrapsCube(cellsOf(q.net)), q.itemId); // 독립 계산과 비교
       assert.equal(q.expected, q.valid ? 'yes' : 'no');
-      assert.match(q.itemId, /^cube-judge:[1-6]:[\w-]+$/);
+      assert.match(q.itemId, /^cube-judge:[1-5]:[\w-]+$/);
       if (!q.valid) assert.equal(primaryProblem(q.problems).type, q.intended, q.itemId);
     }
     assert.deepEqual(qs.filter((q) => !q.valid).map((q) => q.intended).sort(), ['face-count', 'overlap', 'vertex-full']);
@@ -138,11 +146,11 @@ test('판별 채점: 오답이면 까닭 tag, 유효 전개도를 "안 돼요"�
   assert.match(judgeNetAnswer(q, 'yes').message, /^[가-바] 면과 [가-바] 면이 같은 자리에 겹쳐요\. 그래서 다른 한쪽이 비어요\.$/);
 });
 
-test('마주 보는 면 5문항: 정답은 접었을 때 법선이 반대인 면, ★ 면 곁에 이웃·대각선 면이 있다', () => {
+test('마주 보는 면 4문항: 정답은 접었을 때 법선이 반대인 면, ★ 면 곁에 이웃·대각선 면이 있다', () => {
   for (const seed of SEEDS) {
     const qs = makeQuestions(stage('cube-opposite'), createRng(seed));
-    assert.equal(qs.length, 5);
-    assert.equal(new Set(qs.map((q) => q.name)).size, 5);
+    assert.equal(qs.length, 4);
+    assert.equal(new Set(qs.map((q) => q.name)).size, 4);
     for (const q of qs) {
       // 독립 계산: 감싸기에서 ★ 면과 법선이 반대인 면이 정답
       const normals = wrap(cellsOf(q.net));
@@ -167,10 +175,10 @@ test('마주 보는 면 5문항: 정답은 접었을 때 법선이 반대인 면
   }
 });
 
-test('면 붙이기 4문항: 보이는 자리 4~6곳, 정답 1~2곳 · 오답이 정답보다 적지 않음, 판정이 맞다', () => {
+test('면 붙이기 3문항: 보이는 자리 4~6곳, 정답 1~2곳 · 오답이 정답보다 적지 않음, 판정이 맞다', () => {
   for (const seed of SEEDS) {
     const qs = makeQuestions(stage('cube-complete'), createRng(seed));
-    assert.equal(qs.length, 4);
+    assert.equal(qs.length, 3);
     for (const q of qs) {
       assert.equal(q.cells.length, 5);
       assert.ok(q.slots.length >= 4 && q.slots.length <= 6, `${q.itemId}: ${q.slots.length}`);

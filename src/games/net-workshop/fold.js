@@ -329,6 +329,15 @@ export function matchingEdge(net, faceId, edgeIndex) {
 }
 
 /**
+ * 모든 면이 경첩(변이 길이 > 0만큼 맞닿음)으로 이어져 한 장인가. 꼭짓점만 닿은 면은 이어진 것이 아니다.
+ * checkNet의 'disconnected' 검사와 같은 계산이다.
+ */
+export function isConnected(net) {
+  if (net.faces.length === 0) return false;
+  return structureOf(net).tree.order.length === net.faces.length;
+}
+
+/**
  * 전개도가 입체로 접히는지 검사한다.
  * 돌려주는 값: { ok, problems: [{ type, faces?, edges?, lengths?, vertex?, count? }] }
  * type: 'face-count' | 'disconnected' | 'vertex-full' | 'overlap' | 'gap' | 'edge-length'

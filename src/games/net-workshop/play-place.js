@@ -4,8 +4,9 @@
  * 틀린 자리에 놓으면 그 자리로 접어 겹치는 장면을 보여 주고, [펴고 다시 하기]로 돌아온다.
  */
 import { enableDragDrop } from '../../shared/ui/drag-drop.js';
+import { icon } from '../../shared/ui/icons.js';
 import { judgeSlot, placedNet } from './logic.js';
-import { createNetView, createWorkbench } from './view3d.js';
+import { createNetView, createWorkbench, faceColor } from './view3d.js';
 
 const SIDE_NAMES = [
   [[-1, 0], '오른쪽'], // 이웃 면이 왼쪽에 있으면 빈 자리는 그 면의 오른쪽
@@ -25,7 +26,7 @@ function describeSlot(question, cell) {
 
 export function playPlace(stage, ctx, questions) {
   const { h } = ctx;
-  const view = createNetView({ h });
+  const view = createNetView({ h, sfx: ctx.sfx });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
 
   const card = h('button', { type: 'button', class: 'face-card dnd-item', 'aria-pressed': 'false' });
@@ -50,7 +51,7 @@ export function playPlace(stage, ctx, questions) {
     for (const key of tried) {
       const slotEl = view.slotEl(key);
       slotEl.classList.add('is-tried');
-      slotEl.querySelector('.slot-plus').textContent = '✗';
+      slotEl.querySelector('.slot-plus').replaceChildren(icon('cross')); // 놓아 본 틀린 자리
     }
     bench.answerBox.hidden = false;
     card.hidden = false;
@@ -62,6 +63,7 @@ export function playPlace(stage, ctx, questions) {
     tried = new Set();
     card.textContent = q.missingLabel;
     card.setAttribute('aria-label', `${q.missingLabel} 면 카드`);
+    card.style.setProperty('--face-color', faceColor(q.missingLabel));
     bench.setQuestion(index + 1, `${q.missingLabel} 면을 어디에 붙이면 정육면체가 될까요?`);
     showBase();
   }
@@ -96,8 +98,9 @@ export function playPlace(stage, ctx, questions) {
       ctx.sfx.play('wrong');
       ctx.feedback.wrong(result.message, placedInner);
       bench.hideHint();
+      bench.showBounce({ retry: true });
       bench.lockFold(false); // 틀린 자리로 접은 모습을 막대·버튼으로 살펴볼 수 있다
-      bench.showNext('◀ 펴고 다시 하기', retry, { primary: false });
+      bench.showNext('펴고 다시 하기', retry, { primary: false, iconName: 'unfold' });
       bench.focusNext();
       return;
     }
@@ -105,9 +108,10 @@ export function playPlace(stage, ctx, questions) {
     ctx.sfx.play('correct');
     ctx.feedback.correct(result.message, placedInner);
     bench.hideHint();
+    bench.clearBonus();
     bench.lockFold(false);
     const last = index + 1 >= questions.length;
-    bench.showNext(last ? '결과 보기' : '다음 문제 ▶', next);
+    bench.showNext(last ? '결과 보기' : '다음 문제', next, { iconName: 'play' });
     bench.focusNext();
   }
 
@@ -148,6 +152,7 @@ export function playPlace(stage, ctx, questions) {
   return () => {
     ctx.el.removeEventListener('click', onCardKey);
     dnd.destroy();
+    bench.destroy();
     view.destroy();
   };
 }

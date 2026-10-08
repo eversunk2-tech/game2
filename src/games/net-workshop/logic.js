@@ -3,7 +3,17 @@
  * 문항은 ctx.rng로 만든다. 같은 시드면 같은 문항이 나와서 e2e 테스트도 정답을 안다.
  * 검사: tests/unit/net-workshop-logic.test.js
  */
-import { SYMMETRY_COUNT, LABELS, cellKey, checkNet, completionSlots, fromCells, oppositeFace, transformCells } from './fold.js';
+import {
+  SYMMETRY_COUNT,
+  LABELS,
+  cellKey,
+  checkNet,
+  completionSlots,
+  fromCells,
+  oppositeFace,
+  shapeKey,
+  transformCells,
+} from './fold.js';
 import { CUBE_NETS, FACE_COUNT_NETS, INVALID_HEXOMINOES } from './nets-data.js';
 
 /** 차시 묶음. 아직 만들지 않은 차시(직육면체·각기둥·원기둥)는 넣지 않는다. */
@@ -11,13 +21,18 @@ export const LESSONS = [
   { id: 'cube', title: '정육면체의 전개도' },
 ];
 
-/** kind: judge(판별) · opposite(마주 보는 면 누르기) · complete(면 붙이기) */
+/**
+ * kind: judge(판별) · opposite(마주 보는 면 누르기) · complete(면 붙이기) · free(내 맘대로 전개도)
+ * order: 오른쪽 작업 지시서의 주문 이름(공방 세계관, spec 16-3). 머리 칩은 시안대로 "n단계"를 쓴다.
+ * 차시 시간(spec 16-4): 판별 5 · 마주 보는 면 4 · 면 붙이기 3 · 자유 배치(서로 다른 전개도 3가지) ≈ 10분
+ */
 export const STAGES = [
   {
     id: 'cube-judge',
     lesson: 'cube',
     kind: 'judge',
-    count: 6,
+    count: 5,
+    order: '검사 주문',
     title: '접힐까, 안 접힐까?',
     goal: '전개도를 접으면 정육면체가 될지 골라요.',
   },
@@ -25,7 +40,8 @@ export const STAGES = [
     id: 'cube-opposite',
     lesson: 'cube',
     kind: 'opposite',
-    count: 5,
+    count: 4,
+    order: '짝 찾기 주문',
     title: '마주 보는 면',
     goal: '접었을 때 ★ 면과 마주 보는 면을 찾아 눌러요.',
   },
@@ -33,9 +49,19 @@ export const STAGES = [
     id: 'cube-complete',
     lesson: 'cube',
     kind: 'complete',
-    count: 4,
+    count: 3,
+    order: '수선 주문',
     title: '한 면을 붙여요',
     goal: '남은 한 면을 알맞은 자리에 붙여 정육면체 전개도를 완성해요.',
+  },
+  {
+    id: 'cube-free',
+    lesson: 'cube',
+    kind: 'free',
+    count: 3, // 이번 판에서 찾을 서로 다른 전개도 수
+    order: '설계 주문',
+    title: '내 맘대로 전개도',
+    goal: '면 6장을 마음대로 놓고 접어 봐요. 서로 다른 전개도 3가지를 찾아요.',
   },
 ];
 
@@ -119,10 +145,11 @@ function makeJudgeQuestions(stage, rng) {
   const others = CUBE_NETS.filter((n) => n.family !== '1-4-1');
   const overlapPool = INVALID_HEXOMINOES.filter((n) => n.shape === 'line5' || n.shape === 'same-side');
   const blockPool = INVALID_HEXOMINOES.filter((n) => n.shape === 'block');
-  // 유효 3 (1-4-1 하나 + 1-4-1이 아닌 꼴 둘), 무효 3 (겹침 · 2×2 덩어리 · 면 개수)
+  // 유효 2 (1-4-1 하나 + 1-4-1이 아닌 꼴 하나), 무효 3 (겹침 · 2×2 덩어리 · 면 개수)
+  // 1-4-1이 아닌 꼴은 4단계(내 맘대로 전개도)에서 직접 만들어 본다 (spec 16-4)
   const items = rng.shuffle([
     { ...rng.pick(cross141), intended: null },
-    ...rng.sample(others, 2).map((n) => ({ ...n, intended: null })),
+    { ...rng.pick(others), intended: null },
     { ...rng.pick(overlapPool), intended: 'overlap' },
     { ...rng.pick(blockPool), intended: 'vertex-full' },
     { ...rng.pick(FACE_COUNT_NETS), intended: 'face-count' },
@@ -224,7 +251,12 @@ function makeCompleteQuestions(stage, rng) {
   });
 }
 
-const MAKERS = { judge: makeJudgeQuestions, opposite: makeOppositeQuestions, complete: makeCompleteQuestions };
+const MAKERS = {
+  judge: makeJudgeQuestions,
+  opposite: makeOppositeQuestions,
+  complete: makeCompleteQuestions,
+  free: () => [], // 자유 배치는 문항이 없다 (학생이 직접 만든다)
+};
 
 /** 단계의 문항 목록. playStage에서 ctx.rng로 가장 먼저 부른다(같은 시드 = 같은 문항). */
 export function makeQuestions(stage, rng) {
@@ -295,4 +327,238 @@ export function judgeSlot(question, key) {
     ? '그 자리에 붙이면 네 면이 한 꼭짓점에 모여 접을 수 없어요. 정육면체의 한 꼭짓점에는 면이 3개만 모여요.'
     : `그 자리에 붙이면 ${explainProblem(placedNet(question, slot.cell), problem)}`;
   return { correct: false, expected, tag: TAG_OF_PROBLEM[problem.type] ?? TAGS.overlap, message };
+}
+
+// ── 까닭 고르기 (판별·자유 배치, spec 16-3) ────────────
+/** "왜 안 될까요?" 칩 3개. 정답은 primaryProblem의 까닭. 점수는 ctx.reward.event('explain'), 정답률·별에는 넣지 않는다 */
+export const REASONS = Object.freeze([
+  { id: 'overlap', text: '면이 겹쳐요' },
+  { id: 'vertex', text: '네 면이 한 점에 모여요' },
+  { id: 'count', text: '면이 6개가 아니에요' },
+]);
+
+/** 무효 전개도의 까닭 칩 id (primaryProblem과 같은 까닭) */
+export function reasonOf(problems) {
+  const p = primaryProblem(problems);
+  if (!p) return null;
+  if (p.type === 'face-count') return 'count';
+  if (p.type === 'vertex-full') return 'vertex';
+  return 'overlap';
+}
+
+/** 고른 까닭 채점 → { correct, answer(바른 칩 id), answerText } */
+export function judgeReason(problems, choice) {
+  const answer = reasonOf(problems);
+  return { correct: choice === answer, answer, answerText: REASONS.find((r) => r.id === answer)?.text ?? '' };
+}
+
+// ── 자유 배치 "내 맘대로 전개도" (spec 16-1) ──────────
+/** 이번 판 목표: 서로 다른 전개도 수 */
+export const FREE_GOAL = 3;
+/** 놓는 판 크기: 보통 7칸 × 5줄, 휴대폰(560px 이하) 6칸 × 6줄 (한 줄 6칸 모양도 놓을 수 있게) */
+export const BOARD_SIZES = Object.freeze({ wide: { cols: 7, rows: 5 }, phone: { cols: 6, rows: 6 } });
+/** 힌트가 켜지는 조건: 안 되는 모양을 연달아 이만큼 접었거나, 이 시간(ms) 동안 새 전개도를 못 찾음 */
+export const HINT_AFTER_INVALID = 2;
+export const HINT_AFTER_MS = 90_000;
+export const HINT_TEXT = '한 줄에 4칸을 놓고, 그 위와 아래에 한 칸씩 붙여 봐요.';
+
+/**
+ * 헥소미노 35개 모두의 모양 키 → 이름. 돌리거나 뒤집어도 같은 키(shapeKey)라 같은 이름이 나온다.
+ * 값: { name, valid, family?(전개도), index?(도감 번호 1~11), shape?·reason?(무효) }
+ */
+export const NET_BY_KEY = new Map([
+  ...CUBE_NETS.map((n, i) => [shapeKey(n.cells), { name: n.name, valid: true, family: n.family, index: i + 1 }]),
+  ...INVALID_HEXOMINOES.map((n) => [shapeKey(n.cells), { name: n.name, valid: false, shape: n.shape, reason: n.reason }]),
+]);
+
+/** 칸 목록의 모양 이름 (헥소미노가 아니면 null) */
+export const netName = (cells) => NET_BY_KEY.get(shapeKey(cells))?.name ?? null;
+export const netInfo = (cells) => NET_BY_KEY.get(shapeKey(cells)) ?? null;
+
+/** 도감 칸 이름: "1-4-1 꼴 2" (같은 줄 모양 안에서 번호) */
+export function dexItemName(net) {
+  const same = CUBE_NETS.filter((n) => n.family === net.family);
+  return same.length > 1 ? `${net.family} 꼴 ${same.indexOf(net) + 1}` : `${net.family} 꼴`;
+}
+
+/** 안 되는 모양 노트 칸 이름: 까닭별 번호 ("겹치는 모양 3", "네 면이 모이는 모양 2") */
+export function noteItemName(item) {
+  const same = INVALID_HEXOMINOES.filter((n) => n.reason === item.reason);
+  return `${item.reason === 'vertex-full' ? '네 면이 모이는 모양' : '겹치는 모양'} ${same.indexOf(item) + 1}`;
+}
+
+/** 안 되는 모양 노트 순서: 까닭별로 모음 (겹침 16 · 네 면이 한 점에 8) */
+export const NOTE_ITEMS = [
+  ...INVALID_HEXOMINOES.filter((n) => n.reason !== 'vertex-full'),
+  ...INVALID_HEXOMINOES.filter((n) => n.reason === 'vertex-full'),
+];
+
+const NEIGHBOR = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/** 칸들을 변으로 이어진 덩어리로 나눈다(꼭짓점만 닿으면 다른 덩어리). → 칸 번호 묶음, 큰 것부터(같으면 먼저 놓은 칸이 있는 것) */
+export function cellGroups(cells) {
+  const index = new Map(cells.map((c, i) => [cellKey(c), i]));
+  const seen = new Set();
+  const groups = [];
+  cells.forEach((_, start) => {
+    if (seen.has(start)) return;
+    const group = [];
+    const queue = [start];
+    seen.add(start);
+    while (queue.length > 0) {
+      const i = queue.shift();
+      group.push(i);
+      for (const [dx, dy] of NEIGHBOR) {
+        const j = index.get(cellKey([cells[i][0] + dx, cells[i][1] + dy]));
+        if (j !== undefined && !seen.has(j)) {
+          seen.add(j);
+          queue.push(j);
+        }
+      }
+    }
+    groups.push(group.sort((a, b) => a - b));
+  });
+  return groups.sort((a, b) => b.length - a.length || a[0] - b[0]);
+}
+
+/**
+ * 놓은 면이 접을 수 있는 상태인가.
+ * → { ready, reason: 'count'(6장이 아님) | 'apart'(떨어진 면) | null, detached: 떨어진 칸 번호 }
+ */
+export function boardReadiness(cells, total = 6) {
+  if (cells.length < total) return { ready: false, reason: 'count', detached: [] };
+  const groups = cellGroups(cells);
+  if (groups.length > 1) return { ready: false, reason: 'apart', detached: groups.slice(1).flat().sort((a, b) => a - b) };
+  return { ready: true, reason: null, detached: [] };
+}
+
+/**
+ * 자유 배치 한 번 접기의 판정 (예상 → 접기). 판정은 판별 단계와 같은 fromCells + checkNet.
+ * - prediction: 'yes'(될 거예요) | 'no'(안 될 거예요)
+ * - seen: 이번 판에서 이미 접어 본 모양 이름 → 다시 접으면 기록·점수 없음(kind 'repeat')
+ * - dex: 전개도 도감에 이미 있는 이름 → 'known'(이번 판 목표에는 센다)
+ * → { net, name, info, valid, problems, expected, correct, tag, kind: 'new'|'known'|'repeat'|'invalid', log, title, message }
+ */
+export function judgeFree({ cells, labels = LABELS, prediction, seen = new Set(), dex = new Set() }) {
+  const net = fromCells(cells, { labels });
+  const { ok, problems } = checkNet(net);
+  const info = netInfo(cells);
+  const name = info?.name ?? null;
+  const expected = ok ? 'yes' : 'no';
+  const correct = prediction === expected;
+  const repeat = name != null && seen.has(name);
+  const tag = correct ? null : ok ? TAGS.variety : (TAG_OF_PROBLEM[primaryProblem(problems)?.type] ?? TAGS.overlap);
+  let kind = 'invalid';
+  if (repeat) kind = 'repeat';
+  else if (ok) kind = dex.has(name) ? 'known' : 'new';
+
+  const lead = correct ? '예측 적중!' : '예상과 달랐어요.';
+  let title = correct ? '예측 적중' : '예상과 달랐어요';
+  let message;
+  if (kind === 'repeat') {
+    title = '이미 접어 본 모양';
+    message = '이번에 이미 접어 본 모양이에요. 돌리거나 뒤집어도 같은 모양이라 다시 세지 않아요. 다른 모양을 만들어 봐요.';
+  } else if (kind === 'new') {
+    message = `${lead} 처음 찾은 전개도예요. ${info.family} 모양도 정육면체의 전개도예요.`;
+  } else if (kind === 'known') {
+    message = `${lead} 도감 ${info.index}번과 같은 모양이에요. 돌리거나 뒤집으면 똑같아요.`;
+  } else {
+    message = `${lead} ${explainProblem(net, primaryProblem(problems))}`;
+  }
+  return { net, name, info, valid: ok, problems, expected, correct, tag, kind, log: !repeat, title, message };
+}
+
+/** 이번 판에서 아직 못 찾은 전개도 하나(힌트 그림자). 1-4-1이 아니고 도감에도 없는 것을 먼저 고른다 */
+export function hintNet(found = new Set(), dex = new Set()) {
+  const left = CUBE_NETS.filter((n) => !found.has(n.name));
+  return left.find((n) => n.family !== '1-4-1' && !dex.has(n.name))
+    ?? left.find((n) => !dex.has(n.name))
+    ?? left.find((n) => n.family !== '1-4-1')
+    ?? left[0]
+    ?? null;
+}
+
+/** 칸 모양을 판(cols × rows) 가운데에 놓는다. 들어가지 않으면 돌려서 놓고, 그래도 안 되면 null */
+export function centerOnBoard(cells, { cols, rows }) {
+  for (let k = 0; k < SYMMETRY_COUNT; k += 1) {
+    const moved = transformCells(cells, k);
+    const w = Math.max(...moved.map((c) => c[0])) + 1;
+    const hgt = Math.max(...moved.map((c) => c[1])) + 1;
+    if (w <= cols && hgt <= rows) {
+      const dx = Math.floor((cols - w) / 2);
+      const dy = Math.floor((rows - hgt) / 2);
+      return moved.map(([x, y]) => [x + dx, y + dy]);
+    }
+  }
+  return null;
+}
+
+/**
+ * 자유 배치 한 판의 흐름 (순수 상태). 화면(play-free.js)과 점수 테스트가 같은 규칙을 쓴다.
+ * fold(cells, labels, prediction) → judgeFree 결과 + { itemId(기록할 때), collect: { id, item }(도감·노트에 넣을 칸),
+ *   explainable(까닭 고르기를 보일지), fixed(안 된 뒤 바로 전개도를 만듦), found(이번 판에 찾은 전개도 수), done(목표 달성) }
+ */
+export function createFreeSession({ stageId = 'cube-free', goal = FREE_GOAL, dex = [], note = [] } = {}) {
+  const seen = new Set(); // 이번 판에서 접어 본 모양
+  const found = new Set(); // 이번 판에서 찾은 전개도
+  const dexFound = new Set(dex);
+  const noteFound = new Set(note);
+  const history = [];
+  let seq = 0;
+  let invalidRun = 0;
+
+  return {
+    fold(cells, labels, prediction) {
+      const r = judgeFree({ cells, labels, prediction, seen, dex: dexFound });
+      const prev = history.at(-1);
+      let itemId = null;
+      let collect = null;
+      if (r.log) {
+        seq += 1;
+        itemId = `${stageId}:${seq}:${r.name}`;
+        seen.add(r.name);
+      }
+      if (r.valid) {
+        found.add(r.name);
+        if (r.kind === 'new') collect = { id: 'cube-nets', item: r.name, isNew: !dexFound.has(r.name) };
+        dexFound.add(r.name);
+        invalidRun = 0;
+      } else {
+        if (r.kind === 'invalid') collect = { id: 'cube-non-nets', item: r.name, isNew: !noteFound.has(r.name) };
+        noteFound.add(r.name);
+        invalidRun += 1;
+      }
+      const step = {
+        ...r,
+        itemId,
+        collect,
+        explainable: r.kind === 'invalid' && r.correct,
+        fixed: r.valid && r.kind !== 'repeat' && Boolean(prev && !prev.valid),
+        found: found.size,
+        done: found.size >= goal,
+        invalidRun,
+      };
+      history.push(step);
+      return step;
+    },
+    found: () => new Set(found),
+    seen: () => new Set(seen),
+    dex: () => new Set(dexFound),
+    note: () => new Set(noteFound),
+    invalidRun: () => invalidRun,
+    history: () => history.slice(),
+    goal,
+  };
+}
+
+/** 결과 "오늘의 솜씨"에 쓸 숫자: 기록한 예상 수·맞힌 수, 새로 찾은 전개도·노트, 고쳐서 다시 도전 */
+export function freeSummary(history) {
+  const logged = history.filter((s) => s.log);
+  return {
+    predictions: logged.length,
+    hits: logged.filter((s) => s.correct).length,
+    newNets: history.filter((s) => s.collect?.id === 'cube-nets' && s.collect.isNew).length,
+    newNotes: history.filter((s) => s.collect?.id === 'cube-non-nets' && s.collect.isNew).length,
+    fixes: history.filter((s) => s.fixed).length,
+  };
 }

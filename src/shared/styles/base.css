@@ -243,6 +243,25 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .note-title { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; margin-bottom: 2px; }
 .note-wrong .note-title { color: var(--wrong); }
 .note-correct .note-title { color: var(--correct); }
+.note-text { font-size: 1rem; line-height: 1.5; }
+.note-tip { margin-top: 6px; display: flex; gap: 6px; align-items: flex-start; font-size: 0.88rem; font-weight: 700; color: var(--ink-2); line-height: 1.4; }
+.note-tip .icon { margin-top: 0.15em; }
+/* 보너스 쪽지: 노랑 점선 ("다시 일어서기 · 다음 문제를 맞히면 +1, 도장까지 2 / 5") */
+.bonus-note {
+  display: flex; align-items: flex-start; gap: 8px; padding: 8px 12px; border-radius: 12px;
+  background: var(--butter-soft); border: 1.5px dashed var(--butter-ink); color: var(--butter-ink);
+  font-size: 0.9rem; font-weight: 700; line-height: 1.45;
+}
+.bonus-note .icon { margin-top: 0.15em; }
+.bonus-note b { color: var(--ink); }
+/* 작업 지시서(문제 판): 테이프 붙은 종이 + 주문 도장 + 문제 번호 (ctx.ui.order) */
+.order { display: flex; flex-direction: column; gap: 14px; padding: 22px 20px 18px; min-width: 0; }
+.order-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.order-kind {
+  font-family: var(--font-display); font-weight: 700; font-size: 0.98rem; line-height: 1.5;
+  color: var(--stamp); border: 2px solid var(--stamp); border-radius: 8px; padding: 0 8px; transform: rotate(-3deg);
+}
+.order-counter { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
 
 /* 도장 (결과 증명서의 "참 잘했어요") */
 .stamp {
@@ -459,6 +478,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
   width: min(92vw, 600px); display: flex; justify-content: center;
   z-index: 100; pointer-events: none;
 }
+/* 좁은 화면(900px 이하): feedback.anchor(el, { narrow: 'below' })면 그 요소 바로 밑에 */
+.toast-host.is-below { bottom: auto; }
 .toast {
   display: inline-flex; gap: 10px; align-items: center;
   padding: 10px 18px 10px 10px; border-radius: 16px; border: 2px solid var(--ink);
@@ -539,6 +560,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .meta-box small { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
 .meta-box b { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; }
 .meta-streak { flex-direction: row; gap: 6px; }
+/* 문제 n / N 점 막대 (ctx.setProgress) */
+.q-dots { display: inline-flex; gap: 5px; align-items: center; min-height: 18px; }
+.q-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper); }
+.q-dots i.is-done { background: var(--ink); }
+.q-dots i.is-now { background: var(--butter); }
+.q-dots.is-check i { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; }
+.q-dots.is-check i.is-done { background: var(--correct); color: #fff; }
+.q-dots.is-check .icon { width: 14px; height: 14px; stroke-width: 3; vertical-align: 0; }
 .meta-streak .icon { color: var(--tangerine); width: 1.3em; height: 1.3em; stroke-width: 2.4; }
 .meta-timer { flex-direction: row; gap: 10px; padding: 0; border: 0; background: none; }
 .timer-toggle[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary-edge); color: var(--primary-edge); }
@@ -566,6 +595,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .b-val { font-family: var(--font-display); font-weight: 700; font-size: 1.4rem; line-height: 1.2; }
 .b-xp { font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.2; color: var(--primary); }
 .xp-line { margin-top: -4px; font-size: 0.9rem; font-weight: 700; color: var(--ink-2); }
+/* 별 3개 단계를 다시 할 때: 연습 점수가 없는 까닭 */
+.practice-note { display: inline-flex; align-items: center; gap: 6px; margin-top: -4px; padding: 4px 12px; border-radius: 10px; background: var(--paper-2); border: 1.5px solid var(--line); font-size: 0.9rem; font-weight: 700; color: var(--ink); line-height: 1.4; }
 .time-line { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; }
 .rank-card { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
 .rank-up { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; }
