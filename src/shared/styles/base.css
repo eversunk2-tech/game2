@@ -363,7 +363,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .lesson-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .lesson-no { font-family: var(--font-display); font-weight: 700; background: var(--ink); color: #fff; border-radius: 10px; padding: 2px 12px; font-size: 1rem; }
 .lesson-title { margin: 0; font-size: var(--fs-xl); }
-.lesson-chips { display: flex; gap: 8px; margin-left: auto; }
+/* 칩이 여러 개(도감·노트·시간)여도 칩 안에서 줄이 바뀌지 않고, 좁으면 칩째로 다음 줄로 */
+.lesson-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.lesson-chips .chip { white-space: nowrap; }
 .stage-path {
   list-style: none; margin: 0; padding: 0; position: relative;
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 22px;
@@ -431,7 +433,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .play-area { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 
 /* ── 결과 (증명서) ─────────────────────── */
-.screen-result { justify-content: center; }
+/* 결과 연출에서 도장이 크게 시작해(scale 1.9) 줄어드는 동안, 좁은 화면(태블릿 세로)에서 화면 밖으로 나가 가로 스크롤이 생기지 않게
+   가로만 자른다(세로는 그대로). 자르는 선을 앱 여백(20px)까지 넓혀서 종이 그림자·초점 테두리는 잘리지 않는다 */
+.screen-result { justify-content: center; overflow-x: clip; margin-inline: -20px; padding-inline: 20px; }
 .result-wrap { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 22px; align-items: start; }
 .result-wrap.is-single { grid-template-columns: minmax(0, 780px); justify-content: center; }
 .certificate { padding: 26px 30px 24px; display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
@@ -787,6 +791,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .lesson-chips { margin-left: 0; }
   .stage-path { grid-template-columns: minmax(0, 1fr); gap: 18px; }
   .play-title { font-size: 1.5rem; }
+  .screen-result { margin-inline: -16px; padding-inline: 16px; }
   .certificate { padding: 22px 16px 20px; }
   .result-title { font-size: 2rem; padding-inline: 0; }
   .result-stamp { position: static; --size: 96px; margin: -4px 0; }

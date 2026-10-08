@@ -19,8 +19,8 @@ import {
 } from '../core/learning-log.js';
 import {
   collectItem,
+  collectionChips,
   collectionStatus,
-  collectionTotals,
   normalizeCollectionState,
   normalizeCollections,
 } from '../core/collection.js';
@@ -31,6 +31,7 @@ import {
   badgeState,
   createPlayReward,
   createRewardStore,
+  discoverXp,
   evaluateBadges,
   normalizeBadges,
   normalizeRanks,
@@ -397,7 +398,13 @@ export function createGameApp({
     const earned = rewardStore.badges();
     return badgeDefs.filter((d) => earned[d.id]).length;
   };
-  const allCollections = () => (collections.length ? collectionTotals(collectionState, collections) : null);
+  /**
+   * 도감 칩 숫자: label이 없는 도감은 합쳐 "도감 n / m"(main), label이 있는 도감(예: '노트')은 따로(side).
+   * defs를 주지 않으면 모든 도감.
+   */
+  const chipsOf = (defs = collections) => collectionChips(collectionState, defs);
+  /** label 도감의 글자: "노트 2 / 24" (sep: 숫자 사이 글자) */
+  const sideText = (c, sep = ' / ') => `${c.label} ${c.count}${sep}${c.total}`;
 
   function titleScreen() {
     const eyebrow = plan.current ? plan.current.title : game.subtitle ?? defaultSubtitle(game);
@@ -427,7 +434,7 @@ export function createGameApp({
         rewardsOn && workshopCard({
           rank: rewardStore.rank(),
           stars: { total: progress.totalStars(), max: progress.maxStars },
-          collection: allCollections(),
+          collection: chipsOf().main,
           badges: { count: earnedCount(), total: badgeDefs.length },
         }),
       ),
@@ -544,13 +551,19 @@ export function createGameApp({
     );
   }
 
-  /** 도감 칩: lesson이 맞는 도감은 그 차시 머리에, 나머지(차시 없음·안 보이는 차시)는 화면 머리에 */
+  /**
+   * 도감 칩: lesson이 맞는 도감은 그 차시 머리에, 나머지(차시 없음·안 보이는 차시)는 화면 머리에.
+   * "도감 n / m"에는 label이 없는 도감만 합치고, label이 있는 도감은 따로 "노트 n / m"처럼 보인다.
+   */
   function collectionChip(lessonId, cls = 'chip') {
     const shown = (c) => plan.groups?.some((g) => g.lesson.id === c.lesson);
     const defs = collections.filter((c) => (lessonId === null ? !shown(c) : c.lesson === lessonId));
     if (defs.length === 0) return null;
-    const t = collectionTotals(collectionState, defs);
-    return h('span', { class: cls }, icon('book'), `도감 ${t.count} / ${t.total}`);
+    const { main, side } = chipsOf(defs);
+    return [
+      main && h('span', { class: `${cls} collection-chip` }, icon('book'), `도감 ${main.count} / ${main.total}`),
+      side.map((c) => h('span', { class: `${cls} collection-chip is-side` }, safeIcon(c.icon) ?? icon('book'), sideText(c))),
+    ];
   }
 
   function stageSelectScreen() {
@@ -715,8 +728,9 @@ export function createGameApp({
           storage.set('collections', collectionState);
           foundThisVisit.add(`${id}:${r.item.id}`);
           if (rewardsOn) {
-            // 새로 찾음 +5는 칸과 함께 바로 저장한다(같은 칸으로 다시 받을 수 없다)
-            const xp = finished ? XP.discover : play.discovered();
+            // 새로 찾음 점수(기본 +5, 도감 정의의 xp)는 칸과 함께 바로 저장한다(같은 칸으로 다시 받을 수 없다)
+            const gain = discoverXp(collections.find((c) => c.id === id)?.xp);
+            const xp = finished ? gain : play.discovered(gain);
             rewardStore.addXp(xp);
             rewardStore.addCounters({ discover: 1 });
             renderRankChip();
@@ -977,7 +991,7 @@ export function createGameApp({
     const regularIds = stageIds.filter((id) => !progress.isOptional(id));
     const clearedCount = regularIds.filter((id) => progress.isCleared(id)).length;
     const rank = rewardStore.rank();
-    const totals = allCollections();
+    const chips = chipsOf();
     const nameInput = h('input', {
       class: 'input',
       id: 'student-name',
@@ -987,14 +1001,16 @@ export function createGameApp({
       placeholder: '예: 3번 김○○',
     });
 
+    const collectionParts = [
+      chips.main && `도감 ${chips.main.count}/${chips.main.total}`,
+      ...chips.side.map((c) => sideText(c, '/')),
+    ].filter(Boolean);
     const copyButton = button('결과 복사', async () => {
       const extra = [];
       if (rewardsOn) {
-        // 결과 복사에 한 줄: "칭호: 탐험가(60점) · 도장 4개 · 도감 4/11"
-        const parts = [`칭호: ${rank.name}(${rank.xp}점)`, `도장 ${earnedCount()}개`];
-        if (totals) parts.push(`도감 ${totals.count}/${totals.total}`);
-        extra.push(parts.join(' · '));
-      } else if (totals) extra.push(`도감 ${totals.count}/${totals.total}`);
+        // 결과 복사에 한 줄: "칭호: 탐험가(60점) · 도장 4개 · 도감 4/11" (label 도감은 따로 "노트 2/24")
+        extra.push([`칭호: ${rank.name}(${rank.xp}점)`, `도장 ${earnedCount()}개`, ...collectionParts].join(' · '));
+      } else if (collectionParts.length) extra.push(collectionParts.join(' · '));
       const text = formatReport({ title: game.title, records, studentName: nameInput.value.trim(), extra });
       const ok = await copyText(text);
       feedback.info(ok ? '결과를 복사했어요. 원하는 곳에 붙여 넣으세요.' : '복사하지 못했어요. 화면을 캡처해 주세요.');
@@ -1043,9 +1059,11 @@ export function createGameApp({
         ),
       );
 
-    const collectionLabel = totals
-      ? `${collections.length === 1 ? collections[0].title : '도감'} ${totals.count} / ${totals.total}`
-      : null;
+    // 도감 화면으로 가는 버튼: "전개도 도감 3 / 11" (label 도감이 있으면 뒤에 "노트 2 / 24")
+    const collectionLabel = [
+      chips.main && `${chips.mainDefs.length === 1 ? chips.mainDefs[0].title : '도감'} ${chips.main.count} / ${chips.main.total}`,
+      ...chips.side.map((c) => sideText(c)),
+    ].filter(Boolean).join(` ${DISPLAY_DOT} `) || null;
     return h('section', { class: 'screen screen-report' },
       h('div', { class: 'screen-head' },
         h('h2', null, '학습 기록'),

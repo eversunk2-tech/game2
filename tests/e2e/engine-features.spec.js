@@ -354,6 +354,50 @@ test('rewards: { off: true }면 점수·칭호·도장을 모두 숨긴다 (도�
   expect(errors).toEqual([]);
 });
 
+test('결과 연출 중에도 가로 스크롤이 없다: 도장이 크게 시작해 줄어드는 2초 동안 프레임마다 잰다 (태블릿 820×1180에서 25px 넘쳤다, N1-7)', async ({ page }, testInfo) => {
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1000, height: 700 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await page.goto(`${URL}?stage=a1&sound=off`);
+    for (let i = 0; i < 4; i += 1) await btn(page, '맞힘').click();
+    // 결과 화면으로 바뀌는 순간부터 2.4초 동안 프레임마다 가로 넘침(scrollWidth − clientWidth)을 모은다
+    await page.evaluate(() => {
+      window.overflow = [];
+      const start = performance.now();
+      const tick = () => {
+        const d = document.documentElement;
+        window.overflow.push({ over: d.scrollWidth - d.clientWidth, celebrating: Boolean(document.querySelector('.is-celebrating')) });
+        if (performance.now() - start < 2400) requestAnimationFrame(tick);
+        else window.overflowDone = true;
+      };
+      requestAnimationFrame(tick);
+    });
+    await btn(page, '끝내기').click();
+    await expect(page.locator('.result-stamp')).toBeVisible();
+    await page.waitForFunction(() => window.overflowDone === true);
+    const samples = await page.evaluate(() => window.overflow);
+    const during = samples.filter((x) => x.celebrating);
+    expect(during.length, `${size.width}×${size.height}`).toBeGreaterThan(20); // 연출 중 프레임을 실제로 쟀다
+    expect(Math.max(...samples.map((x) => x.over)), `${size.width}×${size.height}`).toBeLessThanOrEqual(1);
+    // 자르는 선은 화면 가장자리 쪽 여백까지 넓혀 두었다: 증명서 종이의 그림자(5px)·초점 테두리(13px)는 잘리지 않는다
+    const gap = await page.evaluate(() => {
+      const box = document.querySelector('.screen-result').getBoundingClientRect();
+      const inner = [...document.querySelectorAll('.certificate, .side-col > *')].map((el) => el.getBoundingClientRect());
+      return { left: Math.min(...inner.map((r) => r.left)) - box.left, right: box.right - Math.max(...inner.map((r) => r.right)), overflowY: getComputedStyle(document.querySelector('.screen-result')).overflowY };
+    });
+    expect(gap.left, `${size.width}×${size.height}`).toBeGreaterThanOrEqual(16);
+    expect(gap.right, `${size.width}×${size.height}`).toBeGreaterThanOrEqual(16);
+    expect(gap.overflowY).toBe('visible'); // 세로는 자르지 않는다 (위쪽 테이프·세로 스크롤 그대로)
+    // 연출이 끝나면 도장이 증명서 안에 그대로 보인다
+    const stamp = await page.locator('.result-stamp').boundingBox();
+    const cert = await page.locator('.certificate').boundingBox();
+    expect(stamp.x).toBeGreaterThanOrEqual(cert.x);
+    expect(stamp.x + stamp.width).toBeLessThanOrEqual(cert.x + cert.width + 1);
+  }
+});
+
 test('1366×680: 칭호 오름·새 도장 3개·다시 살펴볼 점·도전 주문서 칩이 모두 있는 결과 화면도 세로 스크롤이 없다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '크롬북 화면 크기에서 확인');
   await page.setViewportSize({ width: 1366, height: 680 });

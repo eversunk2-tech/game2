@@ -9,7 +9,9 @@ import {
   cellKey,
   checkNet,
   completionSlots,
+  findHinges,
   fromCells,
+  isConnected,
   oppositeFace,
   shapeKey,
   transformCells,
@@ -361,6 +363,8 @@ export const BOARD_SIZES = Object.freeze({ wide: { cols: 7, rows: 5 }, phone: { 
 export const HINT_AFTER_INVALID = 2;
 export const HINT_AFTER_MS = 90_000;
 export const HINT_TEXT = '한 줄에 4칸을 놓고, 그 위와 아래에 한 칸씩 붙여 봐요.';
+/** 안 되는 모양 노트에 처음 적을 때의 솜씨 점수 (전개도 도감은 엔진 기본 +5). spec 16-8 */
+export const NOTE_XP = 1;
 
 /**
  * 헥소미노 35개 모두의 모양 키 → 이름. 돌리거나 뒤집어도 같은 키(shapeKey)라 같은 이름이 나온다.
@@ -393,11 +397,19 @@ export const NOTE_ITEMS = [
   ...INVALID_HEXOMINOES.filter((n) => n.reason === 'vertex-full'),
 ];
 
-const NEIGHBOR = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
-/** 칸들을 변으로 이어진 덩어리로 나눈다(꼭짓점만 닿으면 다른 덩어리). → 칸 번호 묶음, 큰 것부터(같으면 먼저 놓은 칸이 있는 것) */
-export function cellGroups(cells) {
-  const index = new Map(cells.map((c, i) => [cellKey(c), i]));
+/**
+ * 칸들을 변으로 이어진 덩어리로 나눈다(꼭짓점만 닿으면 다른 덩어리). → 칸 번호 묶음, 큰 것부터(같으면 먼저 놓은 칸이 있는 것)
+ * "이어졌다"는 fold.js의 경첩(findHinges: 두 면의 변이 길이 > 0만큼 맞닿음)으로만 정한다 — 접기 판정(isConnected·checkNet)과 같은 계산.
+ */
+export function cellGroups(cells, net = fromCells(cells)) {
+  const indexOf = new Map(net.faces.map((f, i) => [f.id, i]));
+  const links = cells.map(() => []);
+  for (const hinge of findHinges(net)) {
+    const a = indexOf.get(hinge.a);
+    const b = indexOf.get(hinge.b);
+    links[a].push(b);
+    links[b].push(a);
+  }
   const seen = new Set();
   const groups = [];
   cells.forEach((_, start) => {
@@ -408,12 +420,10 @@ export function cellGroups(cells) {
     while (queue.length > 0) {
       const i = queue.shift();
       group.push(i);
-      for (const [dx, dy] of NEIGHBOR) {
-        const j = index.get(cellKey([cells[i][0] + dx, cells[i][1] + dy]));
-        if (j !== undefined && !seen.has(j)) {
-          seen.add(j);
-          queue.push(j);
-        }
+      for (const j of links[i]) {
+        if (seen.has(j)) continue;
+        seen.add(j);
+        queue.push(j);
       }
     }
     groups.push(group.sort((a, b) => a - b));
@@ -422,14 +432,14 @@ export function cellGroups(cells) {
 }
 
 /**
- * 놓은 면이 접을 수 있는 상태인가.
- * → { ready, reason: 'count'(6장이 아님) | 'apart'(떨어진 면) | null, detached: 떨어진 칸 번호 }
+ * 놓은 면이 접을 수 있는 상태인가. 떨어진 면이 있는지는 fold.js의 isConnected로 정한다(checkNet의 'disconnected'와 같은 계산).
+ * → { ready, reason: 'count'(6장이 아님) | 'apart'(떨어진 면) | null, detached: 떨어진 칸 번호(가장 큰 덩어리 밖의 칸) }
  */
 export function boardReadiness(cells, total = 6) {
   if (cells.length < total) return { ready: false, reason: 'count', detached: [] };
-  const groups = cellGroups(cells);
-  if (groups.length > 1) return { ready: false, reason: 'apart', detached: groups.slice(1).flat().sort((a, b) => a - b) };
-  return { ready: true, reason: null, detached: [] };
+  const net = fromCells(cells);
+  if (isConnected(net)) return { ready: true, reason: null, detached: [] };
+  return { ready: false, reason: 'apart', detached: cellGroups(cells, net).slice(1).flat().sort((a, b) => a - b) };
 }
 
 /**
@@ -496,7 +506,10 @@ export function centerOnBoard(cells, { cols, rows }) {
 /**
  * 자유 배치 한 판의 흐름 (순수 상태). 화면(play-free.js)과 점수 테스트가 같은 규칙을 쓴다.
  * fold(cells, labels, prediction) → judgeFree 결과 + { itemId(기록할 때), collect: { id, item }(도감·노트에 넣을 칸),
+ *   first(이 기기에서 처음 접는 모양 — 도감·노트에 아직 없음. 점수는 이때만, spec 16-8),
  *   explainable(까닭 고르기를 보일지), fixed(안 된 뒤 바로 전개도를 만듦), found(이번 판에 찾은 전개도 수), done(목표 달성) }
+ * dex·note는 이 기기에 저장된 도감·노트(판을 넘어 이어진다). 접어 본 모양은 예상이 맞든 틀리든 도감이나 노트에 들어가므로
+ * "처음 접는 모양" = 도감·노트에 새로 들어가는 모양이다.
  */
 export function createFreeSession({ stageId = 'cube-free', goal = FREE_GOAL, dex = [], note = [] } = {}) {
   const seen = new Set(); // 이번 판에서 접어 본 모양
@@ -532,6 +545,7 @@ export function createFreeSession({ stageId = 'cube-free', goal = FREE_GOAL, dex
         ...r,
         itemId,
         collect,
+        first: Boolean(collect?.isNew),
         explainable: r.kind === 'invalid' && r.correct,
         fixed: r.valid && r.kind !== 'repeat' && Boolean(prev && !prev.valid),
         found: found.size,
@@ -549,6 +563,47 @@ export function createFreeSession({ stageId = 'cube-free', goal = FREE_GOAL, dex
     history: () => history.slice(),
     goal,
   };
+}
+
+/** 까닭 고르기 전에 쪽지에 보이는 문장: 왜 안 되는지(겹침·네 면이 한 점)는 말하지 않는다 */
+export const FREE_NOTE_BEFORE_PICK = '안 될 거라고 예상했고, 접어 보니 정육면체가 안 돼요.';
+
+/**
+ * 접은 뒤 보일 글과 무대 표시. 안 되는 모양을 "안 될 거예요"로 맞히면(step.explainable) 까닭 고르기가 먼저라,
+ * 고르기(또는 넘어가기) 전(picked: false)에는 까닭 문장도, 무대의 까닭 표시(이름표·겹쳐요·비어요·●)도 보이지 않는다.
+ * → { toast(짧은 알림), note(쪽지 문장), marks(무대에 까닭 표시를 보여도 되는지) }
+ */
+export function freeFeedback(step, { picked = false } = {}) {
+  const waiting = Boolean(step.explainable) && !picked;
+  const lead = step.correct ? '예측 적중!' : '예상과 달랐어요.';
+  let toast;
+  if (step.kind === 'repeat') toast = '이번에 이미 접어 본 모양이에요.';
+  else if (step.kind === 'new') toast = `${lead} 처음 찾은 전개도예요.`;
+  else if (step.kind === 'known') toast = `${lead} 도감 ${step.info.index}번과 같은 모양이에요.`;
+  else if (step.explainable) toast = '예측 적중! 왜 안 되는지 골라 볼까요?';
+  else toast = step.valid ? `${lead} 정육면체가 돼요.` : `${lead} 정육면체가 안 돼요.`;
+  return { toast, note: waiting ? FREE_NOTE_BEFORE_PICK : step.message, marks: !waiting };
+}
+
+/** 결과 "오늘의 솜씨" 칸 수: 1366px 폭에서 한 줄에 들어가는 4칸까지 */
+export const FREE_TILE_MAX = 4;
+
+/**
+ * 결과 "오늘의 솜씨" 칸 (보여 주기만 한다. 점수는 엔진이 계산).
+ * sum: freeSummary 결과, earned: 이번 판에 엔진이 준 점수를 갈래별로 모은 것
+ *   { answer(예상 답: 처음 맞힘·연속·다시 일어서기), nets(도감 등록), notes(노트 등록), explain(까닭 설명) }
+ * 칸 점수의 합 = earned의 합 = 이번 판 점수(단계 완료·별 점수는 엔진이 따로 한 줄로 보인다).
+ * 점수를 받는 칸은 빼지 않는다. 자리가 남을 때만 점수 없는 "고쳐서 다시 도전"을 넣는다.
+ */
+export function freeHighlights(sum, { earned, explainCount = 0 }) {
+  const tiles = [
+    { icon: 'target', label: '예측 적중', value: `${sum.hits} / ${sum.predictions}`, xp: earned.answer },
+    { icon: 'book', label: '새 전개도 발견', value: `${sum.newNets}가지`, xp: earned.nets },
+  ];
+  if (sum.newNotes > 0 || earned.notes > 0) tiles.push({ icon: 'copy', label: '노트에 적은 모양', value: `${sum.newNotes}가지`, xp: earned.notes });
+  if (explainCount > 0 || earned.explain > 0) tiles.push({ icon: 'bulb', label: '까닭 설명', value: `${explainCount}번`, xp: earned.explain });
+  if (tiles.length < FREE_TILE_MAX) tiles.push({ icon: 'undo', label: '고쳐서 다시 도전', value: `${sum.fixes}번` });
+  return tiles;
 }
 
 /** 결과 "오늘의 솜씨"에 쓸 숫자: 기록한 예상 수·맞힌 수, 새로 찾은 전개도·노트, 고쳐서 다시 도전 */

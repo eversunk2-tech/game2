@@ -49,7 +49,10 @@ const TEXT_ELEMENTS = new Set(['text', 'tspan', 'title', 'desc']);
 const NUMBER = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?(?:px|%)?$/i;
 const NUMBERS = /^[-+\d.eE,\s%]*$/;
 const COLOR = /^(?:#[0-9a-f]{3,8}|none|currentColor|transparent|[a-z]{3,20})$/i;
-const TRANSFORM = /^(?:\s*(?:matrix|translate|scale|rotate|skewX|skewY)\(\s*[-+\d.eE,\s]*\)\s*,?)*\s*$/;
+// transform 값: 함수(이름 + 괄호 안 숫자)들을 빈칸이나 쉼표 하나로 이어 쓴 것.
+// 같은 빈칸을 두 군데서 받을 수 있게 쓰면(\s*가 겹치면) 틀린 값에서 되돌아가기가 지수로 늘어 빌드가 멈춘다.
+// 빈칸을 받는 자리를 하나씩만 두어 글자 수에 비례하는 시간에 끝난다 (tests/unit/games.test.js).
+const TRANSFORM = /^\s*(?:(?:matrix|translate|scale|rotate|skewX|skewY)\([-+\d.eE,\s]*\)\s*(?:,\s*)?)*$/;
 /** 받는 속성과 값 모양 (값이 맞지 않으면 거부) */
 export const COVER_ATTRIBUTES = {
   viewBox: NUMBERS, width: NUMBER, height: NUMBER, x: NUMBERS, y: NUMBERS, dx: NUMBERS, dy: NUMBERS,

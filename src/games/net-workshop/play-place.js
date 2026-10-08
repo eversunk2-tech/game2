@@ -116,6 +116,7 @@ export function playPlace(stage, ctx, questions) {
   }
 
   function retry() {
+    ctx.feedback.clear?.(); // 앞 알림이 다시 끌 면 카드·힌트 버튼을 가리지 않게 (까닭은 쪽지에 남아 있다)
     bench.hideNext();
     bench.lockFold(true);
     showBase();

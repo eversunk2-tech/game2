@@ -331,6 +331,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       faceEl.querySelector('.face-mark').textContent = '';
     }
     badge.hidden = true;
+    badge.replaceChildren(); // 숨긴 이름표에 앞 장면의 까닭 글자가 남지 않게
     marksShown = false;
     el.classList.remove('marks-on', 'marks-blocked');
   }

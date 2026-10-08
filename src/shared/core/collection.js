@@ -2,7 +2,13 @@
  * 도감 틀: 여러 가지를 새로 찾으면 칸이 하나씩 찬다. 화면과 상관없는 순수 로직.
  * 게임이 createGameApp({ collections })로 도감(칸 목록)을 주고, 플레이 중 ctx.collect(id, itemId)로 등록한다.
  * 저장 모양 (createStorage(game.id)의 'collections'): { 도감 id: { 칸 id: { at, stage } } }
+ *
+ * 도감 정의의 선택 값
+ *   xp: 처음 등록할 때 주는 솜씨 점수 (0~5 정수, 기본 5)
+ *   label: 짧은 이름(예: '노트'). 있으면 "도감 n / m" 칩에 합치지 않고 따로 "노트 n / m"으로 보인다
+ *   icon: label 칩에 쓸 아이콘 이름(없으면 책)
  */
+import { XP } from './rewards.js';
 
 /** 도감 정의 검사 → 그대로 쓸 수 있는 목록. 잘못되면 오류 */
 export function normalizeCollections(defs) {
@@ -15,6 +21,12 @@ export function normalizeCollections(defs) {
     }
     if (ids.has(def.id)) throw new Error(`collections: 도감 id가 겹쳐요 (${def.id}).`);
     ids.add(def.id);
+    if (def.xp != null && !(Number.isInteger(def.xp) && def.xp >= 0 && def.xp <= XP.discover)) {
+      throw new Error(`collections(${def.id}): xp는 0~${XP.discover} 사이 정수예요.`);
+    }
+    if (def.label != null && !(typeof def.label === 'string' && def.label.trim())) {
+      throw new Error(`collections(${def.id}): label은 짧은 이름 글자예요 (예: '노트').`);
+    }
     const itemIds = new Set();
     const items = def.items.map((item) => {
       if (item?.id == null || !item?.name) throw new Error(`collections(${def.id}): 칸마다 id와 name이 필요해요.`);
@@ -55,6 +67,22 @@ export function collectionTotals(state, defs) {
     const s = collectionStatus(state, def);
     return { count: sum.count + s.count, total: sum.total + s.total };
   }, { count: 0, total: 0 });
+}
+
+/**
+ * 도감 칩에 보일 숫자. label이 없는 도감은 합쳐 "도감 n / m"(main), label이 있는 도감은 하나씩 따로(side).
+ * → { main: { count, total } | null, mainDefs, side: [{ id, label, icon, count, total }] }
+ */
+export function collectionChips(state, defs) {
+  const mainDefs = defs.filter((def) => !def.label);
+  return {
+    main: mainDefs.length > 0 ? collectionTotals(state, mainDefs) : null,
+    mainDefs,
+    side: defs.filter((def) => def.label).map((def) => {
+      const s = collectionStatus(state, def);
+      return { id: def.id, label: def.label, icon: def.icon ?? null, count: s.count, total: s.total };
+    }),
+  };
 }
 
 /**

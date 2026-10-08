@@ -11,6 +11,7 @@ import {
   createAnswerTracker,
   createPlayReward,
   createRewardStore,
+  discoverXp,
   evaluateBadges,
   MASTERED_STARS,
   normalizeBadges,
@@ -254,6 +255,73 @@ test('다시 하기 점수 규칙에서도 무작위 1,500개: 어떤 답 순서
     assert.ok(got <= best, `별 ${startStars}개, 문항 ${n}개: ${got} > ${best}`);
     if (startStars === 3) assert.equal(got, discoveries * XP.discover);
   }
+});
+
+// ── 점수 없는 답(scored: false): 이미 점수를 받은 것을 다시 답함 (예: 지난 판에 이미 찾은 모양) ─────────────
+
+test('scored: false인 답은 점수가 없고 연속·다시 일어서기 계산에 넣지 않는다 (틀리면 연속만 끊긴다). 횟수에는 센다', () => {
+  const again = (itemId, correct) => ({ itemId, correct, scored: false });
+  const t = createAnswerTracker();
+  assert.deepEqual(t.answer(again('old1', true)), { kind: 'repeat', xp: 0, bounce: false, streak: 0, streakBonus: false });
+  t.answer(ok('a'));
+  t.answer(ok('b'));
+  assert.equal(t.answer(again('old2', true)).streak, 2); // 맞혀도 연속은 그대로
+  assert.deepEqual(t.answer(ok('c')), { kind: 'first', xp: 2 + 1, bounce: false, streak: 3, streakBonus: true });
+  assert.equal(t.answer(again('old3', false)).streak, 0); // 틀리면 연속만 끊긴다
+  assert.equal(t.bounceReady(), false); // 다시 일어서기 기회는 생기지 않는다
+  assert.deepEqual(t.answer(ok('d')), { kind: 'first', xp: 2, bounce: false, streak: 1, streakBonus: false });
+  // 점수 있는 답을 틀려 생긴 다시 일어서기 기회는 점수 없는 답이 쓰지 않는다
+  t.answer(no('e'));
+  assert.equal(t.answer(again('old4', true)).bounce, false);
+  assert.equal(t.bounceReady(), true);
+  assert.equal(t.answer(ok('f')).bounce, true);
+  const totals = t.totals();
+  assert.deepEqual([totals.attempts, totals.correct, totals.wrong, totals.unscored, totals.items, totals.firstTry], [10, 8, 2, 4, 6, 5]);
+  assert.equal(totals.xp, 5 * 2 + 1 + 1); // 점수 있는 답만: 처음 맞힘 5, 연속 1, 다시 일어서기 1
+  // 같은 itemId라도 scored: false면 점수가 없다 (몇 번을 답해도)
+  assert.equal(scoreAnswers(Array.from({ length: 20 }, (_, i) => again(`x${i % 3}`, true))).xp, 0);
+});
+
+test('한 판 점수: scored: false인 문항은 설명 점수도 없다(횟수만), 도감 등록 점수는 도감마다 0~5로 줄일 수 있다', () => {
+  const play = createPlayReward();
+  assert.equal(play.answer({ itemId: 'old', correct: true, scored: false }).xp, 0);
+  assert.equal(play.event('explain', { correct: true, itemId: 'old' }), 0);
+  assert.equal(play.answer(ok('new')).xp, 2);
+  assert.equal(play.event('explain', { correct: true, itemId: 'new' }), 2);
+  assert.deepEqual(play.summary().explain, { count: 2, xp: 2 });
+  assert.equal(play.discovered(1), 1); // 예: 안 되는 모양 노트 +1
+  assert.equal(play.discovered(), 5);
+  assert.equal(play.xp(), 2 + 2 + 1 + 5);
+  assert.deepEqual(play.summary().discover, { count: 2, xp: 6 });
+  // 등록 점수는 기본(+5)보다 클 수 없고 음수가 될 수 없다
+  assert.deepEqual([undefined, null, 5, 1, 0, 9, -3, 2.7, 'x'].map((v) => discoverXp(v)), [5, 5, 5, 1, 0, 5, 0, 2, 5]);
+  assert.equal(createPlayReward().discovered(99), 5);
+});
+
+test('무작위 2,000개: 점수 없는 답(scored: false)을 아무 데나 섞어도 점수 있는 답만 모두 처음에 맞힌 것보다 크지 않다', () => {
+  const rng = createRng('rewards-unscored');
+  let lower = 0;
+  for (let trial = 0; trial < 2000; trial += 1) {
+    const n = rng.int(1, 12);
+    const startStars = rng.int(0, 3);
+    const answers = randomAnswers(rng, n);
+    // 점수 없는 답(맞음·틀림)을 사이사이에 넣는다. 설명도 아무 문항에나
+    const mixed = answers.flatMap((a) => [
+      ...Array.from({ length: rng.pick([0, 0, 1, 2]) }, () => ({ itemId: `old${rng.int(0, 4)}`, correct: rng.next() < 0.5, scored: false })),
+      a,
+    ]);
+    // 설명은 답한 문항에만 한다 (점수 있는 문항 q…, 점수 없이 기록만 한 문항 old…)
+    const olds = [...new Set(mixed.filter((a) => a.scored === false).map((a) => a.itemId))];
+    const explains = Array.from({ length: rng.int(0, n * 2) }, () => ({
+      correct: rng.next() < 0.7,
+      itemId: olds.length > 0 && rng.next() < 0.5 ? rng.pick(olds) : `q${rng.int(0, n - 1)}`,
+    }));
+    const got = replayTotal(mixed, { startStars, explains });
+    const best = replayTotal(Array.from({ length: n }, (_, i) => ok(`q${i}`)), { startStars, explains: Array.from({ length: n }, (_, i) => ({ correct: true, itemId: `q${i}` })) });
+    assert.ok(got <= best, `별 ${startStars}개, 문항 ${n}개: ${got} > ${best}`);
+    if (got < best) lower += 1;
+  }
+  assert.ok(lower > 500);
 });
 
 test('칭호: 기본 5단계 기준 0·40·100·180·300점, 다음 칭호까지 남은 점수와 비율', () => {

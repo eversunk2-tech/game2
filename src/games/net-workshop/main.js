@@ -5,7 +5,7 @@
  */
 import meta from './game.json' with { type: 'json' };
 import { createGameApp } from '../../shared/ui/app.js';
-import { LESSONS, NOTE_ITEMS, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
+import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
 import { playFree } from './play-free.js';
 import { playJudge } from './play-judge.js';
@@ -78,6 +78,7 @@ const BADGES = [
 ];
 
 // 도감 2개: 자유 배치(·도전)에서 직접 만들어 접은 모양만 등록한다 (판별에서 본 것은 아님)
+// "도감 n / 11" 칩에는 전개도 도감만 세고, 노트는 label로 따로 "노트 n / 24". 노트 등록 점수는 +1 (spec 16-8)
 const COLLECTIONS = [
   {
     id: 'cube-nets',
@@ -89,6 +90,9 @@ const COLLECTIONS = [
   {
     id: 'cube-non-nets',
     title: '안 되는 모양 노트',
+    label: '노트',
+    icon: 'copy',
+    xp: NOTE_XP,
     lesson: 'cube',
     desc: '접어 봤더니 정육면체가 안 된 모양이 까닭별로 모여요(면이 겹치는 모양 16 · 네 면이 한 점에 모이는 모양 8).',
     items: NOTE_ITEMS.map((n) => ({ id: n.name, name: noteItemName(n), thumb: () => miniNet(n.cells, { invalid: true }) })),

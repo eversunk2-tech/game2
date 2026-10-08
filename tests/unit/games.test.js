@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadGames, prepareCover, validateGameMeta } from '../../scripts/lib/games.mjs';
+import { COVER_ATTRIBUTES, loadGames, prepareCover, validateGameMeta } from '../../scripts/lib/games.mjs';
 
 const GAMES_DIR = fileURLToPath(new URL('../../src/games', import.meta.url));
 
@@ -115,4 +115,65 @@ test('표지 cover.svg: 게임 모음에 그대로 넣을 수 있는 그림만 �
   const games = await loadGames(GAMES_DIR);
   for (const game of games.filter((g) => g.cover)) assert.match(game.cover, /^<svg aria-hidden="true"/, game.dirName);
   assert.ok(games.some((g) => g.cover), '표지가 있는 게임이 하나 이상');
+});
+
+test('표지 transform 검사: 긴 틀린 값도 글자 수에 비례하는 시간에 끝난다 (되돌아가기 지수 시간 없음, N1-6)', () => {
+  const re = COVER_ATTRIBUTES.transform;
+  const timed = (value) => {
+    const start = performance.now();
+    const ok = re.test(value);
+    return { ok, ms: performance.now() - start };
+  };
+  // 전에는 'rotate(1) '를 22번 + 틀린 글자에서 약 0.2초, 한 번 늘 때마다 2배(30번이면 약 50초)였다
+  const long = {
+    '함수 30번 + 틀린 글자': `${'rotate(1) '.repeat(30)}x`,
+    '함수 1,000번 + 틀린 글자 (1만 글자)': `${'rotate(1) '.repeat(1000)}x`,
+    '함수 10,000번 + 틀린 글자 (10만 글자)': `${'rotate(1) '.repeat(10_000)}x`,
+    '쉼표로 이은 함수 5,000번 + 틀린 글자': `${'scale(2 , 3) , '.repeat(5000)}!`,
+    '괄호 안 빈칸 1만 개 + 닫지 않음': `rotate(${' '.repeat(10_000)}`,
+    '괄호 안 숫자 5,000개 + 틀린 글자': `matrix(${'1 '.repeat(5000)}x)`,
+    '빈칸 1만 개 + 틀린 글자': `${' '.repeat(10_000)}x`,
+    '함수 뒤 빈칸 1만 개 + 쉼표 둘': `rotate(1)${' '.repeat(10_000)},,`,
+    '빈칸·쉼표 섞어 1만 글자 + 틀린 글자': `translate(1)${' ,'.repeat(5000)}x`,
+  };
+  for (const [name, value] of Object.entries(long)) {
+    const r = timed(value);
+    assert.equal(r.ok, false, name);
+    assert.ok(r.ms < 100, `${name}: ${r.ms.toFixed(1)}ms`);
+  }
+  // 긴 올바른 값도 빠르다
+  const good = timed('translate(1 2) rotate(-4 5 5), scale(1.5) '.repeat(2000));
+  assert.equal(good.ok, true);
+  assert.ok(good.ms < 100, `${good.ms.toFixed(1)}ms`);
+  // 표지 전체 검사(prepareCover)로도 금방 거부한다
+  const start = performance.now();
+  const cover = prepareCover(`<svg viewBox="0 0 10 10"><g transform="${'rotate(1) '.repeat(2000)}x"><rect/></g></svg>`);
+  assert.ok(cover.errors.some((e) => e.includes('transform')), cover.errors.join(' / '));
+  assert.ok(performance.now() - start < 200);
+});
+
+test('표지 transform 검사: 받는 값·거부하는 값이 고치기 전 정규식과 같다 (허용 목록을 넓히지 않음)', () => {
+  const re = COVER_ATTRIBUTES.transform;
+  // 고치기 전 정규식 (짧은 값에서만 쓴다: 긴 틀린 값에서는 지수 시간이 걸린다)
+  const before = /^(?:\s*(?:matrix|translate|scale|rotate|skewX|skewY)\(\s*[-+\d.eE,\s]*\)\s*,?)*\s*$/;
+  const accepted = ['', '  ', 'rotate(-4 5 5)', ' rotate( 30 ) ', 'translate(1,2) scale(1.5)', 'translate(1 2),scale(2)', 'matrix(1 0 0 1 0 0) , skewX(3)\n skewY(-2e1)',
+    'rotate(1),', 'rotate(1) , ', 'rotate()', 'scale(+.5e-2)', '\trotate(1)\tscale(2)'];
+  const rejected = ['url(https://e.com)', 'rotate(1) url(#a)', 'rotate(1);', 'rotate(1) x', 'rotate(1),,scale(2)', ',rotate(1)', 'rotate(1) , , ', 'Rotate(1)', 'rotate (1)',
+    'rotate(1', 'rotate1)', 'rotate(a)', 'perspective(100)', 'rotate(1)scale(calc(1))', 'rotate(1) /* x */', 'translate(1px)', 'rotate(1deg)', 'rotate(1))', 'javascript:alert(1)'];
+  for (const value of accepted) assert.equal(re.test(value), true, JSON.stringify(value));
+  for (const value of rejected) assert.equal(re.test(value), false, JSON.stringify(value));
+  // 조각을 아무렇게나 이어 붙인 짧은 값 3,000개: 두 정규식의 판정이 모두 같다
+  const parts = ['rotate(1)', 'scale(2 3)', 'translate(1,2)', 'skewX( 4 )', 'matrix()', ' ', '  ', ',', ', ', '\n', 'x', '(', ')', 'rotate', '1'];
+  let seed = 12345;
+  const next = (n) => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % n;
+  };
+  let yes = 0;
+  for (let i = 0; i < 3000; i += 1) {
+    const value = Array.from({ length: 1 + next(7) }, () => parts[next(parts.length)]).join('');
+    assert.equal(re.test(value), before.test(value), JSON.stringify(value));
+    if (re.test(value)) yes += 1;
+  }
+  assert.ok(yes > 100 && yes < 2900, `받은 값 ${yes}개`);
 });

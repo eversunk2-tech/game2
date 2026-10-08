@@ -5,10 +5,14 @@
  * 판정·표시는 판별 단계와 같은 fromCells + checkNet + view.reveal(). 서로 다른 전개도 3가지를 찾으면 [결과 보기].
  * - 같은 모양(돌리기·뒤집기 포함)을 이번 판에서 다시 접으면 기록·점수 없음, 떨어진 배치는 접지 않음
  * - 새 전개도는 도감(cube-nets), 안 되는 모양은 노트(cube-non-nets)에 (ctx.collect)
+ * - 점수(예측 적중·새 발견·노트·까닭 설명)는 이 기기에서 그 모양을 처음 접을 때만 (spec 16-8).
+ *   이미 접어 본 모양(도감·노트에 있음)은 기록·별에는 넣고 점수는 없다(ctx.log.answer의 scored: false)
+ * - 안 되는 모양을 "안 될 거예요"로 맞히면 까닭 고르기가 먼저다: 고르기(넘어가기) 전에는 까닭 문장도, 무대의 까닭 표시
+ *   (이름표·겹쳐요·비어요·●)도 보이지 않는다 (판별 단계와 같은 순서)
  * - 별은 예상 정확도(엔진 기본). 시간·접은 횟수는 별에 쓰지 않는다
  * - 힌트: 안 되는 모양을 연달아 2번 접었거나 90초 동안 새 전개도를 못 찾으면 [힌트]. 1번째 글, 2번째 그림자(누를 때만)
  */
-import { XP, scoreAnswers } from '../../shared/core/rewards.js';
+import { XP } from '../../shared/core/rewards.js';
 import { icon } from '../../shared/ui/icons.js';
 import { LABELS } from './fold.js';
 import { createFreeBoard, gridAdapter } from './free-board.js';
@@ -22,6 +26,8 @@ import {
   centerOnBoard,
   createFreeSession,
   dexItemName,
+  freeFeedback,
+  freeHighlights,
   freeSummary,
   hintNet,
 } from './logic.js';
@@ -46,7 +52,10 @@ export function playFree(stage, ctx) {
     note: [...ctx.collection('cube-non-nets').found],
   });
   const newThisPlay = new Set(); // 이번 판에 도감에 처음 넣은 전개도 ("새로!")
-  let explain = { count: 0, xp: 0 };
+  // 이번 판에 엔진이 준 점수를 갈래별로 모은다(결과 "오늘의 솜씨" 칸). 점수는 엔진이 계산하고, 여기서는 오른 만큼만 읽는다
+  const earned = { answer: 0, nets: 0, notes: 0, explain: 0 };
+  let explainCount = 0;
+  const playXp = () => ctx.reward.peek?.().xp ?? 0;
   let mode = 'edit';
   let goalReached = false;
 
@@ -147,7 +156,7 @@ export function playFree(stage, ctx) {
     predictNote.classList.toggle('is-wrong', r.reason === 'apart');
     if (r.reason === 'count') predictNote.textContent = '면 6장을 모두 놓으면 예상하고 접을 수 있어요.';
     else if (r.reason === 'apart') predictNote.textContent = '떨어진 면이 있어요. 전개도는 한 장으로 이어져 있어야 접을 수 있어요.';
-    else predictNote.textContent = practiceOn() ? '고르면 바로 접혀요. 예상이 맞으면 +2' : '고르면 바로 접혀요.';
+    else predictNote.textContent = practiceOn() ? `고르면 바로 접혀요. 처음 접는 모양은 예상이 맞으면 +${XP.first}` : '고르면 바로 접혀요.';
     statusCount.textContent = `${st.count} / ${st.total}`;
     statusExtra.textContent = r.reason === 'apart' ? ' · 떨어진 면이 있어요' : '';
     undoBtn.disabled = !board.canUndo();
@@ -267,25 +276,31 @@ export function playFree(stage, ctx) {
     const st = board.state();
     if (!boardReadiness(st.cells, labels.length).ready) return;
     const layout = board.layout(); // 판을 숨기기 전에 칸 크기·자리를 잰다
-    const before = ctx.reward.peek?.().xp ?? 0;
     const step = session.fold(st.cells, st.labels, value);
-    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.correct, tag: step.tag, given: value, expected: step.expected });
+    // 이미 접어 본 모양(step.first가 아님)은 기록·별에는 넣고 점수는 없다. 점수는 엔진이 계산하고 여기서는 오른 만큼만 읽는다
+    const before = playXp();
+    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.correct, tag: step.tag, given: value, expected: step.expected, scored: step.first });
+    const afterAnswer = playXp();
     const collected = step.collect ? ctx.collect(step.collect.id, step.collect.item) : null;
-    const gained = (ctx.reward.peek?.().xp ?? 0) - before;
+    const gain = { answer: afterAnswer - before, discover: playXp() - afterAnswer };
+    earned.answer += gain.answer;
+    earned[step.valid ? 'nets' : 'notes'] += gain.discover;
     if (step.kind === 'new' && collected?.isNew) newThisPlay.add(step.name);
 
     enterFold();
     // 좁은 화면(휴대폰)에서 예상 버튼을 누르느라 내려가 있으면, 접히는 매트가 보이게 올린다
     if (!globalThis.matchMedia?.('(min-width: 901px)').matches) mat.scrollIntoView?.({ block: 'nearest' });
     view.setNet(step.net, { layout });
-    view.reveal();
+    // 까닭 고르기를 할 때는 고르기(넘어가기) 전까지 무대의 까닭 표시(이름표·겹쳐요·비어요·●)를 보이지 않는다
+    const feedback = freeFeedback(step);
+    const reasonFirst = !feedback.marks;
+    if (feedback.marks) view.reveal();
     tools.reset();
     tools.lock(false);
     view.animateTo(1);
 
     // 알림 · 소리 (알림은 짧게, 긴 문장은 작업 지시서의 쪽지에)
-    const reasonFirst = step.explainable; // 까닭 고르기를 할 때는 까닭 문장을 먼저 보이지 않는다
-    const toast = toastText(step);
+    const { toast } = feedback;
     if (step.kind === 'repeat') {
       ctx.sfx.play('click');
       ctx.feedback.info(toast);
@@ -304,8 +319,8 @@ export function playFree(stage, ctx) {
       ctx.feedback.celebrate?.({ kind: 'found', at: stamp });
     }
 
-    showNote(step, collected, { withReason: !reasonFirst });
-    showBonus(step, collected, gained);
+    showNote(step, collected, feedback.note);
+    showBonus(step, collected, gain);
     renderDex({ same: step.valid && step.kind !== 'new' ? step.name : null });
     setProgress();
 
@@ -326,11 +341,14 @@ export function playFree(stage, ctx) {
         ctx,
         itemId: step.itemId,
         problems: step.problems,
-        onDone: ({ xp }) => {
-          if (xp) explain = { count: explain.count + 1, xp: explain.xp + xp };
+        onDone: ({ correct, xp }) => {
+          if (correct) explainCount += 1;
+          earned.explain += xp;
           order.el.classList.remove('is-picking');
-          showNote(step, collected, { withReason: true });
-          showBonus(step, collected, gained, xp);
+          // 고른 뒤(맞든 틀리든, 넘어가도) 까닭 문장과 무대의 까닭 표시를 보인다
+          view.reveal();
+          showNote(step, collected, freeFeedback(step, { picked: true }).note);
+          showBonus(step, collected, gain, xp);
           buttonsSlot.querySelector('button')?.focus({ preventScroll: true });
         },
       });
@@ -341,18 +359,7 @@ export function playFree(stage, ctx) {
     }
   }
 
-  function toastText(step) {
-    const lead = step.correct ? '예측 적중!' : '예상과 달랐어요.';
-    if (step.kind === 'repeat') return '이번에 이미 접어 본 모양이에요.';
-    if (step.kind === 'new') return `${lead} 처음 찾은 전개도예요.`;
-    if (step.kind === 'known') return `${lead} 도감 ${step.info.index}번과 같은 모양이에요.`;
-    if (step.explainable) return '예측 적중! 왜 안 되는지 골라 볼까요?';
-    return step.valid ? `${lead} 정육면체가 돼요.` : `${lead} 정육면체가 안 돼요.`;
-  }
-
-  function showNote(step, collected, { withReason }) {
-    let text = step.message;
-    if (!withReason && step.explainable) text = '안 될 거라고 예상했고, 접어 보니 정육면체가 안 돼요.';
+  function showNote(step, collected, text) {
     const lines = [text];
     if (step.kind === 'invalid' && collected) {
       lines.push(collected.isNew ? `노트에 적었어요 (${collected.count} / ${collected.total}).` : `노트에 이미 있는 모양이에요 (${collected.count} / ${collected.total}).`);
@@ -364,7 +371,11 @@ export function playFree(stage, ctx) {
     noteSlot.replaceChildren(note);
   }
 
-  function showBonus(step, collected, gained, explainXp = 0) {
+  /**
+   * 보너스 쪽지: 이번 접기로 엔진이 준 점수(gain: 예상 답 answer · 도감·노트 등록 discover, explainXp: 까닭 설명)를 글로 보인다.
+   * 점수는 이 기기에서 처음 접는 모양에만 있다. 이미 접어 본 모양은 까닭을 알려 준다.
+   */
+  function showBonus(step, collected, gain, explainXp = 0) {
     const peek = ctx.reward.peek?.();
     bonusSlot.replaceChildren();
     if (!peek?.on) return;
@@ -372,28 +383,27 @@ export function playFree(stage, ctx) {
       bonusSlot.replaceChildren(ctx.ui.bonus('같은 모양은 돌리거나 뒤집어도 다시 세지 않아요. ', h('b', null, '새 모양'), '을 만들어 봐요.'));
       return;
     }
-    // 별 3개를 받은 단계를 다시 하는 판: 연습 점수는 없고, 처음 찾은 모양(+5)만 받는다
-    if (peek.practice === false) {
-      if (collected?.isNew) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, `${step.valid ? '새 발견' : '노트에 새 모양'} +${XP.discover}`)));
-      return;
-    }
-    if (!step.correct) {
-      bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, '다시 일어서기'), ' · 다음 예상을 맞히면 +1'));
+    if (!step.first) {
+      // 전에(다른 판에서) 접어 본 모양: 점수가 없는 까닭을 한 줄로. 별 3개 단계를 다시 하는 판은 결과 화면에서 엔진이 알려 준다
+      if (peek.practice !== false) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, '전에 접어 본 모양'), '이라 점수는 없어요.'));
       return;
     }
     const parts = [];
-    let rest = gained;
-    if (collected?.isNew) {
-      parts.push(`${step.valid ? '새 발견' : '노트에 새 모양'} +${XP.discover}`);
-      rest -= XP.discover;
+    if (gain.discover > 0) parts.push(`${step.valid ? '새 발견' : '노트에 새 모양'} +${gain.discover}`);
+    if (gain.answer > 0) {
+      parts.push(`예측 적중 +${Math.min(gain.answer, XP.first)}`);
+      if (gain.answer > XP.first) parts.push(`다시 일어서기·연속 +${gain.answer - XP.first}`);
     }
-    parts.push(`예측 적중 +${XP.first}`);
-    rest -= XP.first;
-    if (rest > 0) parts.push(`다시 일어서기·연속 +${rest}`);
     if (explainXp > 0) parts.push(`까닭 설명 +${explainXp}`);
     const streak = ctx.streak?.() ?? 0;
-    if (streak >= 2) parts.push(`연속 ${streak}번`);
-    bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, parts.join(' · '))));
+    if (step.correct && gain.answer > 0 && streak >= 2) parts.push(`연속 ${streak}번`);
+    // 틀린 뒤: 다음에 처음 접는 모양의 예상을 맞히면 다시 일어서기 +1 (별 3개 단계를 다시 하는 판에는 연습 점수가 없다)
+    const bounce = !step.correct && peek.bounceReady && peek.practice !== false;
+    if (parts.length === 0 && !bounce) return;
+    bonusSlot.replaceChildren(ctx.ui.bonus(
+      parts.length > 0 && h('b', null, parts.join(' · ')),
+      bounce && [parts.length > 0 ? ' · ' : null, h('b', null, '다시 일어서기'), ` · 다음 새 모양 예상을 맞히면 +${XP.bounce}`],
+    ));
   }
 
   /** 이 판에서 연습 점수를 주는지 (보상이 켜져 있고, 시작할 때 별 3개가 아니었음) */
@@ -431,19 +441,8 @@ export function playFree(stage, ctx) {
 
   // ── 끝내기: 결과 "오늘의 솜씨" ─────────────────
   function finish() {
-    const history = session.history();
-    const sum = freeSummary(history);
-    const score = scoreAnswers(history.filter((s) => s.log).map((s) => ({ itemId: s.itemId, correct: s.correct })));
-    // 칸의 점수는 보여 주기만 한다. 별 3개 단계를 다시 하는 판이면 엔진처럼 연습 점수(예측·설명)는 0
-    const practice = practiceOn() ? 1 : 0;
-    const highlights = [
-      { icon: 'target', label: '예측 적중', value: `${sum.hits} / ${sum.predictions}`, xp: practice * score.xp },
-      { icon: 'book', label: '새 전개도 발견', value: `${sum.newNets}가지`, xp: sum.newNets * XP.discover },
-      sum.newNotes > 0 && { icon: 'copy', label: '노트에 적은 모양', value: `${sum.newNotes}가지`, xp: sum.newNotes * XP.discover },
-      { icon: 'undo', label: '고쳐서 다시 도전', value: `${sum.fixes}번` },
-      explain.count > 0 && { icon: 'bulb', label: '까닭 설명', value: `${explain.count}번`, xp: explain.xp },
-    ].filter(Boolean).slice(0, 4);
-    ctx.finish({ highlights });
+    const sum = freeSummary(session.history());
+    ctx.finish({ highlights: freeHighlights(sum, { earned, explainCount }) });
   }
 
   // Ctrl+Z: 되돌리기 (놓는 중일 때. 누른 버튼이 꺼져 초점이 문서로 가도 되게 문서에서 받는다)

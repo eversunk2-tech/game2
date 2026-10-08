@@ -19,7 +19,7 @@ export const XP = Object.freeze({
   stageClear: 5, //   단계 완료: 그 단계 별이 처음 생겼을 때만
   perStar: 2, //      별이 늘어난 만큼만
   challenge: 10, //   도전 주문서 처음 성공 (단계 완료 +5 대신)
-  discover: 5, //     도감에 처음 등록
+  discover: 5, //     도감에 처음 등록 (도감마다 xp로 0~5 사이에서 줄일 수 있다)
   explain: 2, //      설명 맞힘 (문항마다 한 번)
 });
 
@@ -85,6 +85,8 @@ export const COUNTER_NAMES = Object.freeze(['bounce', 'retryFix', 'explain', 'in
  * - 처음 시도에 맞힘 +2 · 틀림 0 · 같은 문항을 다시 도전해 맞힘 +1 · 이미 맞힌 문항을 또 답함 0
  * - 다시 일어서기 +1: 어떤 문항을 처음 시도에 틀린 뒤, 다음 새 문항을 처음 시도에 맞혔을 때(틀린 문항 하나마다 한 번까지)
  * - 연속: 처음 시도에 연달아 맞힌 수. 3번마다 +1. 틀리면 조용히 0. 다시 도전해 맞힌 것은 연속에 넣지 않는다.
+ * - scored: false인 답은 "이미 점수를 받은 것을 다시 답함"(예: 지난 판에 이미 찾은 모양)이다. 이미 맞힌 문항을 또 답한 것과 같게
+ *   점수가 없고, 연속·다시 일어서기 계산에 넣지 않는다(틀리면 연속만 끊긴다). 횟수(attempts·correct·wrong)에는 센다.
  */
 export function createAnswerTracker() {
   const items = new Map();
@@ -93,7 +95,7 @@ export function createAnswerTracker() {
   let lastKey = null;
   let streak = 0;
   let armed = false;
-  const totals = { attempts: 0, correct: 0, wrong: 0, items: 0, firstTry: 0, retryFix: 0, bounce: 0, streakBonus: 0, bestStreak: 0, xp: 0 };
+  const totals = { attempts: 0, correct: 0, wrong: 0, items: 0, firstTry: 0, retryFix: 0, bounce: 0, streakBonus: 0, bestStreak: 0, unscored: 0, xp: 0 };
 
   function keyFor(itemId) {
     if (itemId != null) return `id:${String(itemId)}`;
@@ -103,8 +105,17 @@ export function createAnswerTracker() {
   }
 
   /** 답 하나 → 이번에 생긴 일 { kind: 'first'|'retry'|'wrong'|'repeat', xp, bounce, streak, streakBonus } */
-  function answer({ itemId = null, correct } = {}) {
+  function answer({ itemId = null, correct, scored = true } = {}) {
     const ok = Boolean(correct);
+    if (scored === false) {
+      // 이미 점수를 받은 것을 다시 답함: 점수 없음. 다시 일어서기 기회도 만들지 않고, 틀리면 연속만 끊긴다.
+      totals.attempts += 1;
+      if (ok) totals.correct += 1;
+      else totals.wrong += 1;
+      totals.unscored += 1;
+      if (!ok) streak = 0;
+      return { kind: 'repeat', xp: 0, bounce: false, streak, streakBonus: false };
+    }
     const key = keyFor(itemId);
     lastKey = key;
     lastWasNullWrong = itemId == null && !ok;
@@ -175,6 +186,13 @@ export function scoreAnswers(answers) {
 
 // ── 한 판 전체: 답 + 학습 행동 이벤트 ───────────────────────
 
+/** 도감 등록 점수를 0 ~ XP.discover 사이 정수로 (도감 정의의 xp. 없거나 잘못된 값이면 기본 +5) */
+export function discoverXp(value = XP.discover) {
+  const n = Number(value);
+  if (value == null || !Number.isFinite(n)) return XP.discover;
+  return Math.max(0, Math.min(XP.discover, Math.floor(n)));
+}
+
 /** 다시 하기 점수 규칙: 판을 시작할 때 그 단계 별이 이만큼이면 연습 점수가 없다 (docs/design/spec.md "결정" 다시 하기 점수) */
 export const MASTERED_STARS = 3;
 
@@ -187,11 +205,13 @@ export const practiceAllowed = (startStars = 0) => (Number(startStars) || 0) < M
  * startStars: 판을 시작할 때 그 단계의 별. 이미 별 3개인 단계를 다시 하면 연습 점수(답·연속·다시 일어서기·설명)는 0이다.
  *   별이 3개가 안 된 단계는 그대로 준다(복습 보상). 이번 판에서 처음 별 3개를 받아도 이번 판 점수는 준다(시작할 때 기준).
  *   새로 찾음(+5)은 원래 처음 한 번뿐이라 별과 상관없이 준다.
+ * 답에 scored: false를 주면(이미 점수를 받은 것을 다시 답함) 그 답은 점수가 없고, 그 문항(itemId)의 설명 점수도 없다.
  */
 export function createPlayReward({ startStars = 0 } = {}) {
   const practice = practiceAllowed(startStars);
   const tracker = createAnswerTracker();
   const explained = new Set();
+  const unscored = new Set(); // 점수 없이 기록만 한 문항 (scored: false)
   const explain = { count: 0, xp: 0 };
   const discover = { count: 0, xp: 0 };
   let inspect = 0;
@@ -199,6 +219,7 @@ export function createPlayReward({ startStars = 0 } = {}) {
   return {
     /** 답 하나 → 이번에 생긴 일. 연습 점수가 없는 판이면 xp는 0 (연속 수·종류는 그대로) */
     answer: (entry) => {
+      if (entry?.scored === false && entry.itemId != null) unscored.add(String(entry.itemId));
       const step = tracker.answer(entry);
       return practice ? step : { ...step, xp: 0 };
     },
@@ -209,6 +230,7 @@ export function createPlayReward({ startStars = 0 } = {}) {
     /**
      * 학습 행동 알림. 점수를 주는 것은 'explain'(맞혔을 때, 문항마다 한 번)뿐이다. → 이번에 받은 점수
      * explain은 itemId가 꼭 있어야 한다. 없으면 어느 문항의 설명인지 몰라 반복으로 쌓일 수 있으므로 점수·횟수 모두 없다.
+     * 점수 없이 기록만 한 문항(scored: false)의 설명은 횟수만 세고 점수는 없다.
      */
     event(name, data = {}) {
       if (name === 'explain') {
@@ -216,7 +238,7 @@ export function createPlayReward({ startStars = 0 } = {}) {
         const key = String(data.itemId);
         if (explained.has(key)) return 0;
         explained.add(key);
-        const xp = practice ? XP.explain : 0;
+        const xp = practice && !unscored.has(key) ? XP.explain : 0;
         explain.count += 1;
         explain.xp += xp;
         return xp;
@@ -224,10 +246,12 @@ export function createPlayReward({ startStars = 0 } = {}) {
       if (name === 'inspect') inspect += 1;
       return 0;
     },
-    discovered() {
+    /** 도감에 새로 등록. xp: 그 도감의 등록 점수(기본 +5, 0~5로만 줄일 수 있다). → 이번에 받은 점수 */
+    discovered(xp = XP.discover) {
+      const add = discoverXp(xp);
       discover.count += 1;
-      discover.xp += XP.discover;
-      return XP.discover;
+      discover.xp += add;
+      return add;
     },
     /** 지금까지 이 판에서 받은 점수 (단계 완료·별 점수는 아직 없음) */
     xp: () => (practice ? tracker.totals().xp : 0) + explain.xp + discover.xp,

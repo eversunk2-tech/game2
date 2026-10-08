@@ -28,8 +28,15 @@ N1-10(주사위 장인 도장)은 N2에서 해결되므로 이번에는 그대�
 
 ## 지킬 것
 
-- 기존 검사를 약하게 만들지 않는다. `git commit`·`git push` 하지 않는다. 임시 파일은 `/tmp/claude-0/-home-user-game2/51527575-3484-5179-b863-3acfe59f4ca9/scratchpad/build-n1/`에만. Playwright 1.56.1.
+- 기존 검사를 약하게 만들지 않는다. `git commit`·`git push` 하지 않는다. 임시 파일은 `/private/tmp/claude-501/-Users-sungchul-Desktop-play2-game2/58f929c4-6580-4755-b852-eaafe6f5e1f2/scratchpad/build-n1c/`에만. Playwright 1.56.1.
 - 끝났다의 기준: `npm test`, `npm run test:e2e` 모두 통과, N1-1·N1-3·N1-4·N1-5·N1-7 장면을 스크린샷으로 직접 확인(크롬북 1366×768·1366×680, 태블릿, 휴대폰).
+
+## 로컬에서 이어 하기 (2026-10-08 덧붙임)
+
+- 이 수정 라운드는 클라우드에서 시작 직후 멈췄고, 로컬 컴퓨터(macOS)에서 처음부터 다시 한다. 시작 상태: 커밋 `c517c76`, 작업 트리 깨끗함, 단위 127 통과 · 브라우저 101 통과 · 15 건너뜀.
+- review.md에 나오는 클라우드 임시 폴더(`/tmp/claude-0/…/scratchpad/review-n1/`의 검증 스크립트·`shots/`)는 로컬에 없다. 필요한 재현 스크립트는 review.md의 "재현 방법"을 보고 위 임시 폴더에 새로 쓴다. 승인된 시안은 [docs/design/mockups/](../../design/mockups/)에 있다.
+- 임시 폴더의 스크립트에서 Playwright를 쓸 때는 저장소의 `node_modules`를 쓴다(예: 저장소를 작업 폴더로 두고 실행하거나 `createRequire`로 저장소 경로에서 불러오기). 임시 폴더나 저장소에서 `npm install`을 다시 하지 않는다.
+- 기술 규칙은 [docs/dev-guide.md](../../dev-guide.md), 엔진 사용법은 [docs/engine.md](../../engine.md).
 
 ## 최종 보고 (12줄 이하)
 
