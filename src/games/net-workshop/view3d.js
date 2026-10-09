@@ -197,8 +197,10 @@ export function displayNet(net, { focus = [] } = {}) {
  * @param {(faceId: string) => void} [p.onFaceClick]
  * @param {{ play: Function }} [p.sfx] 주면 접기 시작할 때 'fold' 소리 (ctx.sfx)
  * @param {boolean} [p.still]          그림으로만 쓰는 무대(처음 화면): 초점·키보드·화면 읽기에서 빠진다
+ * @param {object} [p.skin]            면의 겉모습을 바꿀 때(주사위 주문의 눈 카드): { name(label) 화면 읽기 이름, mark(h, label) 면 안의 그림,
+ *   color(label) 면 색 }. 없으면 지금처럼 "가 면" · 글자 · 색종이 색
  */
-export function createNetView({ h, interactive = false, onFaceClick = null, sfx = null, still = false }) {
+export function createNetView({ h, interactive = false, onFaceClick = null, sfx = null, still = false, skin = null }) {
   const scene = h('div', { class: 'net-scene' });
   const badge = h('p', { class: 'stage-badge', hidden: true });
   const el = h('div', {
@@ -233,6 +235,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   let baseTurn = 0;
   let baseTilt = TILT;
   let revealed = false;
+  let verdict = null; // 정육면체가 되는 전개도의 결과 이름표를 단계가 정할 때 { ok, text } (주사위 주문: 눈의 합까지 맞아야 통과)
   let tOf = null;
   let blocked = []; // 한 꼭짓점에 네 면이 모인 곳
   let layout = null; // { unit, origin: [x, y] } 펼친 상태를 놓는 판의 칸과 같은 자리·크기로 (자유 배치)
@@ -480,10 +483,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     }
     for (const s of missing) ghostMark(s);
     const ok = pairs.length === 0 && missing.length === 0 && blocked.length === 0 && net.faces.length === 6;
+    // 이름표: 정육면체가 되는 전개도는 단계가 준 결과(verdict)가 있으면 그것을 쓴다. 안 되는 전개도의 까닭은 늘 여기서 정한다
+    const shownOk = ok && verdict ? Boolean(verdict.ok) : ok;
     badge.hidden = false;
-    badge.classList.toggle('is-wrong', !ok);
-    const text = ok ? '정육면체가 됐어요' : blocked.length > 0 ? '네 면이 한 점에 모여 접을 수 없어요' : '정육면체가 안 돼요';
-    badge.replaceChildren(h('span', { class: 'badge-main' }, icon(ok ? 'check' : 'cross'), text));
+    badge.classList.toggle('is-wrong', !shownOk);
+    const text = ok ? (verdict?.text ?? '정육면체가 됐어요') : blocked.length > 0 ? '네 면이 한 점에 모여 접을 수 없어요' : '정육면체가 안 돼요';
+    badge.replaceChildren(h('span', { class: 'badge-main' }, icon(shownOk ? 'check' : 'cross'), text));
     // 빈 자리가 겹친 자리의 정반대라 지금 보기(내가 돌리고 기울인 것까지)에서 안 보이면 돌려 보라고 알려 준다
     unseenSlots = hintDone ? [] : missing.filter(slotHidden);
     const hiddenMissing = unseenSlots.length > 0;
@@ -525,17 +530,17 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       type: 'button',
       class: 'net-face',
       tabindex: interactive && !still ? null : '-1',
-      'aria-label': `${f.label} 면`,
+      'aria-label': skin?.name ? skin.name(f.label) : `${f.label} 면`,
       dataset: { face: f.id, label: f.label },
       style: { width: `calc(var(--unit) * ${max[0] - min[0]})`, height: `calc(var(--unit) * ${max[1] - min[1]})` },
       onclick: () => onFaceClick?.(f.id),
     },
       h('span', { class: 'face-inner' },
-        h('span', { class: 'face-label' }, f.label),
+        h('span', { class: 'face-label' }, skin?.mark ? skin.mark(h, f.label) : f.label),
         h('span', { class: 'face-mark', 'aria-hidden': 'true' }),
       ),
     );
-    faceEl.style.setProperty('--face-color', faceColor(f.label));
+    faceEl.style.setProperty('--face-color', skin?.color ? skin.color(f.label) : faceColor(f.label));
     if (!isAxisRect(f.poly)) {
       const pts = f.poly.map(([x, y]) => `calc(var(--unit) * ${x - min[0]}) calc(var(--unit) * ${y - min[1]})`);
       faceEl.style.clipPath = `polygon(${pts.join(', ')})`;
@@ -566,6 +571,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus }));
     slots = nextSlots;
     revealed = false;
+    verdict = null;
     t = 0;
     endGesture();
     view = homeView(); // 새 전개도는 늘 처음 보기에서 시작한다 (판 → 무대 이어 접기도 여기서 시작)
@@ -972,7 +978,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       sayListeners.add(fn);
       return () => sayListeners.delete(fn);
     },
-    reveal() {
+    /**
+     * 답한 뒤의 표시(겹침·빈 자리·●·결과 이름표)를 보인다. result: { ok, text } — 정육면체가 되는 전개도의 이름표를 단계가 정할 때
+     * (예: 주사위 주문 "합이 7이 아닌 짝이 있어요"). 없으면 "정육면체가 됐어요". 안 되는 전개도의 이름표는 바뀌지 않는다
+     */
+    reveal(result = null) {
+      verdict = result && typeof result.text === 'string' ? { ok: Boolean(result.ok), text: result.text } : null;
       revealed = true;
       updateMarks();
       render();

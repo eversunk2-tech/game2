@@ -88,6 +88,47 @@ export function miniNet(cells, { invalid = false, cls = 'mini-net' } = {}) {
   return svgRoot(`-0.3 -0.3 ${size + 0.6} ${size + 0.6}`, cls, parts);
 }
 
+// ── 주사위 눈 (도전 주문서 "주사위 주문") ─────────────
+// 눈의 자리(100 × 100 칸 안): 왼쪽 위·오른쪽 아래 대각선부터 채우는 보통 주사위 모양
+const PIP_AT = { tl: [27, 27], tr: [73, 27], ml: [27, 50], mm: [50, 50], mr: [73, 50], bl: [27, 73], br: [73, 73] };
+const PIP_LAYOUT = {
+  1: ['mm'],
+  2: ['tl', 'br'],
+  3: ['tl', 'mm', 'br'],
+  4: ['tl', 'tr', 'bl', 'br'],
+  5: ['tl', 'tr', 'mm', 'bl', 'br'],
+  6: ['tl', 'tr', 'ml', 'mr', 'bl', 'br'],
+};
+
+/**
+ * 주사위 눈 그림(점 무늬). 색이 아니라 점의 수와 자리로 구분한다. 그림이라 aria-hidden — 이름("주사위 눈 3")은 면·카드가 갖는다.
+ * 끄는 동안의 복제(엔진 끌어다 놓기)에도 그대로 옮겨지게 가상 요소가 아니라 실제 SVG 요소로 그린다.
+ */
+export function pipFace(label) {
+  const spots = PIP_LAYOUT[Number(label)] ?? [];
+  return svgRoot('0 0 100 100', 'pips', spots.map((key) => svgEl('circle', {
+    cx: PIP_AT[key][0], cy: PIP_AT[key][1], r: 10, style: `fill:${INK};stroke:none`,
+  })));
+}
+
+/** 만든 주사위의 작은 그림: 전개도 모양의 칸마다 눈의 수(숫자) */
+export function miniDice(cells, labels, { cls = 'mini-net mini-dice' } = {}) {
+  const w = Math.max(...cells.map((c) => c[0])) + 1;
+  const hgt = Math.max(...cells.map((c) => c[1])) + 1;
+  const size = Math.max(w, hgt);
+  const ox = (size - w) / 2;
+  const oy = (size - hgt) / 2;
+  const parts = cells.flatMap(([x, y], i) => {
+    const text = svgEl('text', {
+      x: x + ox + 0.5, y: y + oy + 0.5, 'text-anchor': 'middle', 'dominant-baseline': 'central',
+      style: `fill:${INK};font-size:0.66px;font-weight:800`,
+    });
+    text.textContent = String(labels[i] ?? '');
+    return [svgEl('rect', { x: x + ox, y: y + oy, width: 1, height: 1, rx: 0.08, style: paint('var(--paper)', INK, 0.12) }), text];
+  });
+  return svgRoot(`-0.3 -0.3 ${size + 0.6} ${size + 0.6}`, cls, parts);
+}
+
 // ── 처음 화면 그림 ─────────────────────────
 /** 재단 매트 위에 반쯤 접힌 십자 전개도(실제 접기 계산·3D 무대, 정지) + "먼저 예측하고 접어서 확인!" 쪽지 */
 export function heroArt(h) {

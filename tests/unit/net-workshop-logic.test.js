@@ -80,25 +80,34 @@ test('TAGS는 기획서 오개념 표와 같고, problem → tag 표도 그 안�
   assert.equal(josa('면', '과/와'), '면과'); // 문장에 쓰는 조사
 });
 
-test('단계: id가 겹치지 않고, 모두 차시가 있고, 정육면체 차시는 4단계(판별 5 · 마주 보는 면 4 · 면 붙이기 3 · 내 맘대로 전개도 3가지)', () => {
+test('단계: id가 겹치지 않고, 모두 차시가 있고, 정육면체 차시는 일반 4단계(판별 5 · 마주 보는 면 4 · 면 붙이기 3 · 내 맘대로 전개도 3가지) + 도전 주문서 2개', () => {
   const ids = STAGES.map((s) => s.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.deepEqual(LESSONS.map((l) => l.id), ['cube']);
   for (const s of STAGES) assert.ok(LESSONS.some((l) => l.id === s.lesson), s.id);
   for (const l of LESSONS) assert.equal(STAGES.filter((s) => s.lesson === l.id && !s.challenge).length, 4, l.id);
-  assert.deepEqual(STAGES.map((s) => [s.id, s.kind, s.count]), [
+  assert.deepEqual(STAGES.filter((s) => !s.challenge).map((s) => [s.id, s.kind, s.count]), [
     ['cube-judge', 'judge', 5], ['cube-opposite', 'opposite', 4], ['cube-complete', 'complete', 3], ['cube-free', 'free', 3],
   ]);
-  // 도전 주문서(cube-dice, cube-dex)는 N2에서 만든다
-  assert.equal(STAGES.filter((s) => s.challenge).length, 0);
-  // 작업 지시서의 주문 이름 (spec 16-3)
-  assert.deepEqual(STAGES.map((s) => s.order), ['검사 주문', '짝 찾기 주문', '수선 주문', '설계 주문']);
+  // 도전 주문서(N2, spec 16-3): 주사위 주문(시간 재기를 고를 수 있다) · 도감 주문. 일반 단계 뒤에 온다
+  assert.deepEqual(STAGES.filter((s) => s.challenge).map((s) => [s.id, s.kind, s.count, s.timer]), [
+    ['cube-dice', 'dice', 2, 'optional'], ['cube-dex', 'dex', 11, undefined],
+  ]);
+  assert.deepEqual(STAGES.map((s) => Boolean(s.challenge)), [false, false, false, false, true, true]);
+  // 작업 지시서의 주문 이름 (spec 16-3). 도전 주문서는 제목이 곧 주문 이름이고, 머리 칩은 엔진의 "도전 주문서"다(chip을 따로 주지 않는다)
+  assert.deepEqual(STAGES.map((s) => s.order), ['검사 주문', '짝 찾기 주문', '수선 주문', '설계 주문', '주사위 주문', '도감 주문']);
+  for (const s of STAGES.filter((x) => x.challenge)) assert.deepEqual([s.title, s.chip], [s.order, undefined]);
+  // 직접 만드는 단계의 목표 문장에는 "예상"이 없다 (spec 16-12)
+  for (const s of STAGES.filter((x) => ['free', 'dice', 'dex'].includes(x.kind))) assert.doesNotMatch(s.goal, /예상|예측/, s.id);
 });
 
 test('같은 시드면 같은 문항, 다른 시드면 대체로 다른 문항', () => {
   const summary = (qs) => JSON.stringify(qs.map((q) => [q.itemId, q.net.faces.map((f) => [f.label, f.cell])]));
-  assert.deepEqual(makeQuestions(stage('cube-free'), createRng('1:x')), []); // 자유 배치는 학생이 직접 만든다
-  for (const s of STAGES.filter((x) => x.kind !== 'free')) {
+  // 자유 배치와 도전 주문서는 학생이 직접 만든다(문항이 없다)
+  const BUILD_KINDS = ['free', 'dice', 'dex'];
+  for (const s of STAGES.filter((x) => BUILD_KINDS.includes(x.kind))) assert.deepEqual(makeQuestions(s, createRng('1:x')), [], s.id);
+  assert.deepEqual(makeQuestions(stage('cube-free'), createRng('1:x')), []);
+  for (const s of STAGES.filter((x) => !BUILD_KINDS.includes(x.kind))) {
     assert.equal(summary(makeQuestions(s, createRng('1:x'))), summary(makeQuestions(s, createRng('1:x'))), s.id);
     const many = new Set(SEEDS.map((seed) => summary(makeQuestions(s, createRng(seed)))));
     assert.ok(many.size > SEEDS.length / 2, s.id);

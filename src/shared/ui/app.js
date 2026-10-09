@@ -168,6 +168,32 @@ export function timeRecordText({ ms, prevMs }) {
   return `내 기록 ${now} (가장 좋은 기록은 ${formatDuration(prevMs)})`;
 }
 
+/**
+ * 결과 화면의 기록 칸 [이름, 값]. 기본은 정답률 · 맞힘/시도 · 걸린 시간.
+ * custom: 게임이 ctx.finish({ stats: [{ label, value }] })로 준 칸(3개까지). 맞힘·틀림으로 보이지 않는 단계(직접 만들어 보는 단계)가
+ *   정답률 · 맞힘/시도 대신 자기 말로 채운다(예: "찾은 전개도 3가지"). 쓸 수 있는 칸이 없으면 기본 칸.
+ * showTime: false면 걸린 시간을 넣지 않는다 — 시간 재기(timer: 'optional')를 켜지 않은 판은 시간이 어디에도 보이지 않는다
+ */
+export function resultStats({ record, custom = null, showTime = true }) {
+  const own = customStats(custom);
+  const list = own ?? [
+    ['정답률', formatPercent(record.accuracy)],
+    ...(record.attempts ? [['맞힘/시도', `${record.attempts}번 중 ${record.correct}번 맞힘`]] : []),
+  ];
+  if (showTime) list.push(['걸린 시간', formatDuration(record.durationMs)]);
+  return list;
+}
+
+/** ctx.finish({ stats })의 쓸 수 있는 칸 [이름, 값] (3개까지). 없으면 null */
+export function customStats(stats) {
+  if (!Array.isArray(stats)) return null;
+  const list = stats
+    .filter((x) => x && x.label != null && String(x.label).trim() && x.value != null)
+    .slice(0, 3)
+    .map((x) => [String(x.label), String(x.value)]);
+  return list.length > 0 ? list : null;
+}
+
 function defaultSubtitle(game) {
   const parts = [];
   if (game.grades?.length) parts.push(game.grades.map((g) => `${g}학년`).join('·'));
@@ -847,6 +873,8 @@ export function createGameApp({
        * 단계를 끝낸다. stars를 생략하면 정답률로 정한다. 실패면 { cleared: false }.
        * highlights: [{ icon, label, value, xp }]로 결과의 "오늘의 솜씨" 칸을 게임이 채울 수 있다(보여 주기만).
        * practiceNote: 별 3개 단계를 다시 한 판의 안내 문장을 게임의 말로 바꾼다(그런 판에서만 보인다).
+       * stats: [{ label, value }](3개까지)로 결과의 기록 칸(정답률 · 맞힘/시도)을 게임의 말로 바꾼다 — 맞힘·틀림으로 보이지 않는 단계.
+       *   그런 판은 "다시 살펴볼 점"(틀린 개념 수)도 보이지 않는다. 학습 기록에는 답이 그대로 남는다.
        */
       finish(result = {}) {
         if (finished) return;
@@ -863,7 +891,11 @@ export function createGameApp({
         const time = stage.timer === 'optional' && timerOn && cleared ? rewardStore.recordTime(stage.id, record.durationMs) : null;
         sfx.play(cleared ? 'clear' : 'wrong');
         renderRankChip();
-        showResult(stage, record, { fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, opened, time });
+        // 시간 재기를 고를 수 있는 단계에서 켜지 않았으면 결과에도 걸린 시간을 보이지 않는다 (켠 학생만 시간이 보인다)
+        const showTime = !(stage.timer === 'optional' && !timerOn);
+        showResult(stage, record, {
+          fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, stats: result.stats, showTime, opened, time,
+        });
       },
     };
 
@@ -933,7 +965,9 @@ export function createGameApp({
     )));
   }
 
-  function showResult(stage, record, { fromAccuracy = true, reward = null, highlights = null, practiceNote = null, opened = [], time = null } = {}) {
+  function showResult(stage, record, {
+    fromAccuracy = true, reward = null, highlights = null, practiceNote = null, stats = null, showTime = true, opened = [], time = null,
+  } = {}) {
     let nextStage = null;
     if (!stage.challenge) {
       const nextId = progress.nextStageId(stage.id);
@@ -943,7 +977,8 @@ export function createGameApp({
     }
     const canGoNext = nextStage && progress.isUnlocked(nextStage.id);
     const isLast = !nextStage;
-    const mistakes = countMistakes(record.answers);
+    // 게임이 기록 칸을 자기 말로 채운 판(맞힘·틀림으로 보이지 않는 단계)은 틀린 개념 수("다시 살펴볼 점")도 보이지 않는다
+    const mistakes = customStats(stats) ? [] : countMistakes(record.answers);
     let title = '아쉬워요! 다시 해 볼까요?';
     if (record.cleared && stage.challenge) title = '도전 성공!';
     else if (record.cleared && isLast) title = plan.groups ? '이 차시를 마쳤어요!' : '모든 단계를 마쳤어요!';
@@ -977,11 +1012,7 @@ export function createGameApp({
           practiceOff && h('p', { class: 'practice-note' }, icon('info'), practiceOff),
           reward && h('p', { class: 'xp-line' }, stageXpLine(reward.sx, { challenge: Boolean(stage.challenge) })),
           time && h('p', { class: 'time-line' }, icon('clock'), timeRecordText(time)),
-          h('dl', { class: 'result-stats' },
-            stat('정답률', formatPercent(record.accuracy)),
-            record.attempts ? stat('맞힘/시도', `${record.attempts}번 중 ${record.correct}번 맞힘`) : null,
-            stat('걸린 시간', formatDuration(record.durationMs)),
-          ),
+          h('dl', { class: 'result-stats' }, resultStats({ record, custom: stats, showTime }).map(([name, value]) => stat(name, value))),
           h('div', { class: 'actions' },
             canGoNext && button('다음 단계', () => startStage(nextStage), 'btn btn-primary btn-lg', 'play', { after: true }),
             isLast && record.cleared && button('학습 기록 보기', () => show(reportScreen()), 'btn btn-primary btn-lg'),

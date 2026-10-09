@@ -587,7 +587,7 @@
 .found-stamp .stamp-inner { display: flex; flex-direction: column; align-items: center; }
 .found-stamp b { font-size: calc(var(--size) * 0.22); }
 
-/* 설계 판 (면 카드 · 예상 · 도감 띠) */
+/* 설계 판 (면 카드 · 접어 보기 · 도감 띠) */
 .free-edit { display: flex; flex-direction: column; gap: 14px; }
 .free-result { display: flex; flex-direction: column; gap: 10px; }
 .tray { display: flex; flex-direction: column; gap: 8px; }
@@ -636,11 +636,11 @@
 .free-play.has-selection .tray-drop:has(.is-selected) { outline: none; }
 .tray-drop.is-over { outline: 3px solid var(--primary); background: var(--primary-soft); }
 
-.predict { display: flex; flex-direction: column; gap: 8px; }
-.predict-q { font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; }
-.predict .answer-btn { min-height: 58px; font-size: 1.12rem; }
-.predict-note { font-size: 0.86rem; font-weight: 700; color: var(--ink-2); line-height: 1.4; }
-.predict-note.is-wrong { color: var(--wrong); }
+/* 접어 보기: 6장을 이어 놓으면 켜지는 버튼 하나 + 안내 한 줄 (접기 전에 될지 묻지 않는다, spec 16-12) */
+.free-go { display: flex; flex-direction: column; gap: 8px; }
+.free-fold { width: 100%; min-height: 58px; font-size: 1.25rem; }
+.free-note { font-size: 0.86rem; font-weight: 700; color: var(--ink-2); line-height: 1.4; }
+.free-note.is-wrong { color: var(--wrong); }
 
 .dex { display: flex; flex-direction: column; gap: 8px; }
 .dex-head { display: flex; justify-content: space-between; align-items: baseline; }
@@ -689,7 +689,7 @@
 .free-buttons .btn { width: 100%; min-height: 56px; padding: 8px 12px; }
 .btn-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 /* 목표를 채운 뒤: [결과 보기] [펴서 고치기] [새로 만들기]를 한 줄에 — 두 줄이면 낮은 화면에서 판이 넘쳐 아래 버튼이 잘린다.
-   좁은 판(옆 판·휴대폰)은 아이콘 위, 글자 아래(예상 버튼과 같은 모양). 판이 넓은 태블릿 세로는 아이콘과 글자를 나란히 */
+   좁은 판(옆 판·휴대폰)은 아이콘 위, 글자 아래. 판이 넓은 태블릿 세로는 아이콘과 글자를 나란히 */
 .btn-trio { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .free-buttons .btn-trio .btn { flex-direction: column; gap: 2px; padding: 6px 4px; font-size: 1rem; line-height: 1.15; }
 .free-buttons .btn-trio .free-finish { flex-direction: column-reverse; }
@@ -698,6 +698,95 @@
   .free-buttons .btn-trio .free-finish { flex-direction: row; gap: 8px; padding: 8px 12px; font-size: 1.12rem; line-height: 1.2; }
 }
 .goal-done { display: flex; align-items: center; gap: 6px; font-weight: 800; color: var(--correct); }
+
+/* ── 도전 주문서 "도감 주문": [오늘은 여기까지] (6칸부터) ──
+   놓는 중에는 판 아래쪽에 한 줄(이름 + 지금 받는 별), 접은 장면에서는 세 버튼 줄의 첫 칸(이름만) */
+.free-stop { flex-direction: column; gap: 0; line-height: 1.2; }
+.stop-main { display: inline-flex; align-items: center; gap: 8px; }
+.stop-sub { font-family: var(--font); font-size: var(--fs-xs); font-weight: 700; color: var(--ink-2); }
+.btn-trio .stop-sub,
+.btn-trio .stop-main .icon { display: none; }
+.dex-rule { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; font-weight: 700; color: var(--ink-2); line-height: 1.4; }
+.dex-rule .icon { flex: none; }
+
+/* ── 도전 주문서 "주사위 주문": 눈 카드(점 무늬) · 마주 보는 짝 무늬 · 만든 주사위 ──
+   눈 카드와 면은 색이 아니라 점의 수로 구분한다(모두 같은 종이색). 눈 그림은 글자 크기에 맞춰 커진다(판의 면 = 무대의 면) */
+.pips { display: inline-block; vertical-align: middle; width: 1.62em; height: 1.62em; }
+.tray-card .pips { width: 1.5em; height: 1.5em; }
+.tray-label:has(> .pips), .tile-label:has(> .pips), .face-label:has(> .pips) { display: inline-flex; }
+/* 다 접은 뒤: 마주 보는 두 면에 같은 무늬(가로 줄 · 점 · 격자)와 "합 7" 이름표 — 색만으로 짝을 알리지 않는다.
+   작업 지시서의 짝 목록(.pair-item)도 같은 무늬다 */
+.pair-1 { background-color: var(--face-1); background-image: repeating-linear-gradient(0deg, rgb(30 33 64 / 16%) 0 calc(3px * var(--k, 1)), transparent calc(3px * var(--k, 1)) calc(12px * var(--k, 1))); }
+.pair-2 { background-color: var(--face-2); background-image: radial-gradient(rgb(30 33 64 / 22%) calc(2.4px * var(--k, 1)), transparent calc(2.9px * var(--k, 1))); background-size: calc(12px * var(--k, 1)) calc(12px * var(--k, 1)); }
+.pair-3 {
+  background-color: var(--face-5);
+  background-image:
+    repeating-linear-gradient(45deg, rgb(30 33 64 / 14%) 0 calc(2px * var(--k, 1)), transparent calc(2px * var(--k, 1)) calc(11px * var(--k, 1))),
+    repeating-linear-gradient(-45deg, rgb(30 33 64 / 14%) 0 calc(2px * var(--k, 1)), transparent calc(2px * var(--k, 1)) calc(11px * var(--k, 1)));
+}
+/* 이름표 자리만큼 눈 그림을 위로 올리고 조금 줄인다(맨 아래 줄의 점이 이름표에 가려지지 않게) */
+.net-face.is-pair .face-label { transform: translateY(-11%) scale(0.84); }
+.net-face.is-pair .face-mark {
+  left: 8%;
+  right: 8%;
+  bottom: 4%;
+  padding: calc(1px * var(--k, 1)) 0;
+  border-radius: calc(8px * var(--k, 1));
+  border: calc(1.5px * var(--k, 1)) solid var(--ink);
+  background: var(--paper);
+  color: var(--correct);
+}
+.net-face.is-pair.is-miss { border: calc(4px * var(--k, 1)) dashed var(--wrong); }
+.net-face.is-pair.is-miss .face-mark { color: var(--wrong); }
+.marks-on .net-face.is-pair .face-inner { transform: rotate(var(--mark-turn, 0deg)); }
+.marks-on .net-face.is-pair.is-back .face-inner { transform: rotate(var(--mark-turn, 0deg)) scaleX(-1); }
+
+/* 작업 지시서: 마주 보는 눈 세 쌍 (접은 뒤) */
+.pair-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.pair-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 4px 4px 3px;
+  border-radius: 10px;
+  border: 2px solid var(--ink);
+  font-size: var(--fs-xs);
+  font-weight: 800;
+  line-height: 1.3;
+  text-align: center;
+}
+.pair-item b { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; }
+.pair-item .pair-sum { display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; border-radius: 8px; background: var(--paper); color: var(--correct); }
+.pair-item.is-miss { border-style: dashed; border-color: var(--wrong); }
+.pair-item.is-miss .pair-sum { color: var(--wrong); }
+.pair-item .icon { width: 1em; height: 1em; stroke-width: 3; }
+
+/* 만든 주사위 (2칸) */
+.made { display: flex; flex-direction: column; gap: 8px; }
+.made-head { display: flex; justify-content: space-between; align-items: baseline; }
+.made-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; }
+.made-count { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+.made-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.made-slot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  border: 2px solid var(--ink);
+  background: var(--paper-2);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  line-height: 1.3;
+}
+.made-slot.is-empty { border: 2px dashed var(--star-line); }
+.made-slot.is-new { background: var(--butter-soft); box-shadow: 0 0 0 3px var(--butter); }
+.made-slot .mini-net { flex: none; width: 48px; height: 48px; }
+.made-slot b { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1rem; color: var(--ink); }
+.dice-stamp b { font-size: calc(var(--size) * 0.2); }
 .note.is-info { background: var(--paper-2); }
 
 /* 실제 크롬북 보이는 높이(680 이하): 간격을 줄여 스크롤 없이 */
@@ -706,7 +795,7 @@
   .net-panel { gap: 10px; padding: 18px 18px 14px; }
   .q-prompt { font-size: 1.4rem; }
   .answer-btn { min-height: 56px; }
-  .predict .answer-btn { min-height: 52px; }
+  .free-fold { min-height: 52px; }
   .free-edit { gap: 10px; }
   .dex-grid { gap: 5px; }
   .net-panel .btn-lg { min-height: 54px; }
@@ -727,6 +816,13 @@
   .free-result { gap: 8px; }
   .dex-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .net-panel .next-btn { margin-top: 4px; }
+  /* 주사위 주문(판이 넓다): 만든 주사위는 제목 옆에 한 줄, 마주 보는 짝은 눈과 합을 나란히 — 태블릿 세로에서 접은 장면이 한 화면에 들어오게 */
+  .made { flex-direction: row; align-items: center; gap: 12px; }
+  .made-head { flex: none; flex-direction: column; align-items: flex-start; gap: 0; }
+  .made-grid { flex: 1; }
+  .made-slot { min-height: 52px; }
+  .made-slot .mini-net { width: 42px; height: 42px; }
+  .pair-item { flex-direction: row; justify-content: center; gap: 10px; padding: 5px 4px; }
 }
 
 @media (max-width: 560px) {
@@ -739,6 +835,11 @@
   .free-edit { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .tray-cards { gap: 4px; }
   .dex-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  /* 휴대폰은 판이 좁다: 만든 주사위·짝 목록을 넓은 화면의 옆 판과 같은 모양으로 */
+  .made { flex-direction: column; align-items: stretch; gap: 8px; }
+  .made-head { flex-direction: row; align-items: baseline; }
+  .made-slot { min-height: 60px; }
+  .pair-item { flex-direction: column; gap: 0; padding: 4px 4px 3px; }
   .board-legend { font-size: 0.72rem; }
   .mat-tools { left: 10px; right: 10px; gap: 6px; }
   .mat-tools .btn { padding: 6px 10px; font-size: 0.95rem; }

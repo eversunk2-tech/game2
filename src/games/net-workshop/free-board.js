@@ -10,6 +10,7 @@
  *
  * 어댑터(gridAdapter)가 "칸"을 정한다. 정육면체는 정사각형 격자. 2~4차(직육면체·각기둥·원기둥)는 어댑터를 더한다.
  */
+import { josa } from '../../shared/core/korean.js';
 import { enableDragDrop } from '../../shared/ui/drag-drop.js';
 import { icon } from '../../shared/ui/icons.js';
 import { faceColor } from './view3d.js';
@@ -18,15 +19,23 @@ const MAX_CELL = 84;
 const MIN_CELL = 48; // 누르는 곳 48px 이상
 const MAX_UNDO = 60;
 
-/** 정육면체 어댑터: cols × rows 격자, 면 카드 = labels (가~바) */
-export function gridAdapter({ cols, rows, labels }) {
+/**
+ * 정육면체 어댑터: cols × rows 격자, 면 카드 = labels (가~바)
+ * skin(선택): 카드의 겉모습을 바꿀 때(주사위 주문의 눈 카드) — { name(label) 이름("주사위 눈 3"), mark(h, label) 카드 안의 그림,
+ *   color(label) 카드 색 }. 없으면 "가 면" · 글자 · 색종이 색
+ */
+export function gridAdapter({ cols, rows, labels, skin = null }) {
+  const name = skin?.name ?? ((label) => `${label} 면`);
   return {
     cols,
     rows,
     cards: [...labels],
     key: ([x, y]) => `${x},${y}`,
     inside: ([x, y]) => x >= 0 && y >= 0 && x < cols && y < rows,
-    cellName: ([x, y], label) => `${y + 1}줄 ${x + 1}칸, ${label ? `${label} 면` : '빈 칸'}`,
+    name,
+    mark: skin?.mark ?? null,
+    color: skin?.color ?? faceColor,
+    cellName: ([x, y], label) => `${y + 1}줄 ${x + 1}칸, ${label ? name(label) : '빈 칸'}`,
   };
 }
 
@@ -49,6 +58,9 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
   let justDropped = false;
   let detached = new Set();
   let cellPx = MAX_CELL;
+  /** 카드·면 안에 넣을 것: 어댑터가 그림을 주면 그 그림(주사위 눈), 아니면 글자 */
+  const markOf = (label) => (adapter.mark ? adapter.mark(h, label) : label);
+  const nameOf = (label) => adapter.name(label);
 
   // ── DOM ─────────────────────────────
   const cellEls = new Map();
@@ -80,8 +92,8 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
     class: 'tray-card dnd-item',
     dataset: { label },
     'aria-pressed': 'false',
-  }, h('span', { class: 'tray-label' }, label))]));
-  for (const [label, el] of trayCards) el.style.setProperty('--face-color', faceColor(label));
+  }, h('span', { class: 'tray-label' }, markOf(label)))]));
+  for (const [label, el] of trayCards) el.style.setProperty('--face-color', adapter.color(label));
   const trayEl = h('div', { class: 'tray-cards tray-drop dnd-target', dataset: { tray: '1' }, 'aria-label': '면 카드 칸' }, [...trayCards.values()]);
 
   // ── 상태 ────────────────────────────
@@ -119,7 +131,7 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
     if (!enabled || !label || !adapter.inside(cell)) return false;
     const other = labelAt(cell);
     if (other && other !== label) {
-      ctx.feedback.announce(`그 칸에는 ${other} 면이 있어요. 빈 칸에 놓아요.`);
+      ctx.feedback.announce(`그 칸에는 ${josa(nameOf(other), '이/가')} 있어요. 빈 칸에 놓아요.`);
       return false;
     }
     if (other === label) {
@@ -130,7 +142,7 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
     const next = snapshot();
     const moving = next.has(label);
     next.set(label, [...cell]);
-    commit(next, `${label} 면을 ${moving ? '옮겼어요' : verb}.`);
+    commit(next, `${josa(nameOf(label), '을/를')} ${moving ? '옮겼어요' : verb}.`);
     return true;
   }
 
@@ -138,7 +150,7 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
     if (!enabled || !placed.has(label)) return false;
     const next = snapshot();
     next.delete(label);
-    commit(next, `${label} 면을 뺐어요.`);
+    commit(next, `${josa(nameOf(label), '을/를')} 뺐어요.`);
     return true;
   }
 
@@ -199,8 +211,8 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
         }
         let tile = current && current.dataset.label === label ? current : null;
         if (!tile) {
-          tile = h('div', { class: 'tile-face dnd-item', dataset: { label }, 'aria-hidden': 'true' }, h('span', { class: 'tile-label' }, label));
-          tile.style.setProperty('--face-color', faceColor(label));
+          tile = h('div', { class: 'tile-face dnd-item', dataset: { label }, 'aria-hidden': 'true' }, h('span', { class: 'tile-label' }, markOf(label)));
+          tile.style.setProperty('--face-color', adapter.color(label));
           cell.replaceChildren(tile);
         }
         tile.classList.toggle('is-held', label === held || label === selectedLabel);
@@ -212,7 +224,7 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
       el.classList.toggle('is-used', used);
       el.classList.toggle('dnd-item', !used);
       el.disabled = !enabled;
-      el.setAttribute('aria-label', `${label} 면 카드${used ? ', 판에 놓음' : ''}`);
+      el.setAttribute('aria-label', `${nameOf(label)} 카드${used ? ', 판에 놓음' : ''}`);
       const check = el.querySelector('.used-check');
       if (used && !check) el.append(icon('check', { class: 'used-check' }));
       if (!used && check) check.remove();
@@ -305,13 +317,13 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
       }
       if (held) {
         if (here === held || !here) place(held, cursor);
-        else ctx.feedback.announce(`그 칸에는 ${here} 면이 있어요. 빈 칸에 놓거나 Esc로 제자리에 둬요.`);
+        else ctx.feedback.announce(`그 칸에는 ${josa(nameOf(here), '이/가')} 있어요. 빈 칸에 놓거나 Esc로 제자리에 둬요.`);
         return;
       }
       if (here) {
         held = here;
         render();
-        ctx.feedback.announce(`${here} 면을 들었어요. 방향키로 옮기고 Enter로 놓아요. Esc는 제자리, Delete는 빼기.`);
+        ctx.feedback.announce(`${josa(nameOf(here), '을/를')} 들었어요. 방향키로 옮기고 Enter로 놓아요. Esc는 제자리, Delete는 빼기.`);
         return;
       }
       placeNext(cursor);

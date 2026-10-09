@@ -3,7 +3,18 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { createRng } from '../../src/shared/core/random.js';
 import { missingSlots } from '../../src/games/net-workshop/fold.js';
-import { BOARD_SIZES, FREE_REPLAY_NOTE, STAGES, centerOnBoard, judgeNetAnswer, judgeSlot, makeQuestions, reasonOf } from '../../src/games/net-workshop/logic.js';
+import {
+  BOARD_SIZES,
+  DICE_PIPS,
+  FREE_REPLAY_NOTE,
+  STAGES,
+  centerOnBoard,
+  judgeDice,
+  judgeNetAnswer,
+  judgeSlot,
+  makeQuestions,
+  reasonOf,
+} from '../../src/games/net-workshop/logic.js';
 import { CUBE_NETS, INVALID_HEXOMINOES } from '../../src/games/net-workshop/nets-data.js';
 import { displayNet, viewDirection } from '../../src/games/net-workshop/view3d.js';
 import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
@@ -56,7 +67,7 @@ async function expectToastClear(page) {
   const hits = await page.evaluate(() => {
     const t = document.querySelector('.toast').getBoundingClientRect();
     const controls = '.topbar button, .play-header button, .answer-btn, .fold-toggle, .btn-icon, .fold-range, .hint-btn, .next-btn, .face-card, '
-      + '.cell, .tray-card, .predict-btn, .reason-chip, .reason-skip, .mat-tools button, .view-pad button, .free-buttons button, .net-slot';
+      + '.cell, .tray-card, .free-fold, .reason-chip, .reason-skip, .mat-tools button, .view-pad button, .free-buttons button, .net-slot';
     const out = [];
     for (const el of document.querySelectorAll(controls)) {
       const b = el.getBoundingClientRect();
@@ -120,7 +131,7 @@ async function resultXpSum(page) {
 
 /**
  * N1c-2·N1c-4: 자유 배치 오른쪽 판(작업 지시서) 안쪽이 넘치지 않는다 — 판의 scrollHeight − clientHeight = 0.
- * 판 안의 보이는 버튼(면 카드·예상·까닭 칩·넘어가기·결과 보기·펴서 고치기·새로 만들기 …)은 판 밖으로 잘리지 않고 48px 이상이다.
+ * 판 안의 보이는 버튼(면 카드·접어 보기·까닭 칩·넘어가기·결과 보기·펴서 고치기·새로 만들기·오늘은 여기까지 …)은 판 밖으로 잘리지 않고 48px 이상이다.
  * (페이지 스크롤은 0인데 판 안쪽만 넘쳐 맨 아래 버튼이 잘리던 것은 noScroll로는 잡히지 않는다)
  */
 async function expectPanelFits(page, label = '') {
@@ -163,7 +174,8 @@ test('?lesson=cube: 그 차시 4단계만 보이고 첫 단계만 열림, 판별
   await expect(page.locator('.lesson-group h3')).toHaveText(['정육면체의 전개도']);
   const cards = page.locator('.stage-path .stage-card');
   await expect(cards).toHaveCount(4);
-  await expect(page.locator('.stage-card')).toHaveCount(4); // 도전 주문서(N2)는 아직 없다
+  await expect(page.locator('.stage-card')).toHaveCount(6); // 일반 4 + 도전 주문서 2 (N2: 주사위 주문·도감 주문 — 아래 "단계 지도" 검사)
+  await expect(page.locator('.challenge-card')).toHaveCount(2);
   await expect(cards.nth(0)).toBeEnabled();
   await expect(cards.nth(1)).toBeDisabled();
   await expect(cards.nth(2)).toBeDisabled();
@@ -732,8 +744,11 @@ test.describe('엔진 차시 묶음', () => {
   });
 });
 
-// ── 4단계 "내 맘대로 전개도" (cube-free, spec 16-1) ─────────────
-const FREE = (extra = '') => fileUrl(FILE, `?unlock=all&seed=1&sound=off&stage=cube-free${extra}`);
+// ── 4단계 "내 맘대로 전개도" (cube-free, spec 16-1. 접기 전에 될지 묻지 않는다 — spec 16-12) ─────────────
+const STAGE_URL = (id, extra = '') => fileUrl(FILE, `?unlock=all&seed=1&sound=off&stage=${id}${extra}`);
+const FREE = (extra = '') => STAGE_URL('cube-free', extra);
+const DICE = (extra = '') => STAGE_URL('cube-dice', extra);
+const DEX = (extra = '') => STAGE_URL('cube-dex', extra);
 const shiftCells = (cells, dx, dy) => cells.map(([x, y]) => [x + dx, y + dy]);
 const SHAPES = {
   cross: [[1, 0], [0, 1], [1, 1], [2, 1], [3, 1], [1, 2]], // 1-4-1e (십자)
@@ -744,45 +759,71 @@ const SHAPES = {
   block: [[0, 0], [1, 0], [0, 1], [1, 1], [2, 1], [3, 1]], // 2×2 덩어리 (안 됨)
   sameSide: [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [2, 1]], // 같은 쪽 날개 (안 됨)
 };
+const netCells = (name) => [...CUBE_NETS, ...INVALID_HEXOMINOES].find((n) => n.name === name).cells;
 const cellOf = (page, [x, y]) => page.locator(`.free-board .cell[data-cell="${x},${y}"]`);
-/** 빈 칸 누르기 = 남은 카드 중 앞의 것(가, 나, …)을 놓는다 */
+/** 빈 칸 누르기 = 남은 카드 중 앞의 것(가, 나, … 주사위 주문은 눈 1, 2, …)을 놓는다 */
 async function placeShape(page, cells) {
   for (const c of cells) await cellOf(page, c).click();
   await expect(page.locator('.free-board .tile-face')).toHaveCount(cells.length);
 }
-async function foldAs(page, prediction) {
-  await page.locator(`.predict-btn[data-answer="${prediction}"]`).click();
+/**
+ * [접어 보기]를 누르고 다 접힐 때까지 기다린다. 안 되는 모양을 접으면 "왜 안 될까요?"가 먼저 나온다 —
+ * pick: 고를 까닭 칩('overlap' | 'vertex' | 'count') · 'skip'(넘어가기) · null(고르지 않고 둔다)
+ */
+async function foldIt(page, pick = null) {
+  await page.locator('.free-fold').click();
   await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  if (pick === 'skip') await page.locator('.reason-skip').click();
+  else if (pick) await page.locator(`.reason-chip[data-reason="${pick}"]`).click();
 }
-/** 새로 만들기: 접은 뒤에는 [새로 만들기](목표를 막 채운 장면은 [더 찾아보기]), 놓는 중에는 [모두 빼기] */
+/** 새로 만들기: 접은 뒤에는 [새로 만들기](목표를 막 채운 장면은 [더 찾아보기]), 놓는 중에는 [모두 빼기]. 까닭을 고르는 중이면 넘어간다 */
 async function fresh(page) {
+  if (await page.locator('.reason-skip').isVisible()) await page.locator('.reason-skip').click();
   if (await page.locator('.free-new').isVisible()) await page.locator('.free-new').click();
   else if (await page.locator('.free-more').isVisible()) await page.locator('.free-more').click();
   else if (await page.locator('.free-board .tile-face').count() > 0) await page.locator('.tool-clear').click();
   await expect(page.locator('.free-board .tile-face')).toHaveCount(0);
 }
+/** 결과 화면에 정답률·맞힘/시도·"다시 살펴볼 점"이 없고(직접 만드는 단계, spec 16-12), 기록 칸은 게임의 말이다 */
+async function expectBuildResult(page, stats) {
+  const text = await page.locator('.result-stats').textContent();
+  for (const [label, value] of stats) expect(text).toContain(`${label}${value}`);
+  expect(text).not.toMatch(/정답률|맞힘|%/);
+  await expect(page.locator('.screen-result')).not.toContainText(/정답률|번 중 \d+번 맞힘|예상|예측/);
+  await expect(page.locator('.review-note')).toHaveCount(0);
+}
+const storedXpOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards'))?.xp ?? 0);
 
-test('자유 배치: 칸을 눌러 십자 → "될 거예요" → 접혀 도감에, 같은 십자를 돌려 놓으면 기록 없음, 한 줄 5칸 → 겹침, 서로 다른 전개도 3가지 → 결과', async ({ page }) => {
+test('자유 배치: 칸을 눌러 십자 → [접어 보기] → 접혀 도감에, 같은 십자를 돌려 놓으면 기록 없음, 한 줄 5칸 → 까닭 고르기 → 겹침, 서로 다른 전개도 3가지 → 결과', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(FREE());
   await expect(page.locator('.order-kind')).toHaveText('설계 주문');
   await expect(page.locator('.q-counter')).toHaveText('찾은 전개도 0 / 3');
-  await expect(page.locator('.predict-btn[data-answer="yes"]')).toBeDisabled();
-  await expect(page.locator('.predict-note')).toHaveText('면 6장을 모두 놓으면 예상하고 접을 수 있어요.');
+  // 접기 전에 될지 묻지 않는다(spec 16-12): 예상 버튼·안내가 없고 [접어 보기] 하나
+  await expect(page.locator('.predict-btn, .answer-btn')).toHaveCount(0);
+  await expect(page.locator('.free-panel button', { hasText: /될 거예요/ })).toHaveCount(0);
+  await expect(page.locator('.screen-play')).not.toContainText(/예상|예측/);
+  await expect(page.locator('.free-fold')).toHaveText('접어 보기');
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(page.locator('.free-note')).toHaveText('면 6장을 모두 놓으면 접어 볼 수 있어요.');
 
-  // 1) 십자 + 될 거예요 → 처음 찾은 전개도
+  // 1) 십자 → 처음 찾은 전개도
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
   await expect(page.locator('.tray-card.is-used')).toHaveCount(6);
   await expect(page.locator('.mat-status')).toContainText('6 / 6');
-  await foldAs(page, 'yes');
+  await expect(page.locator('.free-fold')).toBeEnabled();
+  await expect(page.locator('.free-note')).toHaveText('놓은 그대로 접혀요. 새 전개도를 찾으면 도감에 들어가요.');
+  await foldIt(page);
   await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
-  await expect(page.locator('.reason')).toContainText('예측 적중! 처음 찾은 전개도예요.');
+  await expect(page.locator('.reason')).toHaveText('새 전개도 발견처음 찾은 전개도예요. 1-4-1 모양도 정육면체의 전개도예요.');
+  await expect(page.locator('.reason')).toHaveClass(/is-correct/);
+  await expect(page.locator('.toast-correct')).toHaveText('처음 찾은 전개도예요!');
   await expect(page.locator('.found-stamp')).toContainText('도감 1 / 11');
   await expect(page.locator('.dex-count')).toHaveText('1 / 11');
   await expect(page.locator('.dex-slot[data-net="1-4-1e"]')).toHaveClass(/is-new/);
   await expect(page.locator('.q-counter')).toHaveText('찾은 전개도 1 / 3');
-  await expect(page.locator('.meta-xp b')).toHaveText('+7'); // 예측 적중 +2, 새 발견 +5
-  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 예측 적중 +2');
+  await expect(page.locator('.meta-xp b')).toHaveText('+7'); // 만들기 성공 +2, 새 발견 +5
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2');
   const xpAfterFirst = await page.locator('.meta-xp b').textContent();
 
   // 2) 펴서 고치기 → 놓은 그대로 판으로 → 새로 만들어 같은 십자를 돌려 놓고 접기 → 기록·점수 없음
@@ -790,85 +831,102 @@ test('자유 배치: 칸을 눌러 십자 → "될 거예요" → 접혀 도감�
   await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.crossTurned, 2, 0));
-  await foldAs(page, 'no');
+  await foldIt(page);
   await expect(page.locator('.reason')).toContainText('이번에 이미 접어 본 모양이에요');
   await expect(page.locator('.meta-xp b')).toHaveText(xpAfterFirst);
   await expect(page.locator('.dex-slot[data-net="1-4-1e"]')).toHaveClass(/is-same/);
 
-  // 3) 한 줄 5칸 + 안 될 거예요 → 예측 적중, 겹친 면 빗금, 노트에 적음, 까닭 고르기
+  // 3) 한 줄 5칸 → 정육면체가 안 돼요: 까닭 고르기가 먼저, 노트에 적음. "틀렸다"는 알림이 아니라 안내 알림이다
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'no');
-  await expect(page.locator('.reason')).toContainText('예측 적중');
-  await expect(page.locator('.reason')).toContainText('노트에 적었어요 (1 / 24)');
+  await foldIt(page);
+  await expect(page.locator('.toast-info')).toHaveText('정육면체가 안 돼요. 왜 그런지 골라 볼까요?');
+  await expect(page.locator('.toast-wrong')).toHaveCount(0);
+  await expect(page.locator('.reason')).toHaveText('정육면체가 안 돼요접어 보니 정육면체가 안 돼요. 왜 그런지 골라 볼까요? 노트에 적었어요 (1 / 24).');
+  await expect(page.locator('.reason')).toHaveClass(/is-info/);
   await expect(page.locator('.dex-note b')).toHaveText('1');
   await expect(page.locator('.free-buttons')).toBeHidden(); // 까닭을 고르는 동안
   // N1-1: 까닭을 고르기 전에는 무대에 까닭 표시(이름표·겹친 면 빗금·비어요)가 없다
   await expectNoReasonShown(page);
-  await expect(page.locator('.meta-xp b')).toHaveText('+10'); // 노트에 새 모양 +1, 예측 적중 +2
-  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 예측 적중 +2 · 연속 2번');
+  await expect(page.locator('.meta-xp b')).toHaveText('+8'); // 노트에 새 모양 +1 (접는 것만으로는 만들기 점수가 없다)
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
   await page.locator('.reason-chip[data-reason="overlap"]').click();
   await expect(page.locator('.reason-pick-result')).toContainText('맞아요');
-  // 고른 뒤에 까닭 문장과 겹친 면 빗금·이름표가 나온다
+  // 고른 뒤에 까닭 문장(벽돌색 까닭 쪽지)과 겹친 면 빗금·이름표가 나온다
   await expect(page.locator('.reason')).toContainText('같은 자리에 겹쳐요');
+  await expect(page.locator('.reason')).toHaveClass(/is-wrong/);
+  await expect(page.locator('.reason .note-title')).toHaveText('까닭');
   expect(await page.locator('.net-face.is-overlap').count()).toBeGreaterThanOrEqual(2);
   await expect(page.locator('.net-face.is-overlap').first()).toContainText('겹쳐요');
   await expect(page.locator('.stage-badge')).toContainText(/^정육면체가 안 돼요/);
-  await expect(page.locator('.meta-xp b')).toHaveText('+12'); // 까닭 설명 +2
+  await expect(page.locator('.meta-xp b')).toHaveText('+10'); // 까닭 설명 +2
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 까닭 설명 +2 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
 
-  // 4)·5) 1-4-1이 아닌 전개도 2개 더 → 목표 달성
+  // 4)·5) 1-4-1이 아닌 전개도 2개 더 → 목표 달성. 안 되는 모양 바로 뒤의 새 전개도는 다시 일어서기 +1
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.n231, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.q-counter')).toHaveText('찾은 전개도 2 / 3');
+  await expect(page.locator('.meta-xp b')).toHaveText('+18');
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2 · 다시 일어서기·연속 +1');
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.n33, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.goal-done')).toContainText('서로 다른 전개도 3가지를 모두 찾았어요!');
   await expect(page.locator('.free-more')).toBeVisible();
   await page.locator('.free-finish').click();
 
   await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
-  await expect(page.getByText('4번 중 4번 맞힘')).toBeVisible(); // 같은 십자를 다시 접은 것은 기록하지 않았다
+  // 별은 이번 판에 찾은 서로 다른 전개도 수(3가지 = 별 3개). 안 되는 모양을 접어도 깎이지 않는다
   await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
-  await expect(page.locator('.behavior').first()).toContainText('예측 적중');
-  await expect(page.locator('.behavior', { hasText: '새 전개도 발견' })).toContainText('3가지');
+  // 결과의 기록 칸: 정답률·맞힘/시도 대신 찾은 전개도 · 접어 본 모양 (같은 십자를 다시 접은 것은 세지 않았다)
+  await expectBuildResult(page, [['찾은 전개도', '3가지'], ['접어 본 모양', '4가지']]);
+  await expect(page.locator('.result-stats')).toContainText('걸린 시간');
+  await expect(page.locator('.behavior').first()).toContainText('새 전개도 발견');
+  await expect(page.locator('.behavior').first()).toContainText('3가지');
   await expect(page.locator('.new-badge')).toContainText('십자 너머');
   // N1-4: 점수를 받은 칸이 모두 보이고(까닭 설명 포함), 칸 점수 합 + 단계 완료·별 = 이번에 모은 솜씨 점수
-  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+9'); // 처음 접는 모양 4번 × 2 + 연속 3번 +1
-  await expect(page.locator('.behavior', { hasText: '새 전개도 발견' }).locator('.b-xp')).toHaveText('+15');
+  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+22'); // (만들기 성공 2 + 도감 5) × 3 + 다시 일어서기 1
   await expect(page.locator('.behavior', { hasText: '노트에 적은 모양' })).toContainText('1가지');
   await expect(page.locator('.behavior', { hasText: '노트에 적은 모양' }).locator('.b-xp')).toHaveText('+1'); // 노트 등록은 +1 (spec 16-8)
   await expect(page.locator('.behavior', { hasText: '까닭 설명' })).toContainText('1번');
   await expect(page.locator('.behavior', { hasText: '까닭 설명' }).locator('.b-xp')).toHaveText('+2');
   await expect(page.locator('.xp-line')).toContainText('단계 완료 +5 · 별 3개 +6');
-  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+38');
-  expect(await resultXpSum(page)).toEqual({ tiles: 27, line: 11, gained: 38 });
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+36');
+  expect(await resultXpSum(page)).toEqual({ tiles: 25, line: 11, gained: 36 });
+  expect(await storedXpOf(page)).toBe(36);
+  // 학습 기록에는 접은 것 하나가 기록 하나로 남는다(선생님이 본다): 4번 가운데 전개도 3번, 안 된 한 줄 5칸은 오개념 tag와 함께
+  const log = await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:log')).at(-1));
+  expect(log.answers.map((a) => [a.itemId, a.correct, a.tag, a.given, a.expected])).toEqual([
+    ['cube-free:1:1-4-1e', true, null, '1-4-1e', '전개도'],
+    ['cube-free:2:line5-d', false, '면이 겹침', 'line5-d', '전개도'],
+    ['cube-free:3:2-3-1a', true, null, '2-3-1a', '전개도'],
+    ['cube-free:4:3-3', true, null, '3-3', '전개도'],
+  ]);
   expect(errors).toEqual([]);
 });
 
-test('자유 배치: 떨어진 면이 있으면 예상 버튼이 꺼지고 "떨어진 면이 있어요", 접지 않고 기록하지 않는다', async ({ page }) => {
+test('자유 배치: 떨어진 면이 있으면 [접어 보기]가 꺼지고 "떨어진 면이 있어요", 접지 않고 기록하지 않는다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(FREE());
   await placeShape(page, [[1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [6, 4]]);
-  await expect(page.locator('.predict-btn[data-answer="yes"]')).toBeDisabled();
-  await expect(page.locator('.predict-btn[data-answer="no"]')).toBeDisabled();
-  await expect(page.locator('.predict-note')).toHaveText('떨어진 면이 있어요. 전개도는 한 장으로 이어져 있어야 접을 수 있어요.');
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(page.locator('.free-note')).toHaveText('떨어진 면이 있어요. 전개도는 한 장으로 이어져 있어야 접을 수 있어요.');
   await expect(page.locator('.tile-face.is-apart')).toHaveCount(1);
   await expect(cellOf(page, [6, 4])).toHaveAttribute('aria-label', /떨어진 면/);
   // 대각선(꼭짓점)만 닿아도 떨어진 것
   await page.locator('.tool-undo').click();
   await cellOf(page, [5, 2]).click();
   await expect(page.locator('.tile-face.is-apart')).toHaveCount(1);
-  await expect(page.locator('.predict-btn[data-answer="yes"]')).toBeDisabled();
-  await page.locator('.predict-btn[data-answer="yes"]').click({ force: true });
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await page.locator('.free-fold').click({ force: true });
   await expect(foldStage(page)).toBeHidden();
   await expect(page.locator('.meta-xp b')).toHaveText('+0');
   // 이어 붙이면 접을 수 있다
   await page.locator('.tool-undo').click();
   await cellOf(page, [2, 0]).click();
   await expect(page.locator('.tile-face.is-apart')).toHaveCount(0);
-  await expect(page.locator('.predict-btn[data-answer="yes"]')).toBeEnabled();
+  await expect(page.locator('.free-fold')).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
@@ -900,17 +958,15 @@ test('자유 배치: 되돌리기·모두 빼기, 카드 누르고 칸 누르기
   await expect(page.locator('.free-board .tile-face')).toHaveCount(2);
 });
 
-test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로 6장 놓기, 들어 옮기기, Delete, 예상하고 접기, 결과까지', async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
-  const errors = collectErrors(page);
-  await page.goto(FREE());
-  // Tab으로 판의 칸 하나에 들어간다 (판 안에서는 칸 하나만 Tab에 걸린다)
-  for (let i = 0; i < 30; i += 1) {
-    await page.keyboard.press('Tab');
-    if (await page.evaluate(() => document.activeElement?.classList.contains('cell'))) break;
-  }
-  expect(await page.locator('.free-board .cell[tabindex="0"]').count()).toBe(1);
+/** 키보드: 판의 칸으로 Tab, 방향키로 칸 옮기기, Tab으로 요소까지 가기 */
+function keyboardHelpers(page) {
   const focusedCell = () => page.evaluate(() => document.activeElement?.dataset?.cell);
+  const toBoard = async () => {
+    for (let i = 0; i < 40; i += 1) {
+      if (await page.evaluate(() => document.activeElement?.classList.contains('cell'))) return;
+      await page.keyboard.press('Tab');
+    }
+  };
   const goTo = async ([x, y]) => {
     for (let i = 0; i < 12; i += 1) {
       const [cx, cy] = (await focusedCell()).split(',').map(Number);
@@ -918,11 +974,41 @@ test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로
       await page.keyboard.press(cx < x ? 'ArrowRight' : cx > x ? 'ArrowLeft' : cy < y ? 'ArrowDown' : 'ArrowUp');
     }
   };
-  // 십자 아닌 2-3-1: 6장 놓기
-  for (const c of shiftCells(SHAPES.n231, 2, 1)) {
-    await goTo(c);
+  /** Tab으로 그 요소까지 간다 (Enter는 누르지 않음). 누른 Tab 수를 돌려준다 */
+  const focusByTab = async (selector) => {
+    let tabs = 0;
+    for (; tabs < 40; tabs += 1) {
+      if (await page.evaluate((sel) => document.activeElement?.matches(sel), selector)) break;
+      await page.keyboard.press('Tab');
+    }
+    await expect(page.locator(selector)).toBeFocused();
+    return tabs;
+  };
+  /** Tab으로 그 요소까지 가서 Enter */
+  const tabTo = async (selector) => {
+    const tabs = await focusByTab(selector);
     await page.keyboard.press('Enter');
-  }
+    return tabs;
+  };
+  const placeByKeys = async (cells) => {
+    for (const c of cells) {
+      await goTo(c);
+      await page.keyboard.press('Enter');
+    }
+  };
+  return { focusedCell, toBoard, goTo, focusByTab, tabTo, placeByKeys };
+}
+
+test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로 6장 놓기, 들어 옮기기, Delete, Tab으로 [접어 보기], 결과까지', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.goto(FREE());
+  const { goTo, toBoard, focusByTab, tabTo, placeByKeys } = keyboardHelpers(page);
+  // Tab으로 판의 칸 하나에 들어간다 (판 안에서는 칸 하나만 Tab에 걸린다)
+  await toBoard();
+  expect(await page.locator('.free-board .cell[tabindex="0"]').count()).toBe(1);
+  // 십자 아닌 2-3-1: 6장 놓기
+  await placeByKeys(shiftCells(SHAPES.n231, 2, 1));
   await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
   // 바(마지막) 면을 들어 한 칸 옮겼다가 제자리로: Enter → 방향키 → Enter
   const last = shiftCells(SHAPES.n231, 2, 1)[5];
@@ -932,50 +1018,45 @@ test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('Enter');
   await expect(cellOf(page, [last[0] - 1, last[1]]).locator('.tile-face')).toHaveAttribute('data-label', '바');
-  await expect(page.locator('.predict-note')).toContainText('떨어진 면이 있어요'); // 옮긴 자리는 떨어졌다
+  await expect(page.locator('.free-note')).toContainText('떨어진 면이 있어요'); // 옮긴 자리는 떨어졌다
   await page.keyboard.press('Delete');
   await expect(page.locator('.free-board .tile-face')).toHaveCount(5);
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Enter'); // 남은 바 카드를 원래 자리에
   await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
-  await expect(page.locator('.predict-btn[data-answer="yes"]')).toBeEnabled();
-  /** Tab으로 그 요소까지 간다 (Enter는 누르지 않음) */
-  const focusByTab = async (selector) => {
-    for (let i = 0; i < 40; i += 1) {
-      if (await page.evaluate((sel) => document.activeElement?.matches(sel), selector)) break;
-      await page.keyboard.press('Tab');
-    }
-    await expect(page.locator(selector)).toBeFocused();
-  };
-  /** Tab으로 그 요소까지 가서 Enter */
-  const tabTo = async (selector) => {
-    await focusByTab(selector);
-    await page.keyboard.press('Enter');
-  };
-  await tabTo('.predict-btn[data-answer="yes"]');
+  await expect(page.locator('.free-fold')).toBeEnabled();
+  // 6장을 놓은 판에서 Tab으로 [접어 보기]까지: 판 → 매트 띠(모두 빼기·되돌리기) → 면 카드 6장 → [접어 보기]. 접는 버튼은 하나뿐이다
+  expect(await tabTo('.free-fold')).toBeLessThanOrEqual(9);
   await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
   await expect(page.locator('.free-fix')).toBeFocused();
   // 펴서 고치기: 놓은 그대로 판으로, 초점은 판의 칸
   await page.keyboard.press('Enter');
   await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
   expect(await page.evaluate(() => document.activeElement?.classList.contains('cell'))).toBe(true);
-  // [모두 빼기]로 비우고, 십자와 3-3을 더 만들어 결과까지 (모두 키보드)
+  // [모두 빼기]로 비우고, 안 되는 모양(까닭 칩도 키보드로) · 십자 · 3-3을 더 만들어 결과까지 (모두 키보드)
   await tabTo('.tool-clear');
   await expect(page.locator('.free-board .tile-face')).toHaveCount(0);
+  await focusByTab('.free-board .cell[tabindex="0"]');
+  await placeByKeys(shiftCells(SHAPES.block, 1, 1));
+  await tabTo('.free-fold');
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  await expect(page.locator('.reason-chip').first()).toBeFocused(); // 까닭 고르기: 첫 칩에 초점
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter'); // 둘째 칩 "네 면이 한 점에 모여요"
+  await expect(page.locator('.reason-pick-result')).toContainText('맞아요');
+  await expect(page.locator('.free-fix')).toBeFocused();
+  await tabTo('.free-new');
   for (const shape of [SHAPES.cross, SHAPES.n33]) {
     await focusByTab('.free-board .cell[tabindex="0"]'); // 판으로 (새로 만들기 뒤에는 이미 판에 초점이 있다)
-    for (const c of shiftCells(shape, 1, 1)) {
-      await goTo(c);
-      await page.keyboard.press('Enter');
-    }
-    await tabTo('.predict-btn[data-answer="yes"]');
+    await placeByKeys(shiftCells(shape, 1, 1));
+    await tabTo('.free-fold');
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     if (shape === SHAPES.cross) await tabTo('.free-new');
   }
   await expect(page.locator('.free-finish')).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
-  await expect(page.getByText('3번 중 3번 맞힘')).toBeVisible();
+  await expectBuildResult(page, [['찾은 전개도', '3가지'], ['접어 본 모양', '4가지']]);
   expect(errors).toEqual([]);
 });
 
@@ -1005,9 +1086,10 @@ test('자유 배치 터치(태블릿): 카드를 칸으로 끌기, 놓인 면을
   await drag(cellOf(page, [5, 3]).locator('.tile-face'), page.locator('.tray-card[data-label="가"]'));
   await expect(page.locator('.free-board .tile-face')).toHaveCount(0);
   await expect(page.locator('.tray-card[data-label="라"]')).not.toHaveClass(/is-used/);
-  // 탭(누르기)으로 놓기도 된다
+  // 탭(누르기)으로 놓기도 된다. [접어 보기]도 탭으로
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-  await foldAs(page, 'yes');
+  await page.locator('.free-fold').tap();
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
   await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
   expect(errors).toEqual([]);
 });
@@ -1018,11 +1100,11 @@ test('자유 배치 힌트: 안 되는 모양을 연달아 2번 접으면 [힌�
   await expect(page.locator('.tool-hint')).toBeHidden();
   await expect(page.locator('.shadow-cell')).toHaveCount(0); // 누르기 전에는 그림자 없음
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'yes');
+  await foldIt(page, 'skip');
   await fresh(page);
   await expect(page.locator('.tool-hint')).toBeHidden();
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page, 'skip');
   await expect(page.locator('.net-dot').first()).toBeVisible(); // 네 면이 모인 꼭짓점
   await fresh(page);
   await expect(page.locator('.tool-hint')).toBeVisible();
@@ -1040,14 +1122,14 @@ test('자유 배치 힌트: 안 되는 모양을 연달아 2번 접으면 [힌�
     });
   });
   await placeShape(page, shadow);
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
   await expect(page.locator('.reason')).toContainText('처음 찾은 전개도');
   expect(errors).toEqual([]);
 });
 
 test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 뒤·까닭 고르기·힌트·목표 달성)', async ({ page }, testInfo) => {
-  test.setTimeout(90_000); // 두 크기를 이어서 본다(크롬북에서 약 28초 — 기본 30초에 닿는다)
+  test.setTimeout(120_000); // 두 크기를 이어서 본다
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }];
@@ -1063,12 +1145,14 @@ test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 
     await expectPanelFits(page, '떨어진 면');
     await page.locator('.tool-undo').click();
     await cellOf(page, [2, 0]).click(); // 1-4-1 (십자와 다른 꼴)
-    await foldAs(page, 'yes');
+    await noScroll(page);
+    await expectPanelFits(page, '6장을 놓음');
+    await foldIt(page);
     await noScroll(page);
     await expectPanelFits(page, '새 전개도');
     await fresh(page);
     await placeShape(page, shiftCells(SHAPES.sameSide, 1, 1));
-    await foldAs(page, 'no');
+    await foldIt(page);
     await expect(page.locator('.reason-pick')).toBeVisible();
     await noScroll(page);
     await expectPanelFits(page, '까닭 고르는 중');
@@ -1077,8 +1161,7 @@ test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 
     await expectPanelFits(page, '까닭 고른 뒤');
     await fresh(page);
     await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-    await foldAs(page, 'no');
-    await page.locator('.reason-skip').click();
+    await foldIt(page, 'skip');
     await expectPanelFits(page, '넘어가기');
     await fresh(page);
     await page.locator('.tool-hint').click();
@@ -1089,16 +1172,24 @@ test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 
     for (const shape of [SHAPES.cross, SHAPES.n33]) {
       await fresh(page);
       await placeShape(page, shiftCells(shape, 1, 1));
-      await foldAs(page, 'yes');
+      await foldIt(page);
     }
     await expect(page.locator('.free-finish')).toBeVisible();
     await noScroll(page);
     await expectPanelFits(page, '목표 달성');
+    // 목표 뒤에 전개도 3가지를 더 찾는다 — 안 되는 모양 없이 연달아 5번이라 도장 "설계 명수"까지 받는다
+    for (const name of ['2-3-1a', '2-2-2', '2-3-1b']) {
+      await fresh(page);
+      await placeShape(page, centerOnBoard(netCells(name), BOARD_SIZES.wide));
+      await foldIt(page);
+    }
+    await noScroll(page);
+    await expectPanelFits(page, '목표 뒤 세 버튼');
     // N1-8·N1-7: 차시 끝 결과 화면(칭호 오름 + 새 도장 3개 + 솜씨 칸 4개)도 세로·가로 스크롤이 없다 — 연출 중(도장이 커졌다 줄어드는 2초)에도, 끝난 뒤에도
     await page.locator('.free-finish').click();
     await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
     await expect(page.locator('.rank-card')).toContainText('칭호가 올랐어요');
-    await expect(page.locator('.new-badge-list li')).toHaveCount(3);
+    await expect(page.locator('.new-badge-list li')).toHaveText([/첫 발걸음/, /십자 너머/, /설계 명수/]);
     await expect(page.locator('.behavior')).toHaveCount(4);
     for (const wait of [0, 250, 400, 500]) {
       await page.waitForTimeout(wait);
@@ -1107,16 +1198,20 @@ test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 
     await page.waitForTimeout(1100); // 연출이 끝난 뒤에도 (모두 2.25초 뒤)
     await expect(page.locator('.is-celebrating')).toHaveCount(0);
     await noScroll(page);
-    expect(await resultXpSum(page)).toEqual({ tiles: 30, line: 11, gained: 41 });
+    // 전개도 6가지 × 7 + 다시 일어서기 1 + 연속 3번 1 = 44, 노트 2, 까닭 설명 2
+    expect(await resultXpSum(page)).toEqual({ tiles: 48, line: 11, gained: 59 });
+    await expectBuildResult(page, [['찾은 전개도', '6가지'], ['접어 본 모양', '8가지']]);
   }
 });
 
-test('자유 배치: 알림이 조작(칸·카드·예상 버튼·접기 도구·다음 버튼)을 가리지 않는다', async ({ page }, testInfo) => {
+test('자유 배치: 알림이 조작(칸·카드·접어 보기·접기 도구·다음 버튼)을 가리지 않는다', async ({ page }, testInfo) => {
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
   for (const size of sizes) {
     await page.setViewportSize(size);
+    await page.goto(FREE());
+    await page.evaluate(() => localStorage.clear());
     await page.goto(FREE());
     // 놓는 판이 매트의 판 자리 안에 들어가고(설명 칩·조작 띠와 겹치지 않음), 칸은 48px 이상
     const fits = await page.evaluate(() => {
@@ -1127,11 +1222,18 @@ test('자유 배치: 알림이 조작(칸·카드·예상 버튼·접기 도구�
     });
     expect(fits.inside, `${size.width}×${size.height}`).toBe(true);
     expect(fits.cell).toBeGreaterThanOrEqual(48);
-    await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-    await foldAs(page, 'no'); // 예상과 달랐어요
+    const phone = size.width <= 560;
+    await placeShape(page, phone ? SHAPES.cross : shiftCells(SHAPES.cross, 1, 1));
+    await foldIt(page); // 처음 찾은 전개도예요!
     await expectToastClear(page);
     await page.locator('.free-fix').click();
     await expect(page.locator('.toast')).toHaveCount(0); // 판으로 돌아가면 앞 알림을 지운다
+    // 안 되는 모양의 안내 알림도 까닭 칩·접기 도구를 가리지 않는다
+    await fresh(page);
+    await placeShape(page, centerOnBoard(SHAPES.line5, phone ? BOARD_SIZES.phone : BOARD_SIZES.wide));
+    await foldIt(page);
+    await expect(page.locator('.reason-chip').first()).toBeVisible();
+    await expectToastClear(page);
   }
 });
 
@@ -1146,9 +1248,9 @@ test('자유 배치 까닭 고르기: 안 되는 모양 24가지 모두, 고르�
   for (const [i, n] of INVALID_HEXOMINOES.entries()) {
     if (i > 0) await fresh(page);
     await placeShape(page, centerOnBoard(n.cells, BOARD_SIZES.wide));
-    await foldAs(page, 'no');
-    await expect(page.locator('.toast-correct')).toHaveText('예측 적중! 왜 안 되는지 골라 볼까요?');
-    await expect(page.locator('.reason')).toContainText('안 될 거라고 예상했고, 접어 보니 정육면체가 안 돼요.');
+    await foldIt(page);
+    await expect(page.locator('.toast-info')).toHaveText('정육면체가 안 돼요. 왜 그런지 골라 볼까요?');
+    await expect(page.locator('.reason')).toContainText('접어 보니 정육면체가 안 돼요. 왜 그런지 골라 볼까요?');
     await expectNoReasonShown(page);
     // 접어 본 모습을 돌려 보거나 다시 펴도 까닭 표시는 나오지 않는다
     if (i % 6 === 0) {
@@ -1160,7 +1262,7 @@ test('자유 배치 까닭 고르기: 안 되는 모양 24가지 모두, 고르�
     }
     // spec 17-4: 새 조작(위·아래에서 보기, 크게 보기, 끌기, 휠)으로 접힌 모습을 살펴봐도 까닭 표시·글자는 나오지 않는다
     if (i % 4 === 0) {
-      await expect(foldStage(page)).toHaveClass(/can-view/); // 예상 버튼이 곧 접기라 고르는 동안에도 볼 수 있다
+      await expect(foldStage(page)).toHaveClass(/can-view/); // [접어 보기]로 바로 접히므로 고르는 동안에도 볼 수 있다
       const home = await viewOf(page);
       const downs = i % 8 === 0 ? 3 : 8; // 옆에서 · 바로 아래에서
       await pressPad(page, '아래쪽으로 돌려 보기', downs);
@@ -1204,15 +1306,16 @@ test('자유 배치 까닭 고르기: 안 되는 모양 24가지 모두, 고르�
   }
   expect([overlaps, dots]).toEqual([16, 8]);
   await expect(page.locator('.dex-note b')).toHaveText('24');
-  // 예상을 틀리면("될 거예요") 까닭 고르기 없이 바로 까닭을 보여 준다 (오답에는 이유)
-  await page.evaluate(() => localStorage.clear());
-  await page.goto(FREE());
+  // 이번 판에 이미 접어 본 안 되는 모양을 다시 접으면 까닭을 다시 묻지 않고 바로 표시를 보인다 (기록·점수 없음)
+  const xpBefore = await page.locator('.meta-xp b').textContent();
+  await fresh(page);
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.reason-pick')).toHaveCount(0);
   await expect(page.locator('.stage-badge')).toHaveText('네 면이 한 점에 모여 접을 수 없어요');
   await expect(page.locator('.net-dot').first()).toBeVisible();
-  await expect(page.locator('.reason')).toContainText('예상과 달랐어요. 정육면체의 한 꼭짓점에는 면이 3개만 모여요.');
+  await expect(page.locator('.reason')).toContainText('이번에 이미 접어 본 모양이에요');
+  await expect(page.locator('.meta-xp b')).toHaveText(xpBefore);
   expect(errors).toEqual([]);
 });
 
@@ -1235,7 +1338,7 @@ for (const mode of ['보통', '움직임 줄이기', 'fx=low']) {
           if (i > 0) await fresh(page);
           const n = INVALID_HEXOMINOES.find((x) => x.name === name);
           await placeShape(page, centerOnBoard(n.cells, phone ? BOARD_SIZES.phone : BOARD_SIZES.wide));
-          await foldAs(page, 'no');
+          await foldIt(page);
           await expectNoReasonShown(page);
           await expectToastClear(page);
           if (!phone) await noScroll(page);
@@ -1261,15 +1364,14 @@ for (const mode of ['보통', '움직임 줄이기', 'fx=low']) {
 }
 
 // ── N1-2: 점수는 이 기기에서 그 모양을 처음 접을 때만 (spec 16-8) ─────────────
-test('자유 배치 점수: 처음 접는 모양만 점수(노트 +1, 전개도 +5), 다른 판에서 다시 접으면 0점 — 별 3개를 피하며 다시 해도, 새로 고쳐도', async ({ page }) => {
+test('자유 배치 점수: 처음 접는 모양만 점수(전개도 만들기 +2 · 도감 +5, 노트 +1), 다른 판에서 다시 접으면 0점 — 다시 해도, 새로 고쳐도', async ({ page }) => {
   test.setTimeout(120_000); // 세 판을 이어서 한다
   const errors = collectErrors(page);
   await page.goto(FREE());
   const xp = page.locator('.meta-xp b');
   const chip = page.locator('.rank-chip small');
   const SAME_SHAPE_NOTE = '전에 접어 본 모양이라 점수는 없어요.';
-  await expect(page.locator('.predict-note')).toHaveText('면 6장을 모두 놓으면 예상하고 접을 수 있어요.');
-  /** 한 판: 십자·2-3-1·3-3(맞힘) + 한 줄 5칸(일부러 "될 거예요"로 틀림 → 4번 중 3번 = 별 2개) */
+  /** 한 판: 십자·2-3-1·3-3(전개도 3가지) + 한 줄 5칸(안 되는 모양, 까닭은 넘어간다) */
   const playOnce = async ({ turned = false } = {}) => {
     const shapes = turned
       ? [shiftCells(SHAPES.crossTurned, 2, 0), shiftCells(SHAPES.n231, 2, 1), shiftCells(SHAPES.n33, 1, 2), shiftCells(SHAPES.line5, 0, 1)]
@@ -1277,55 +1379,54 @@ test('자유 배치 점수: 처음 접는 모양만 점수(노트 +1, 전개도 
     for (const [i, cells] of shapes.entries()) {
       await fresh(page);
       await placeShape(page, cells);
-      if (i === 0) await expect(page.locator('.predict-note')).toHaveText('고르면 바로 접혀요. 처음 접는 모양은 예상이 맞으면 +2');
-      await foldAs(page, 'yes');
+      await foldIt(page, i === 3 ? 'skip' : null);
       if (i === 2) await page.locator('.free-more').click(); // 목표를 채운 뒤 하나 더
     }
   };
 
-  // 1판: 처음 접는 모양 4가지 — 전개도 3 × (2 + 5) + 연속 3번 +1, 한 줄 5칸은 틀려서 노트 +1만
+  // 1판: 처음 접는 모양 4가지 — 전개도 3 × (2 + 5) + 연속 3번 +1, 한 줄 5칸은 노트 +1 (까닭을 넘어가 설명 점수는 없다)
   await playOnce();
   await expect(xp).toHaveText('+23');
-  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 다시 일어서기 · 다음 새 모양 예상을 맞히면 +1');
-  await expect(chip).toHaveText('23점'); // 처음 접는 모양의 점수(예측·연속·등록)는 접은 그 자리에서 저장된다 (N1c-3. 전에는 등록 점수 16점만)
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards')).xp)).toBe(23);
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
+  await expect(chip).toHaveText('23점'); // 처음 접는 모양의 점수(만들기·연속·등록)는 접은 그 자리에서 저장된다 (N1c-3)
+  expect(await storedXpOf(page)).toBe(23);
   await page.locator('.free-finish').click();
   await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
-  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  // 별은 찾은 전개도 수: 안 되는 모양을 접었어도 별 3개 (spec 16-12)
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
   await expect(page.locator('.behavior', { hasText: '노트에 적은 모양' }).locator('.b-xp')).toHaveText('+1');
-  expect(await resultXpSum(page)).toEqual({ tiles: 23, line: 9, gained: 32 });
-  await expect(chip).toHaveText('32점');
+  expect(await resultXpSum(page)).toEqual({ tiles: 23, line: 11, gained: 34 });
+  await expect(chip).toHaveText('34점');
 
-  // 2판(별 2개라 다시 하기 규칙은 걸리지 않는다): 같은 모양을 돌려서 다시 접어도 0점. 예상·기록·문장은 그대로
+  // 2판: 같은 모양을 돌려서 다시 접어도 0점. 기록·문장은 그대로
   await page.getByRole('button', { name: '다시 하기' }).click();
   await playOnce({ turned: true });
   await expect(xp).toHaveText('+0');
   await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
   await expect(page.locator('.reason')).toContainText('노트에 이미 있는 모양이에요 (1 / 24)');
   await page.locator('.free-new').click();
-  // 같은 판에서 처음 접는 모양을 더하면 그 모양만 점수: 2×2 모양을 "안 될 거예요"로 맞히고 까닭도 맞힘 = 2 + 1 + 2
+  // 같은 판에서 처음 접는 모양을 더하면 그 모양만 점수: 2×2 모양 = 노트 +1, 까닭을 맞히면 +2
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'no');
-  await expect(xp).toHaveText('+3');
+  await foldIt(page);
+  await expect(xp).toHaveText('+1');
   await page.locator('.reason-chip[data-reason="vertex"]').click();
   await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "네 면이 한 점에 모여요" 맞아요! 설명 +2');
-  await expect(xp).toHaveText('+5');
-  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 예측 적중 +2 · 까닭 설명 +2');
+  await expect(xp).toHaveText('+3');
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 까닭 설명 +2 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
   await page.locator('.free-finish').click();
-  await expect(page.getByText('5번 중 4번 맞힘')).toBeVisible(); // 이미 접어 본 모양의 예상도 기록·별에는 들어간다
-  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
-  await expect(page.locator('.behavior').first()).toContainText('4 / 5');
-  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+2');
-  await expect(page.locator('.behavior', { hasText: '새 전개도 발견' })).toContainText('0가지');
-  expect(await resultXpSum(page)).toEqual({ tiles: 5, line: 0, gained: 5 });
+  await expectBuildResult(page, [['찾은 전개도', '3가지'], ['접어 본 모양', '5가지']]); // 이미 접어 본 모양도 기록에는 들어간다
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.behavior').first()).toContainText('0가지');
+  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+0');
+  await expect(page.locator('.practice-note')).toHaveText(FREE_REPLAY_NOTE); // 별 3개를 받은 뒤의 판: 이 단계의 규칙을 알려 준다
+  expect(await resultXpSum(page)).toEqual({ tiles: 3, line: 0, gained: 3 });
   await expect(chip).toHaveText('37점');
 
   // 3판: 새로 고친 뒤에도 "접어 본 모양"은 이어진다 → 이미 접은 5가지는 0점, 까닭을 맞혀도 설명 점수 없음
   await page.goto(FREE());
   await expect(chip).toHaveText('37점');
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'no');
-  await page.locator('.reason-chip[data-reason="vertex"]').click();
+  await foldIt(page, 'vertex');
   await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "네 면이 한 점에 모여요" 맞아요!');
   await expect(xp).toHaveText('+0');
   await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
@@ -1336,7 +1437,7 @@ test('자유 배치 점수: 처음 접는 모양만 점수(노트 +1, 전개도 
   await expect(page.locator('.behavior', { hasText: '까닭 설명' }).locator('.b-xp')).toHaveText('+0');
   expect(await resultXpSum(page)).toEqual({ tiles: 0, line: 0, gained: 0 });
   await expect(chip).toHaveText('37점');
-  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards')).xp)).toBe(37);
+  expect(await storedXpOf(page)).toBe(37);
 
   // "기록 모두 지우기" 뒤에는 처음 상태: 같은 십자가 다시 처음 접는 모양이다
   await page.getByRole('button', { name: '학습 기록 보기' }).click();
@@ -1344,194 +1445,174 @@ test('자유 배치 점수: 처음 접는 모양만 점수(노트 +1, 전개도 
   await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
   await page.goto(FREE());
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+7');
   expect(errors).toEqual([]);
 });
 
 // ── N1c-1 (spec 16-9): 처음 접는 모양의 점수는 별과 상관없이 ─────────────
-test('자유 배치 점수와 별 3개 다시 하기: 별 3개를 받은 단계를 다시 하는 판에서도 처음 접는 모양은 예측·연속·까닭 설명 점수를 받고, 접어 본 모양은 0점', async ({ page }) => {
+test('자유 배치 점수와 별 3개 다시 하기: 별 3개를 받은 단계를 다시 하는 판에서도 처음 접는 모양은 만들기·다시 일어서기·까닭 설명 점수를 받고, 접어 본 모양은 0점', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(FREE());
   await page.evaluate(() => localStorage.setItem('edu:net-workshop:stars', JSON.stringify({ 'cube-free': 3 })));
   await page.goto(FREE());
   const xp = page.locator('.meta-xp b');
   const chip = page.locator('.rank-chip small');
-  const storedXp = () => page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards'))?.xp ?? 0);
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-  await expect(page.locator('.predict-note')).toHaveText('고르면 바로 접혀요. 처음 접는 모양은 예상이 맞으면 +2'); // 별 3개 판에서도 사실이다
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+7');
-  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 예측 적중 +2');
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2');
   await expect(chip).toHaveText('7점'); // 그 자리에서 저장
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'no');
+  await foldIt(page);
   await expectNoReasonShown(page);
-  await expect(xp).toHaveText('+10');
+  await expect(xp).toHaveText('+8');
   await page.locator('.reason-chip[data-reason="overlap"]').click();
   await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "면이 겹쳐요" 맞아요! 설명 +2');
-  await expect(xp).toHaveText('+12');
-  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 예측 적중 +2 · 까닭 설명 +2 · 연속 2번');
-  expect(await storedXp()).toBe(12);
+  await expect(xp).toHaveText('+10');
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 까닭 설명 +2 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
+  expect(await storedXpOf(page)).toBe(10);
   // 같은 판에서 이미 접은 십자를 돌려 다시 접으면 기록·점수 없음(전과 같음)
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.crossTurned, 2, 0));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.bonus-note')).toContainText('같은 모양은 돌리거나 뒤집어도 다시 세지 않아요.');
-  await expect(xp).toHaveText('+12');
-  // 새 모양을 틀리면 등록 점수만 + 다시 일어서기 안내, 다음 새 모양을 맞히면 +1
+  await expect(xp).toHaveText('+10');
+  // 새 안 되는 모양은 노트 +1 + 다시 일어서기 안내, 다음에 새 전개도를 만들면 +1
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'yes');
-  await expect(xp).toHaveText('+13');
-  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 다시 일어서기 · 다음 새 모양 예상을 맞히면 +1');
+  await foldIt(page, 'skip');
+  await expect(xp).toHaveText('+11');
+  await expect(page.locator('.bonus-note')).toHaveText('노트에 새 모양 +1 · 다시 일어서기 · 다음에 새 전개도를 만들면 +1');
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.n231, 1, 1));
-  await foldAs(page, 'yes');
-  await expect(xp).toHaveText('+21'); // 발견 5 + 예측 2 + 다시 일어서기 1
-  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 예측 적중 +2 · 다시 일어서기·연속 +1');
+  await foldIt(page);
+  await expect(xp).toHaveText('+19'); // 발견 5 + 만들기 2 + 다시 일어서기 1
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2 · 다시 일어서기·연속 +1');
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.n33, 1, 1));
-  await foldAs(page, 'yes');
-  await expect(xp).toHaveText('+28');
-  await expect(chip).toHaveText('28점');
+  await foldIt(page);
+  await expect(xp).toHaveText('+26');
+  await expect(chip).toHaveText('26점');
   await page.locator('.free-finish').click();
   // 결과: 엔진 기본 문장("연습 점수는 없어요") 대신 이 단계의 규칙. 칸 합 = 모은 점수 = 저장된 점수 차
   await expect(page.locator('.practice-note')).toHaveText(FREE_REPLAY_NOTE);
   await expect(page.locator('.practice-note')).toHaveText('처음 접는 모양은 점수를 받아요. 접어 본 모양은 다시 접어도 점수가 없어요.');
   await expect(page.locator('[role="status"]')).toContainText(FREE_REPLAY_NOTE);
   await expect(page.locator('.screen-result')).not.toContainText('연습 점수는 없어요');
-  await expect(page.locator('.behavior').first()).toContainText('4 / 5');
-  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+9'); // 예측 2 × 4 + 다시 일어서기 1
-  await expect(page.locator('.behavior', { hasText: '새 전개도 발견' }).locator('.b-xp')).toHaveText('+15');
+  await expect(page.locator('.behavior').first()).toContainText('3가지');
+  await expect(page.locator('.behavior').first().locator('.b-xp')).toHaveText('+22'); // (만들기 2 + 도감 5) × 3 + 다시 일어서기 1
   await expect(page.locator('.behavior', { hasText: '노트에 적은 모양' }).locator('.b-xp')).toHaveText('+2');
   await expect(page.locator('.behavior', { hasText: '까닭 설명' }).locator('.b-xp')).toHaveText('+2');
-  expect(await resultXpSum(page)).toEqual({ tiles: 28, line: 0, gained: 28 }); // 별이 늘지 않아 단계 완료·별 점수는 없다
-  await expect(chip).toHaveText('28점');
-  expect(await storedXp()).toBe(28);
+  expect(await resultXpSum(page)).toEqual({ tiles: 26, line: 0, gained: 26 }); // 별이 늘지 않아 단계 완료·별 점수는 없다
+  await expect(chip).toHaveText('26점');
+  expect(await storedXpOf(page)).toBe(26);
   await noScroll(page);
   // 다시 하는 판에서 전에 접어 본 모양은 0점이고, 까닭을 알려 준다 (별 3개 판에서도)
   await page.getByRole('button', { name: '다시 하기' }).click();
   await placeShape(page, shiftCells(SHAPES.n33, 1, 2));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+0');
   await expect(page.locator('.bonus-note')).toHaveText('전에 접어 본 모양이라 점수는 없어요.');
   await expect(page.locator('.reason')).toContainText('도감 11번과 같은 모양이에요');
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'no');
-  await page.locator('.reason-chip[data-reason="overlap"]').click();
+  await foldIt(page, 'overlap');
   await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "면이 겹쳐요" 맞아요!'); // 접어 본 모양은 설명 점수도 없다
   await expect(xp).toHaveText('+0');
-  expect(await storedXp()).toBe(28);
+  expect(await storedXpOf(page)).toBe(26);
   expect(errors).toEqual([]);
 });
 
 // ── N1c-3: 처음 접는 모양의 점수는 접은 그 자리에서 저장된다 ─────────────
-test('자유 배치 점수: 판 중간에 [← 단계 선택]·새로 고침으로 나가도 처음 접은 모양의 예측·설명 점수가 남고, 다시 와서 같은 모양을 접으면 0점 — 틀린 예상도 지워지지 않는다', async ({ page }) => {
+test('자유 배치 점수: 판 중간에 [← 단계 선택]·새로 고침으로 나가도 처음 접은 모양의 만들기·설명 점수가 남고, 다시 와서 같은 모양을 접으면 0점', async ({ page }) => {
   test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   const xp = page.locator('.meta-xp b');
   const chip = page.locator('.rank-chip small');
-  const storedXp = () => page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards'))?.xp ?? 0);
   const SAME_SHAPE_NOTE = '전에 접어 본 모양이라 점수는 없어요.';
-  // 십자(맞힘 +7) → 한 줄 5칸(맞힘 +3, 까닭도 맞힘 +2): 머리 점수 = 칭호 칩 = 저장된 점수
+  // 십자(+7) → 한 줄 5칸(노트 +1, 까닭을 맞혀 +2): 머리 점수 = 칭호 칩 = 저장된 점수
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(chip).toHaveText('7점');
-  expect(await storedXp()).toBe(7);
+  expect(await storedXpOf(page)).toBe(7);
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'no');
-  await expect(xp).toHaveText('+10');
-  expect(await storedXp()).toBe(10); // 까닭을 고르기 전에도 예측·등록 점수는 저장돼 있다
+  await foldIt(page);
+  await expect(xp).toHaveText('+8');
+  expect(await storedXpOf(page)).toBe(8); // 까닭을 고르기 전에도 등록 점수는 저장돼 있다
   await page.locator('.reason-chip[data-reason="overlap"]').click();
-  await expect(xp).toHaveText('+12');
-  await expect(chip).toHaveText('12점');
-  expect(await storedXp()).toBe(12);
+  await expect(xp).toHaveText('+10');
+  await expect(chip).toHaveText('10점');
+  expect(await storedXpOf(page)).toBe(10);
   // [← 단계 선택]으로 나감: 점수가 남는다
   await page.getByRole('button', { name: '← 단계 선택' }).click();
   await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
-  await expect(chip).toHaveText('12점');
-  expect(await storedXp()).toBe(12);
+  await expect(chip).toHaveText('10점');
+  expect(await storedXpOf(page)).toBe(10);
   // 다시 들어와 같은 두 모양(돌려서): 0점, 까닭을 맞혀도 설명 점수 없음
   await page.locator('.stage-card', { hasText: '내 맘대로 전개도' }).click();
   await placeShape(page, shiftCells(SHAPES.crossTurned, 2, 0));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+0');
   await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 0, 1));
-  await foldAs(page, 'no');
-  await page.locator('.reason-chip[data-reason="overlap"]').click();
+  await foldIt(page, 'overlap');
   await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "면이 겹쳐요" 맞아요!');
   await expect(xp).toHaveText('+0');
-  // 새 모양을 틀림(2×2를 "될 거예요": 노트 +1) → 새로 고침으로 나가도 틀린 예상은 지워지지 않는다
+  // 새 안 되는 모양(2×2: 노트 +1) → 까닭을 고르기 전에 새로 고침으로 나가면, 그 모양의 까닭 설명 +2는 다시 받을 수 없다(남는 한계 N1d-2)
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+1');
   await expect(page.locator('.bonus-note')).toContainText('다시 일어서기');
-  expect(await storedXp()).toBe(13);
+  expect(await storedXpOf(page)).toBe(11);
   await page.goto(FREE());
-  await expect(chip).toHaveText('13점');
+  await expect(chip).toHaveText('11점');
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'no'); // 이번에는 맞혀도
-  await page.locator('.reason-chip[data-reason="vertex"]').click();
+  await foldIt(page, 'vertex');
+  await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "네 면이 한 점에 모여요" 맞아요!');
   await expect(xp).toHaveText('+0');
   await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
-  // 나갔다 와서 다시 일어서기도 이어지지 않는다: 새 전개도를 맞혀도 +7뿐
+  // 나갔다 와서 다시 일어서기도 이어지지 않는다: 새 전개도를 만들어도 +7뿐
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.n231, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(xp).toHaveText('+7');
-  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 예측 적중 +2');
-  expect(await storedXp()).toBe(20);
-  // 남는 한계: 안 되는 모양을 맞힌 뒤 까닭을 고르기 전에 나가면 그 모양의 까닭 설명 +2는 다시 받을 수 없다
-  await fresh(page);
-  await placeShape(page, shiftCells(SHAPES.sameSide, 1, 1));
-  await foldAs(page, 'no');
-  await expect(page.locator('.reason-pick')).toBeVisible();
-  expect(await storedXp()).toBe(23);
-  await page.goto(FREE());
-  await placeShape(page, shiftCells(SHAPES.sameSide, 1, 1));
-  await foldAs(page, 'no');
-  await page.locator('.reason-chip[data-reason="overlap"]').click();
-  await expect(page.locator('.reason-pick-result')).toHaveText('내 까닭 "면이 겹쳐요" 맞아요!');
-  await expect(xp).toHaveText('+0');
-  expect(await storedXp()).toBe(23);
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2');
+  expect(await storedXpOf(page)).toBe(18);
   // 끝까지 마치면 판을 마칠 때 더해지는 것은 단계 완료·별 점수뿐 (같은 점수를 다시 더하지 않는다)
-  for (const cells of [shiftCells(SHAPES.cross, 1, 1), shiftCells(SHAPES.n231, 1, 1), shiftCells(SHAPES.n33, 1, 1)]) {
+  for (const cells of [shiftCells(SHAPES.cross, 1, 1), shiftCells(SHAPES.n33, 1, 1)]) {
     await fresh(page);
     await placeShape(page, cells);
-    await foldAs(page, 'yes');
+    await foldIt(page);
   }
-  await expect(xp).toHaveText('+7'); // 3-3만 처음 접는 모양
-  expect(await storedXp()).toBe(30);
+  await expect(xp).toHaveText('+14'); // 2-3-1과 3-3만 처음 접는 모양
+  expect(await storedXpOf(page)).toBe(25);
   await page.locator('.free-finish').click();
   await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
-  expect(await resultXpSum(page)).toEqual({ tiles: 7, line: 11, gained: 18 });
-  await expect(chip).toHaveText('41점');
-  expect(await storedXp()).toBe(41); // = 십자 7 + 한 줄 5칸 5 + 2×2 1 + 2-3-1 7 + 같은 쪽 날개 3 + 3-3 7 + 단계 11
+  expect(await resultXpSum(page)).toEqual({ tiles: 14, line: 11, gained: 25 });
+  await expect(chip).toHaveText('36점');
+  expect(await storedXpOf(page)).toBe(36); // = 십자 7 + 한 줄 5칸 3 + 2×2 1 + 2-3-1 7 + 3-3 7 + 단계 11
   expect(errors).toEqual([]);
 });
 
 test('자유 배치 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘 한 탭의 점수와 도감 한 쌍이라, 한 모양의 점수를 두 번 받지 못한다', async ({ page, context }) => {
   const errors = collectErrors(page);
-  const storedXp = (p) => p.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards'))?.xp ?? 0);
   const storedShapes = (p) => p.evaluate(() => {
     const c = JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {};
     return [...Object.keys(c['cube-nets'] ?? {}), ...Object.keys(c['cube-non-nets'] ?? {})].sort();
   });
   /**
-   * 예상 버튼을 누른다. 점수·등록·저장은 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않는다
+   * [접어 보기]를 누른다. 점수·등록·저장은 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않는다
    * (탭이 여러 개면 뒤에 있는 탭은 브라우저가 장면 그리기를 멈춘다. 탭을 바꿀 때는 앞으로 가져온다)
    */
-  const foldNow = async (p, prediction) => {
+  const foldNow = async (p) => {
     await p.bringToFront();
-    await p.locator(`.predict-btn[data-answer="${prediction}"]`).click();
+    await p.locator('.free-fold').click();
     await expect(p.locator('.free-result')).toBeVisible();
   };
   const tabA = page;
@@ -1540,43 +1621,44 @@ test('자유 배치 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘
   await tabB.goto(FREE()); // 두 탭 모두 빈 기록에서 시작
   // 같은 십자를 두 탭에서: 둘 다 +7로 보이지만 저장은 7점
   await placeShape(tabA, shiftCells(SHAPES.cross, 1, 1));
-  await foldNow(tabA, 'yes');
+  await foldNow(tabA);
   await placeShape(tabB, shiftCells(SHAPES.cross, 1, 1));
-  await foldNow(tabB, 'yes');
+  await foldNow(tabB);
   await expect(tabB.locator('.meta-xp b')).toHaveText('+7');
-  expect(await storedXp(tabA)).toBe(7);
-  // A: 한 줄 5칸을 맞힘(까닭은 아직) → B: 2-3-1을 맞힘 → A: 까닭을 맞힘(+2, 점수만 저장되는 순간)
+  expect(await storedXpOf(tabA)).toBe(7);
+  // A: 한 줄 5칸을 접음(까닭은 아직) → B: 2-3-1을 만듦 → A: 까닭을 맞힘(+2, 점수만 저장되는 순간)
   await fresh(tabA);
   await placeShape(tabA, shiftCells(SHAPES.line5, 1, 2));
-  await foldNow(tabA, 'no');
-  expect(await storedXp(tabA)).toBe(10);
+  await foldNow(tabA);
+  expect(await storedXpOf(tabA)).toBe(8);
   await fresh(tabB);
   await placeShape(tabB, shiftCells(SHAPES.n231, 1, 1));
-  await foldNow(tabB, 'yes');
-  expect(await storedXp(tabB)).toBe(14);
+  await foldNow(tabB);
+  expect(await storedXpOf(tabB)).toBe(14);
   expect(await storedShapes(tabB)).toEqual(['1-4-1e', '2-3-1a']);
+  await tabA.bringToFront();
   await tabA.locator('.reason-chip[data-reason="overlap"]').click();
-  await expect(tabA.locator('.meta-xp b')).toHaveText('+12');
-  // 저장된 점수(12 = 십자 7 + 한 줄 5칸 5)와 도감(십자, 한 줄 5칸)은 같은 탭의 한 쌍이다 — 점수만 A, 도감만 B로 엇갈리지 않는다
-  expect(await storedXp(tabA)).toBe(12);
+  await expect(tabA.locator('.meta-xp b')).toHaveText('+10');
+  // 저장된 점수(10 = 십자 7 + 한 줄 5칸 3)와 도감(십자, 한 줄 5칸)은 같은 탭의 한 쌍이다 — 점수만 A, 도감만 B로 엇갈리지 않는다
+  expect(await storedXpOf(tabA)).toBe(10);
   expect(await storedShapes(tabA)).toEqual(['1-4-1e', 'line5-d']);
   // 새 탭: 저장된 도감에 있는 모양은 0점, 없는 모양(2-3-1)만 점수 → 세 모양 모두 한 번씩만 받는다
   const tabC = await context.newPage();
   await tabC.goto(FREE());
-  await expect(tabC.locator('.rank-chip small')).toHaveText('12점');
+  await expect(tabC.locator('.rank-chip small')).toHaveText('10점');
   await placeShape(tabC, shiftCells(SHAPES.line5, 1, 2));
-  await foldNow(tabC, 'no');
+  await foldNow(tabC);
   await tabC.locator('.reason-chip[data-reason="overlap"]').click();
   await expect(tabC.locator('.meta-xp b')).toHaveText('+0');
   await fresh(tabC);
   await placeShape(tabC, shiftCells(SHAPES.cross, 1, 1));
-  await foldNow(tabC, 'yes');
+  await foldNow(tabC);
   await expect(tabC.locator('.meta-xp b')).toHaveText('+0');
   await fresh(tabC);
   await placeShape(tabC, shiftCells(SHAPES.n231, 1, 1));
-  await foldNow(tabC, 'yes');
+  await foldNow(tabC);
   await expect(tabC.locator('.meta-xp b')).toHaveText('+7');
-  expect(await storedXp(tabC)).toBe(19); // 십자 7 + 한 줄 5칸 5 + 2-3-1 7
+  expect(await storedXpOf(tabC)).toBe(17); // 십자 7 + 한 줄 5칸 3 + 2-3-1 7
   expect(await storedShapes(tabC)).toEqual(['1-4-1e', '2-3-1a', 'line5-d']);
 
   // 판을 마칠 때 점수가 0점이어도(저장할 점수가 없어도) 한 쌍이 엇갈리지 않는다
@@ -1588,16 +1670,16 @@ test('자유 배치 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘
   for (const [i, shape] of [SHAPES.cross, SHAPES.n231, SHAPES.n33].entries()) {
     if (i > 0) await fresh(tabA);
     await placeShape(tabA, shiftCells(shape, 1, 1));
-    await foldNow(tabA, 'yes');
+    await foldNow(tabA);
   }
   await tabA.locator('.free-finish').click();
   await expect(tabA.locator('.rank-card .xp-gain')).toHaveText('+33');
-  expect(await storedXp(tabA)).toBe(33);
-  // B(빈 기록으로 열어 둔 탭)가 한 줄 5칸을 틀림(노트 +1): 저장값이 B의 것(1점, 한 줄 5칸)으로 바뀐다
+  expect(await storedXpOf(tabA)).toBe(33);
+  // B(빈 기록으로 열어 둔 탭)가 한 줄 5칸을 접음(노트 +1): 저장값이 B의 것(1점, 한 줄 5칸)으로 바뀐다
   await tabB.bringToFront();
   await placeShape(tabB, shiftCells(SHAPES.line5, 1, 2));
-  await foldNow(tabB, 'yes');
-  expect(await storedXp(tabB)).toBe(1);
+  await foldNow(tabB);
+  expect(await storedXpOf(tabB)).toBe(1);
   expect(await storedShapes(tabB)).toEqual(['line5-d']);
   // A가 접어 본 모양만으로 한 판을 더 마침(+0): 도감을 A의 것으로 맞출 때 점수도 A의 것으로 함께 쓴다
   await tabA.bringToFront();
@@ -1605,21 +1687,21 @@ test('자유 배치 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘
   for (const [i, shape] of [SHAPES.cross, SHAPES.n231, SHAPES.n33].entries()) {
     if (i > 0) await fresh(tabA);
     await placeShape(tabA, shiftCells(shape, 1, 1));
-    await foldNow(tabA, 'yes');
+    await foldNow(tabA);
   }
   await tabA.locator('.free-finish').click();
   await expect(tabA.locator('.rank-card .xp-gain')).toHaveText('+0');
-  expect(await storedXp(tabA)).toBe(33);
+  expect(await storedXpOf(tabA)).toBe(33);
   expect(await storedShapes(tabA)).toEqual(['1-4-1e', '2-3-1a', '3-3']);
   // 새 탭: 한 줄 5칸은 저장된 도감에 없고 그 점수도 저장값에 없다 → 한 번만 받는다 (등록 +1을 두 번 받지 않는다)
   const tabD = await context.newPage();
   await tabD.goto(FREE());
   await expect(tabD.locator('.rank-chip small')).toHaveText('33점');
   await placeShape(tabD, shiftCells(SHAPES.line5, 1, 2));
-  await foldNow(tabD, 'no');
+  await foldNow(tabD);
   await tabD.locator('.reason-chip[data-reason="overlap"]').click();
-  await expect(tabD.locator('.meta-xp b')).toHaveText('+5');
-  expect(await storedXp(tabD)).toBe(38);
+  await expect(tabD.locator('.meta-xp b')).toHaveText('+3');
+  expect(await storedXpOf(tabD)).toBe(36);
   expect(await storedShapes(tabD)).toEqual(['1-4-1e', '2-3-1a', '3-3', 'line5-d']);
   expect(errors).toEqual([]);
 });
@@ -1666,7 +1748,7 @@ const dexState = (page) => page.evaluate(() => {
   };
 });
 
-test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않고 버튼이 잘리지 않는다 (목표 전·후 × 겹침·2×2 × 예상 맞힘·틀림 × 까닭 맞힘·틀림·넘어가기, 접어 본 모양, 별 3개 다시 하기) — 도감 칸은 접지 않으면 넘칠 때만 접힌다 (1366×680·700·720·740·768, 태블릿, 휴대폰)', async ({ page }, testInfo) => {
+test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않고 버튼이 잘리지 않는다 (목표 전·후 × 겹침·2×2 × 까닭 맞힘·틀림·6개가 아니에요·넘어가기, 접어 본 모양, 별 3개 다시 하기) — 도감 칸은 접지 않으면 넘칠 때만 접힌다 (1366×680·700·720·740·768, 태블릿, 휴대폰)', async ({ page }, testInfo) => {
   test.setTimeout(420_000);
   const errors = collectErrors(page);
   const sizes = testInfo.project.name === 'chromebook'
@@ -1706,13 +1788,13 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
       if (roomy) expect(d.folded, `${at} ${label}: 자리가 남는 화면`).toBe(false);
     };
     /**
-     * 모양 하나를 놓고 예상한 뒤, 까닭 고르기가 나오면 pick대로: 'right' | 'wrong'(다른 까닭) | 'count'(면이 6개가 아니에요) | 'skip'.
-     * 판의 글·버튼은 예상 버튼을 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않고 잰다(장면이 많아 시간을 줄인다)
+     * 모양 하나를 놓고 [접어 보기]. 까닭 고르기가 나오면(안 되는 모양) pick대로: 'right' | 'wrong'(다른 까닭) | 'count'(면이 6개가 아니에요) | 'skip'.
+     * 판의 글·버튼은 [접어 보기]를 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않고 잰다(장면이 많아 시간을 줄인다)
      */
-    const fold = async (label, n, prediction, pick = 'skip') => {
+    const fold = async (label, n, pick = 'skip') => {
       await fresh(page);
       await placeShape(page, centerOnBoard(n.cells, phone ? BOARD_SIZES.phone : BOARD_SIZES.wide));
-      await page.locator(`.predict-btn[data-answer="${prediction}"]`).click();
+      await page.locator('.free-fold').click();
       await expect(page.locator('.free-result')).toBeVisible();
       if (await page.locator('.reason-chip').first().isVisible()) {
         await check(`${label} · 고르는 중`);
@@ -1728,26 +1810,21 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     const ov = [...OVERLAP];
     const vx = [...VERTEX];
     const scenes = async (tag) => {
-      await fold(`${tag} · 겹침 · 예상 맞힘`, ov.shift(), 'no', 'right');
-      await fold(`${tag} · 겹침 · 예상 맞힘`, ov.shift(), 'no', 'wrong');
-      await fold(`${tag} · 겹침 · 예상 맞힘`, ov.shift(), 'no', 'count');
-      await fold(`${tag} · 겹침 · 예상 맞힘`, ov.shift(), 'no', 'skip');
-      await fold(`${tag} · 겹침 · 예상 틀림`, ov.shift(), 'yes');
-      await fold(`${tag} · 2×2 · 예상 맞힘`, vx.shift(), 'no', 'right');
-      await fold(`${tag} · 2×2 · 예상 맞힘`, vx.shift(), 'no', 'wrong');
-      await fold(`${tag} · 2×2 · 예상 맞힘`, vx.shift(), 'no', vx.length > 4 ? 'count' : 'skip'); // 목표 전: 6개가 아니에요, 목표 뒤: 넘어가기
-      await fold(`${tag} · 2×2 · 예상 틀림`, vx.shift(), 'yes');
+      for (const pick of ['right', 'wrong', 'count', 'skip']) await fold(`${tag} · 겹침`, ov.shift(), pick);
+      for (const pick of ['right', 'wrong', vx.length > 4 ? 'count' : 'skip']) await fold(`${tag} · 2×2`, vx.shift(), pick); // 목표 전: 6개가 아니에요, 목표 뒤: 넘어가기
     };
     // 목표 전
     await check('빈 판');
     await scenes('목표 전');
-    await fold('목표 전 · 새 전개도 · 예상 맞힘', CUBE_NETS[0], 'yes');
-    await fold('목표 전 · 같은 판에 다시 접음', CUBE_NETS[0], 'yes');
+    await fold('목표 전 · 새 전개도', CUBE_NETS[0]);
+    await fold('목표 전 · 같은 판에 다시 접음', CUBE_NETS[0]);
     // 접힘이 풀린 화면에서는 "방금 접은 모양과 같은 도감 칸"의 파랑 테두리가 보인다
     if (roomy) expect((await dexState(page)).same, `${at} 같은 모양 칸 강조`).toBe(true);
-    await fold('목표 전 · 새 전개도 · 예상 틀림', CUBE_NETS[1], 'no');
+    await fold('목표 전 · 새 전개도(안 되는 모양 뒤가 아님)', CUBE_NETS[1]);
     await expect(page.locator('.btn-pair .btn')).toHaveCount(2);
-    await fold('목표 달성 순간 · 예상 틀림', CUBE_NETS[2], 'no'); // 쪽지("예상과 달랐어요 …")와 점수 쪽지가 가장 긴 달성 장면
+    await page.locator('.free-fix').click();
+    await check('목표 전 · 펴서 고치기(놓는 판, 6장)');
+    await fold('목표 달성 순간', CUBE_NETS[2]); // 쪽지와 점수 쪽지(연속 3번)에 달성 문장까지 있는 장면
     await expect(page.locator('.goal-done')).toBeVisible();
     await expect(page.locator('.btn-pair .btn')).toHaveText(['결과 보기', '더 찾아보기']);
     // 목표 뒤: 세 버튼이 한 줄로 온전히 보인다
@@ -1755,40 +1832,36 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     await expect(page.locator('.btn-trio .btn')).toHaveCount(3);
     if (!phone) for (const sel of ['.free-finish', '.free-fix', '.free-new']) await expect(page.locator(sel)).toBeInViewport({ ratio: 1 });
     expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
-    await fold('목표 뒤 · 새 전개도 · 예상 맞힘', CUBE_NETS[3], 'yes');
-    await fold('목표 뒤 · 새 전개도 · 예상 틀림', CUBE_NETS[4], 'no');
-    await fold('목표 뒤 · 같은 판에 다시 접은 전개도', CUBE_NETS[0], 'no');
-    await fold('목표 뒤 · 같은 판에 다시 접은 안 되는 모양', OVERLAP[0], 'no');
+    await fold('목표 뒤 · 새 전개도(다시 일어서기)', CUBE_NETS[3]);
+    await fold('목표 뒤 · 새 전개도', CUBE_NETS[4]);
+    await fold('목표 뒤 · 같은 판에 다시 접은 전개도', CUBE_NETS[0]);
+    await fold('목표 뒤 · 같은 판에 다시 접은 안 되는 모양', OVERLAP[0]);
     await page.locator('.free-fix').click();
     await check('목표 뒤 · 펴서 고치기(놓는 판)');
     // 다음 판: 접어 본 모양 — "노트에 이미 있는 모양이에요" + "전에 접어 본 모양이라 점수는 없어요"로 글이 가장 길다 (전에 75px 넘쳤다)
     await page.locator('.tool-finish').click();
     await expect(page.locator('.screen-result')).toBeVisible();
     await page.getByRole('button', { name: '다시 하기' }).click();
-    for (const n of CUBE_NETS.slice(0, 3)) await fold('2판 · 접어 본 전개도(셋째는 목표 달성 순간)', n, 'yes');
+    for (const n of CUBE_NETS.slice(0, 3)) await fold('2판 · 접어 본 전개도(셋째는 목표 달성 순간)', n);
     await expect(page.locator('.goal-done')).toBeVisible();
-    await fold('2판 목표 뒤 · 접어 본 겹침 · 예상 맞힘', OVERLAP[1], 'no', 'right');
-    await fold('2판 목표 뒤 · 접어 본 겹침 · 예상 맞힘', OVERLAP[2], 'no', 'count');
-    await fold('2판 목표 뒤 · 접어 본 겹침 · 예상 틀림', OVERLAP[3], 'yes');
-    await fold('2판 목표 뒤 · 접어 본 2×2 · 예상 맞힘', VERTEX[0], 'no', 'right');
-    await fold('2판 목표 뒤 · 접어 본 2×2 · 예상 맞힘', VERTEX[1], 'no', 'wrong');
-    await fold('2판 목표 뒤 · 접어 본 2×2 · 예상 맞힘', VERTEX[2], 'no', 'count');
-    await fold('2판 목표 뒤 · 접어 본 2×2 · 예상 맞힘', VERTEX[3], 'no', 'skip');
-    await fold('2판 목표 뒤 · 접어 본 2×2 · 예상 틀림', VERTEX[4], 'yes');
-    // 별 3개를 받은 뒤 다시 하는 판: 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
-    await page.evaluate(() => localStorage.setItem('edu:net-workshop:stars', JSON.stringify({ 'cube-free': 3 })));
+    await fold('2판 목표 뒤 · 접어 본 겹침', OVERLAP[1], 'right');
+    await fold('2판 목표 뒤 · 접어 본 겹침', OVERLAP[2], 'count');
+    await fold('2판 목표 뒤 · 접어 본 겹침', OVERLAP[3], 'skip');
+    await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[0], 'right');
+    await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[1], 'wrong');
+    await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[2], 'count');
+    // 별 3개를 받은 뒤 다시 하는 판(내 맘대로 전개도는 한 번 마치면 늘 별 3개다): 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
     await page.goto(FREE());
-    await fold('별 3개 판 · 새 겹침 · 예상 틀림', OVERLAP[10], 'yes');
-    await expect(page.locator('.bonus-note')).toContainText('다음 새 모양 예상을 맞히면 +1');
-    await fold('별 3개 판 · 새 겹침 · 예상 맞힘', OVERLAP[11], 'no', 'count');
-    await fold('별 3개 판 · 접어 본 2×2 · 예상 맞힘', VERTEX[5], 'no', 'wrong');
-    for (const n of CUBE_NETS.slice(5, 8)) await fold('별 3개 판 · 새 전개도(셋째는 목표 달성 순간, 연속)', n, 'yes');
+    await fold('별 3개 판 · 새 겹침', OVERLAP[10], 'skip');
+    await expect(page.locator('.bonus-note')).toContainText('다음에 새 전개도를 만들면 +1');
+    await fold('별 3개 판 · 새 겹침', OVERLAP[11], 'count');
+    await fold('별 3개 판 · 접어 본 2×2', VERTEX[2], 'wrong');
+    for (const n of CUBE_NETS.slice(5, 8)) await fold('별 3개 판 · 새 전개도(셋째는 목표 달성 순간, 연속)', n);
     await expect(page.locator('.goal-done')).toBeVisible();
-    await expect(page.locator('.bonus-note')).toContainText('새 발견 +5 · 예측 적중 +2');
+    await expect(page.locator('.bonus-note')).toContainText('새 발견 +5 · 만들기 성공 +2');
     expect(count).toBeGreaterThanOrEqual(60); // 잰 장면 수
-    // 낮은 화면(1366×680)에서는 넘치는 장면만 접히고, 자리가 남는 화면에서는 한 번도 접히지 않는다. 어느 크기에서나 펴진 장면이 더 많다
+    // 자리가 남는 화면에서는 한 번도 접히지 않는다. 어느 크기에서나 펴진 장면이 더 많다(접힌 장면은 "펴면 넘친다"를 위에서 하나씩 확인했다)
     if (roomy) expect(dex, at).toEqual({ folded: 0, open: dex.open });
-    if (size.height === 680) expect(dex.folded, at).toBeGreaterThan(0);
     expect(dex.open, at).toBeGreaterThan(dex.folded);
     testInfo.annotations.push({ type: '도감 칸', description: `${at}: 접힘 ${dex.folded} · 펴짐 ${dex.open}` });
   }
@@ -1816,10 +1889,10 @@ test('자유 배치 도감 칸: 화면 높이가 바뀌면 다시 재서 접고 
     requestAnimationFrame(() => setTimeout(sample, 0));
   });
   const settle = () => page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(resolve)); }));
-  const foldShape = async (cells, prediction, pick = null) => {
+  const foldShape = async (cells, pick = null) => {
     await fresh(page);
     await placeShape(page, cells);
-    await page.locator(`.predict-btn[data-answer="${prediction}"]`).click();
+    await page.locator('.free-fold').click();
     await settle();
     if (pick) {
       await page.locator(pick).click();
@@ -1827,19 +1900,19 @@ test('자유 배치 도감 칸: 화면 높이가 바뀌면 다시 재서 접고 
     }
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
   };
-  // 전개도 ↔ 안 되는 모양을 번갈아: 겹침(맞힘 → 까닭 고름) · 십자 · 2×2(틀림) · 2-3-1 · 같은 쪽 날개(넘어가기)
-  await foldShape(shiftCells(SHAPES.line5, 1, 2), 'no', '.reason-chip[data-reason="overlap"]');
+  // 전개도 ↔ 안 되는 모양을 번갈아: 겹침(까닭 고름) · 십자 · 2×2(틀린 까닭) · 2-3-1 · 같은 쪽 날개(넘어가기)
+  await foldShape(shiftCells(SHAPES.line5, 1, 2), '.reason-chip[data-reason="overlap"]');
   const lowAfterInvalid = await dexState(page);
-  await foldShape(shiftCells(SHAPES.cross, 1, 1), 'yes');
+  await foldShape(shiftCells(SHAPES.cross, 1, 1));
   expect((await dexState(page)).folded).toBe(false); // 전개도 장면은 들어가므로 접지 않는다("새로!" 칸이 보인다)
   await expect(page.locator('.dex-slot.is-new')).toBeVisible();
-  await foldShape(shiftCells(SHAPES.block, 1, 1), 'yes');
-  await foldShape(shiftCells(SHAPES.n231, 1, 1), 'yes');
-  await foldShape(shiftCells(SHAPES.sameSide, 1, 1), 'no', '.reason-skip');
+  await foldShape(shiftCells(SHAPES.block, 1, 1), '.reason-chip[data-reason="overlap"]');
+  await foldShape(shiftCells(SHAPES.n231, 1, 1));
+  await foldShape(shiftCells(SHAPES.sameSide, 1, 1), '.reason-skip');
   await page.locator('.free-fix').click();
   await settle();
   expect((await dexState(page)).folded).toBe(false); // 놓는 판으로 돌아가면 늘 펴져 있다
-  await page.locator('.predict-btn[data-answer="no"]').click(); // 같은 모양을 다시 접음(이번 판에 이미 접어 본 모양)
+  await page.locator('.free-fold').click(); // 같은 모양을 다시 접음(이번 판에 이미 접어 본 모양)
   await settle();
   // 화면 높이를 바꾼다: 768(자리가 남는다) → 펴짐, 680 → 다시 재서 넘치면 접힘. 그때마다 판 안쪽 넘침 0
   const states = [];
@@ -1880,7 +1953,7 @@ test.describe('자유 배치 움직임 줄이기', () => {
       window.foldStates = [];
       new MutationObserver(() => window.foldStates.push(el.dataset.fold)).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
     });
-    await page.locator('.predict-btn[data-answer="yes"]').click();
+    await page.locator('.free-fold').click();
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done', { timeout: 1500 });
     const states = await page.evaluate(() => window.foldStates);
     expect(states).toContain('half');
@@ -1893,7 +1966,7 @@ test.describe('자유 배치 움직임 줄이기', () => {
 test('자유 배치 ?fx=low: 새 전개도를 찾아도 색종이 0개', async ({ page }) => {
   await page.goto(FREE('&fx=low'));
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page);
   await expect(page.locator('.found-stamp')).toBeVisible();
   await expect(page.locator('.confetti-piece')).toHaveCount(0);
 });
@@ -1905,12 +1978,12 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   for (const [i, shape] of [SHAPES.cross, SHAPES.n231, SHAPES.n33].entries()) {
     if (i > 0) await fresh(page);
     await placeShape(page, shiftCells(shape, 1, 1));
-    await foldAs(page, 'yes');
+    await foldIt(page);
   }
   await page.locator('.free-finish').click();
   await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
   const points = Number((await page.locator('.rank-chip small').textContent()).replace(/\D/g, ''));
-  expect(points).toBeGreaterThan(20);
+  expect(points).toBe(33); // 전개도 3 × (2 + 5) + 연속 3번 1 + 단계 완료 5 + 별 3개 6
 
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off')); // 다시 열기 (처음 화면)
   await expect(page.locator('.rank-chip small')).toHaveText(`${points}점`);
@@ -1936,11 +2009,901 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   await page.getByRole('button', { name: '학습 기록' }).click();
   await expect(page.locator('.badge-item')).toHaveCount(12); // 엔진 6 + 게임 6
   await expect(page.locator('.badge-item[data-badge="beyond-cross"]')).toHaveClass(/is-earned/);
+  // 예상하기를 없애며 조건을 바꾼 두 도장(spec 16-12): 도장판의 "받는 방법"이 새 조건이다
+  await expect(page.locator('.badge-item[data-badge="overlap-detective"]')).toContainText('안 되는 까닭을 5번 맞혀요');
+  await expect(page.locator('.badge-item[data-badge="predict-master"]')).toContainText('안 되는 모양 없이 전개도를 5번 연달아 만들어요');
+  await expect(page.locator('.badge-item[data-badge="dice-master"]')).toContainText('주사위 주문(도전)을 성공해요');
+  await expect(page.locator('.badge-board')).not.toContainText(/예상|예측/);
   await page.getByRole('button', { name: '기록 모두 지우기' }).click();
   await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
   await expect(page.locator('.tile', { hasText: '칭호·솜씨 점수' })).toContainText('견습생 0점');
   await expect(page.locator('.badge-item.is-earned')).toHaveCount(0);
   await expect(page.locator('.btn-collection')).toHaveText('전개도 도감 0 / 11 ㆍ 노트 0 / 24');
+  expect(errors).toEqual([]);
+});
+
+// ── 도전 주문서 (N2, spec 16-3): 주사위 주문(cube-dice) · 도감 주문(cube-dex) ─────────────
+/** 그 모양에 눈 1~6을 차례로 놓았을 때(빈 칸 누르기 = 남은 카드 중 앞의 것) 마주 보는 두 눈의 합이 모두 7이 되는 칸 순서. 게임과 같은 판정으로 찾는다 */
+function diceOrder(cells) {
+  const pick = (rest, done) => {
+    if (rest.length === 0) return judgeDice({ cells: done, labels: DICE_PIPS }).correct ? done : null;
+    for (let i = 0; i < rest.length; i += 1) {
+      const found = pick([...rest.slice(0, i), ...rest.slice(i + 1)], [...done, rest[i]]);
+      if (found) return found;
+    }
+    return null;
+  };
+  return pick(cells, []);
+}
+/** 저장된 도감을 n칸으로 바꾼다(도감 주문의 여러 상태를 바로 보려고). 그 뒤 페이지를 다시 연다 */
+async function seedDex(page, count, url) {
+  await page.goto(url);
+  await page.evaluate((names) => {
+    localStorage.clear();
+    const nets = Object.fromEntries(names.map((name) => [name, { at: 1, stage: 'cube-free' }]));
+    localStorage.setItem('edu:net-workshop:collections', JSON.stringify({ 'cube-nets': nets, 'cube-non-nets': {} }));
+  }, CUBE_NETS.slice(0, count).map((n) => n.name));
+  await page.goto(url);
+}
+/** 화면에 보이는 글자 가운데 시간처럼 읽히는 것 (0:07 · 12초 · 2분) */
+const TIME_TEXT = /\d+:\d\d|\d+\s*초|\d+\s*분/;
+const visibleText = (page) => page.evaluate(() => document.querySelector('#app').innerText);
+
+test('단계 지도: 도전 주문서 2개는 일반 단계 뒤에 따로 보이고 차시를 마치기 전에는 잠겨 있다. 네 단계를 마치면 열리고, ?unlock=all·?stage=로 바로 들어간다', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off'));
+  await page.getByRole('button', { name: '시작하기' }).click();
+  const cards = page.locator('.stage-card');
+  const challenges = page.locator('.challenge-card');
+  await expect(cards).toHaveCount(6); // 일반 4 + 도전 2 (일반 단계가 먼저)
+  await expect(page.locator('.stage-path .stage-card')).toHaveCount(4);
+  await expect(challenges).toHaveCount(2);
+  await expect(challenges.locator('.stage-title')).toHaveText(['주사위 주문', '도감 주문']);
+  expect(await cards.evaluateAll((els) => els.map((el) => el.classList.contains('challenge-card')))).toEqual([false, false, false, false, true, true]);
+  for (const i of [0, 1]) {
+    await expect(challenges.nth(i)).toBeDisabled();
+    await expect(challenges.nth(i)).toContainText('차시를 마치면 열려요');
+  }
+  await expect(challenges.nth(0)).toContainText('마주 보는 두 눈의 합이 7인 주사위 전개도를 서로 다른 모양으로 2개 만들어요.');
+  await expect(challenges.nth(1)).toContainText('6칸 별 1개, 9칸 별 2개, 11칸 별 3개');
+  // 차시 도감 칩·"약 10분" 칩과 별 합계(일반 단계 4개 × 3)는 그대로
+  await expect(page.locator('.lesson-chips')).toHaveText('도감 0 / 11노트 0 / 24약 10분');
+  await expect(page.getByText('모은 별 0 / 12')).toBeVisible();
+  // 잠겨 있으면 ?stage=로도 들어가지 못한다(처음 화면)
+  await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off&stage=cube-dice'));
+  await expect(page.getByRole('button', { name: '시작하기' })).toBeVisible();
+  // 일반 단계 4개를 모두 마친 기기: 도전 주문서 두 개가 열린다 (다음 단계를 막지 않고, 별 합계에 넣지 않는다)
+  await page.evaluate(() => localStorage.setItem('edu:net-workshop:stars', JSON.stringify({ 'cube-judge': 3, 'cube-opposite': 2, 'cube-complete': 3, 'cube-free': 3 })));
+  await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off'));
+  await page.getByRole('button', { name: '시작하기' }).click();
+  await expect(page.getByText('모은 별 11 / 12')).toBeVisible();
+  await expect(challenges.nth(0)).toBeEnabled();
+  await expect(challenges.nth(1)).toBeEnabled();
+  await challenges.nth(0).click();
+  await expect(page.getByRole('heading', { name: '주사위 주문' })).toBeVisible();
+  await expect(page.locator('.play-chip')).toHaveText('도전 주문서');
+  await expect(page.locator('.order-kind')).toHaveText('주사위 주문');
+  await expect(page.getByRole('button', { name: '시간 재기' })).toBeVisible();
+  await page.getByRole('button', { name: '← 단계 선택' }).click();
+  await challenges.nth(1).click();
+  await expect(page.getByRole('heading', { name: '도감 주문' })).toBeVisible();
+  await expect(page.locator('.order-kind')).toHaveText('도감 주문');
+  await expect(page.getByRole('button', { name: '시간 재기' })).toHaveCount(0); // 시간 재기는 주사위 주문에만
+  // 선생님용 주소: ?unlock=all&stage=cube-dice · cube-dex
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(DICE());
+  await expect(page.locator('.order-kind')).toHaveText('주사위 주문');
+  await page.goto(DEX());
+  await expect(page.locator('.order-kind')).toHaveText('도감 주문');
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문: 눈 카드를 놓고 [접어 보기] → 합이 7이 아니면 짝을 짚어 주고, 고쳐서 첫 번째 완성 → 같은 모양은 막고 → 안 되는 모양 → 다른 모양으로 두 번째 완성 → 결과·도장·학습 기록', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  await page.goto(DICE());
+  const xp = page.locator('.meta-xp b');
+  const note = page.locator('.free-note');
+  await expect(page.locator('.q-counter')).toHaveText('만든 주사위 0 / 2');
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(note).toHaveText('눈 카드 6장을 모두 놓으면 접어 볼 수 있어요.');
+  // 눈 카드: 점 무늬(글자·색이 아니다), 이름은 "주사위 눈 n"
+  expect(await page.locator('.tray-card').evaluateAll((els) => els.map((el) => [el.getAttribute('aria-label'), el.querySelectorAll('.pips circle').length, el.textContent.trim()])))
+    .toEqual([1, 2, 3, 4, 5, 6].map((n) => [`주사위 눈 ${n} 카드`, n, '']));
+  expect(new Set(await page.locator('.tray-card').evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundColor))).size).toBe(1);
+  await expect(page.locator('.predict-btn, .answer-btn')).toHaveCount(0); // 접기 전에 될지 묻지 않는다
+
+  // 1) 십자에 눈을 차례로: 위 날개 1 · 가운데 줄 2 3 4 5 · 아래 날개 6 → 2와 4, 3과 5가 마주 본다(틀림)
+  const cross = shiftCells(SHAPES.cross, 1, 1);
+  await placeShape(page, cross);
+  await expect(cellOf(page, cross[0])).toHaveAttribute('aria-label', '2줄 3칸, 주사위 눈 1');
+  await expect(note).toHaveText('놓은 그대로 접혀요. 마주 보는 두 눈의 합이 7인지 살펴봐요.');
+  await foldIt(page);
+  await expect(page.locator('.stage-badge')).toHaveText('합이 7이 아닌 짝이 있어요');
+  await expect(page.locator('.stage-badge')).toHaveClass(/is-wrong/);
+  await expect(page.locator('.toast-wrong')).toHaveText('합이 7이 아닌 짝이 있어요.');
+  await expect(page.locator('.reason')).toHaveText('합이 7이 아닌 짝이 있어요2와 4가 마주 봐요. 마주 보는 두 눈의 합은 7이에요.');
+  await expect(page.locator('.pair-item')).toHaveText(['1과 6합 7', '2와 4합 6', '3과 5합 8']);
+  expect(await page.locator('.pair-item').evaluateAll((els) => els.map((el) => el.classList.contains('is-miss')))).toEqual([false, true, true]);
+  // 무대: 마주 보는 두 면에 같은 무늬(pair-n)와 "합 n" 이름표, 합이 7이 아닌 짝은 점선 테두리 + ✗
+  const faceMarks = () => page.locator('.fold-stage .net-face').evaluateAll((els) => els.map((el) => [
+    el.dataset.label, [...el.classList].find((c) => /^pair-\d$/.test(c)) ?? null, el.classList.contains('is-miss'), el.querySelector('.face-mark').textContent,
+  ]).sort((a, b) => a[0].localeCompare(b[0])));
+  expect(await faceMarks()).toEqual([
+    ['1', 'pair-1', false, '✓ 합 7'], ['2', 'pair-2', true, '✗ 합 6'], ['3', 'pair-3', true, '✗ 합 8'],
+    ['4', 'pair-2', true, '✗ 합 6'], ['5', 'pair-3', true, '✗ 합 8'], ['6', 'pair-1', false, '✓ 합 7'],
+  ]);
+  await expect(page.locator('.fold-stage .net-face[data-label="2"]')).toHaveAttribute('aria-label', '주사위 눈 2, 주사위 눈 4와 마주 봐요. 합 6');
+  expect(new Set(await page.locator('.fold-stage .net-face').evaluateAll((els) => els.map((el) => getComputedStyle(el).backgroundImage))).size).toBe(3); // 무늬 세 가지
+  await expect(xp).toHaveText('+0');
+  await expect(page.locator('.bonus-note')).toHaveText('다시 도전 · 고쳐서 다시 접어 맞히면 +1');
+  await expect(page.getByRole('button', { name: '시간 재기' })).toBeDisabled(); // 첫 접기 뒤에는 시간 재기를 바꿀 수 없다
+  // 펴도 짝 무늬는 남아, 펼친 전개도에서 마주 보는 면의 자리를 볼 수 있다
+  await page.locator('.fold-toggle').click();
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'flat');
+  await expect(page.locator('.fold-stage .net-face.is-pair')).toHaveCount(6);
+
+  // 2) 펴서 고치기: 방금 접은 놓기는 그대로 다시 접을 수 없다 → 가운데 줄의 4와 5를 맞바꾼다
+  await page.locator('.free-fix').click();
+  await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(note).toHaveText('이미 접어 본 놓기예요. 눈 카드의 자리를 바꿔 봐요.');
+  for (const c of [cross[3], cross[4]]) {
+    await cellOf(page, c).click(); // 들어 올리고
+    await page.locator('.tray-cards').click({ position: { x: 4, y: 4 } }); // 카드 칸으로 빼기
+  }
+  await expect(page.locator('.free-board .tile-face')).toHaveCount(4);
+  await cellOf(page, cross[4]).click(); // 남은 카드 중 앞의 것: 눈 4
+  await cellOf(page, cross[3]).click(); // 눈 5
+  await expect(page.locator('.free-fold')).toBeEnabled();
+  await foldIt(page);
+  await expect(page.locator('.stage-badge')).toHaveText('주사위가 됐어요');
+  await expect(page.locator('.stage-badge')).not.toHaveClass(/is-wrong/);
+  await expect(page.locator('.reason')).toHaveText('첫 번째 주사위 완성마주 보는 두 눈의 합이 모두 7이에요. 1과 6, 2와 5, 3과 4.');
+  await expect(page.locator('.pair-item')).toHaveText(['1과 6합 7', '2와 5합 7', '3과 4합 7']);
+  await expect(page.locator('.pair-item.is-miss')).toHaveCount(0);
+  await expect(page.locator('.fold-stage .net-face.is-pair')).toHaveCount(6);
+  await expect(page.locator('.fold-stage .net-face.is-miss')).toHaveCount(0);
+  await expect(page.locator('.found-stamp')).toContainText('완성!');
+  await expect(xp).toHaveText('+1'); // 고쳐서 맞힘
+  await expect(page.locator('.bonus-note')).toHaveText('고쳐서 맞힘 +1');
+  await expect(page.locator('.q-counter')).toHaveText('만든 주사위 1 / 2');
+  await expect(page.locator('.made-slot').first()).toHaveAttribute('aria-label', '첫 번째 주사위, 1-4-1 꼴 5');
+  await expect(page.locator('.made-slot').nth(1)).toHaveAttribute('aria-label', '두 번째 주사위, 아직 안 만듦');
+  await expect(page.locator('.dice-next')).toHaveText('두 번째 주사위 만들기');
+  await expect(page.locator('.dice-next')).toBeFocused();
+
+  // 3) 두 번째는 다른 모양으로: 같은 십자는(돌려 놓아도, 눈을 어떻게 놓아도) 접기 전에 막는다
+  await page.locator('.dice-next').click();
+  await expect(page.locator('.free-board .tile-face')).toHaveCount(0);
+  await placeShape(page, shiftCells(SHAPES.crossTurned, 2, 0));
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(note).toHaveText('첫 번째 주사위와 같은 모양이에요. 돌리거나 뒤집어도 같은 모양이니, 면을 옮겨 다른 모양을 만들어요.');
+  // 4) 정육면체가 안 되는 모양: 틀린 접기(면이 겹침), 판별 단계와 같은 표시. 그 모양은 눈을 바꿔 놓아도 다시 접지 못한다
+  await fresh(page);
+  await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
+  await foldIt(page);
+  await expect(page.locator('.stage-badge')).toContainText(/^정육면체가 안 돼요/);
+  await expect(page.locator('.reason')).toHaveText(/^정육면체가 안 돼요눈 [1-6] 면과 눈 [1-6] 면이 같은 자리에 겹쳐요\. 그래서 다른 한쪽이 비어요\.$/);
+  expect(await page.locator('.net-face.is-overlap').count()).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.net-face.is-overlap .face-mark').first()).toHaveText('✗ 겹쳐요');
+  await expect(page.locator('.pair-item, .net-face.is-pair')).toHaveCount(0);
+  await expect(xp).toHaveText('+1');
+  await page.locator('.free-new').click();
+  await placeShape(page, [...shiftCells(SHAPES.line5, 0, 1)].reverse());
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await expect(note).toHaveText('접어 봤더니 정육면체가 안 된 모양이에요. 면을 옮겨 모양을 바꿔요.');
+  // 5) 2-3-1 모양으로 두 번째 주사위 → 끝
+  await fresh(page);
+  await placeShape(page, diceOrder(shiftCells(SHAPES.n231, 1, 1)));
+  await foldIt(page);
+  await expect(page.locator('.reason')).toHaveText('두 번째 주사위 완성마주 보는 두 눈의 합이 모두 7이에요. 1과 6, 2와 5, 3과 4. 서로 다른 모양의 주사위 2개를 모두 만들었어요!');
+  await expect(page.locator('.made-slot.is-found')).toHaveCount(2);
+  await expect(xp).toHaveText('+2');
+  await expect(page.locator('.free-buttons button')).toHaveText(['결과 보기']);
+  await expect(page.locator('.free-finish')).toBeFocused();
+  await page.locator('.free-finish').click();
+
+  // 결과: 도전 성공. 별은 접은 시도의 정확도(4번 중 2번 = 50% → 별 1개). 시간 재기를 켜지 않아 시간은 어디에도 없다
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(page.locator('.cert-eyebrow')).toHaveText('도전 주문서 · 주사위 주문');
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 1개');
+  await expect(page.getByText('4번 중 2번 맞힘')).toBeVisible();
+  await expect(page.locator('.star-hint')).toHaveCount(0); // 주사위가 2개뿐이라 "한 번만 더 맞히면" 안내는 맞지 않는다
+  await expect(page.locator('.behavior')).toHaveText(['만든 주사위2 / 2', '한 번에 맞힘0개+0', '다시 일어서기2번+2']);
+  await expect(page.locator('.xp-line')).toContainText('도전 성공 +10 · 별 1개 +2');
+  expect(await resultXpSum(page)).toEqual({ tiles: 2, line: 12, gained: 14 });
+  expect(await storedXpOf(page)).toBe(14);
+  await expect(page.locator('.new-badge-list li')).toHaveText([/첫 발걸음/, /주사위 장인/]);
+  await expect(page.locator('.review-note li')).toHaveText(['마주 보는 면 (1번)', '면이 겹침 (1번)']);
+  await expect(page.locator('.time-line')).toHaveCount(0);
+  await expect(page.locator('.result-stats')).not.toContainText('걸린 시간');
+  await expect(page.getByRole('button', { name: '다음 단계' })).toHaveCount(0);
+  // 학습 기록: 문항은 "n번째 주사위", 틀린 접기의 tag는 오개념 표의 말. 도감·노트에는 넣지 않는다
+  const saved = await page.evaluate(() => ({
+    answers: JSON.parse(localStorage.getItem('edu:net-workshop:log')).at(-1).answers.map((a) => [a.itemId, a.correct, a.tag, a.given, a.expected]),
+    collections: JSON.parse(localStorage.getItem('edu:net-workshop:collections') ?? '{}'),
+    best: JSON.parse(localStorage.getItem('edu:net-workshop:rewards')).best,
+  }));
+  expect(saved.answers).toEqual([
+    ['cube-dice:1', false, '마주 보는 면', '1-6 2-4 3-5', '1-6 2-5 3-4'],
+    ['cube-dice:1', true, null, '1-6 2-5 3-4', '1-6 2-5 3-4'],
+    ['cube-dice:2', false, '면이 겹침', '정육면체가 안 됨', '1-6 2-5 3-4'],
+    ['cube-dice:2', true, null, '1-6 2-5 3-4', '1-6 2-5 3-4'],
+  ]);
+  expect(Object.values(saved.collections).flatMap((c) => Object.keys(c))).toEqual([]);
+  expect(saved.best).toEqual({});
+
+  // 다시 하기(별 1개): 둘 다 한 번에 맞히면 연습 4 + 별 2개 4 = +8. 그 뒤(별 3개)로는 다시 해도 0점
+  const perfect = async () => {
+    for (const [i, shape] of [SHAPES.cross, SHAPES.n33].entries()) {
+      if (i > 0) await page.locator('.dice-next').click();
+      await placeShape(page, diceOrder(shiftCells(shape, 1, 1)));
+      await foldIt(page);
+    }
+  };
+  await page.getByRole('button', { name: '다시 하기' }).click();
+  await perfect();
+  await expect(xp).toHaveText('+4');
+  await expect(page.locator('.bonus-note')).toHaveText('한 번에 맞힘 +2');
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.xp-line')).toContainText('별 2개 +4');
+  await expect(page.locator('.xp-line')).not.toContainText('도전 성공');
+  expect(await resultXpSum(page)).toEqual({ tiles: 4, line: 4, gained: 8 });
+  await page.getByRole('button', { name: '다시 하기' }).click();
+  await perfect();
+  await expect(xp).toHaveText('+0');
+  await expect(page.locator('.bonus-note')).toHaveCount(0);
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.practice-note')).toHaveText('별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.');
+  expect(await resultXpSum(page)).toEqual({ tiles: 0, line: 0, gained: 0 });
+  expect(await storedXpOf(page)).toBe(22);
+  // 도장판: "주사위 장인"을 받았다
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await expect(page.locator('.challenge-card').first().locator('.stars')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.challenge-card').first()).not.toContainText('내 기록');
+  await page.getByRole('button', { name: '처음 화면' }).click();
+  await page.getByRole('button', { name: '학습 기록' }).click();
+  await expect(page.locator('.badge-item[data-badge="dice-master"]')).toHaveClass(/is-earned/);
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 시간 재기: 켜지 않으면 시간이 어디에도 보이지 않고(플레이·결과·단계 지도), 켠 학생만 걸린 시간과 내 기록이 보인다', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors = collectErrors(page);
+  await page.goto(DICE());
+  const toggle = page.getByRole('button', { name: '시간 재기' });
+  const perfect = async (check = null) => {
+    for (const [i, shape] of [SHAPES.cross, SHAPES.n231].entries()) {
+      if (i > 0) await page.locator('.dice-next').click();
+      await placeShape(page, diceOrder(shiftCells(shape, 1, 1)));
+      if (check) await check(`주사위 ${i + 1} 놓음`);
+      await foldIt(page);
+      if (check) await check(`주사위 ${i + 1} 접음`);
+    }
+  };
+  /** 시간 재기를 켜지 않은 화면: 시계가 보이지 않고, 보이는 글자에 시간이 없다 */
+  const noTime = async (label) => {
+    await expect(page.locator('.timer-clock'), label).toBeHidden();
+    expect(await visibleText(page), label).not.toMatch(TIME_TEXT);
+    expect(await visibleText(page), label).not.toMatch(/내 기록|걸린 시간/);
+  };
+  // (가) 켜지 않음
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await noTime('시작');
+  await page.waitForTimeout(1200); // 시계가 한 번 넘어갈 시간이 지나도
+  await noTime('1초 뒤');
+  await perfect(noTime);
+  await page.locator('.free-finish').click();
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(page.locator('.time-line')).toHaveCount(0);
+  await expect(page.locator('.result-stats .stat')).toHaveCount(2); // 정답률 · 맞힘/시도 (걸린 시간 없음)
+  expect(await visibleText(page)).not.toMatch(TIME_TEXT);
+  expect(await visibleText(page)).not.toMatch(/내 기록|걸린 시간/);
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await expect(page.locator('.challenge-card').first()).not.toContainText('내 기록');
+  expect(await page.locator('.challenge-card').first().innerText()).not.toMatch(TIME_TEXT);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards')).best)).toEqual({});
+  // (나) 켬: 머리에 걸린 시간, 결과에 "내 기록 … (첫 기록이에요)"와 걸린 시간, 단계 카드에 내 기록
+  await page.locator('.challenge-card').first().click();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.timer-clock')).toBeVisible();
+  await expect(page.locator('.timer-clock')).toHaveText(/^\d+:\d\d$/);
+  await perfect();
+  await expect(toggle).toBeDisabled();
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.time-line')).toHaveText(/^내 기록 .+ \(첫 기록이에요\)$/);
+  await expect(page.locator('.result-stats')).toContainText('걸린 시간');
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await expect(page.locator('.challenge-card').first()).toContainText('내 기록');
+  await expect(page.locator('.challenge-card').nth(1)).not.toContainText('내 기록'); // 도감 주문에는 시간 재기가 없다
+  // 다시 켜고 하면 내 기록과만 견준다(점수 없음). 켜지 않고 하면 전에 잰 기록이 있어도 그 판에는 시간이 보이지 않는다
+  await page.locator('.challenge-card').first().click();
+  await toggle.click();
+  await perfect();
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.time-line')).toHaveText(/^내 기록 .+ \((지난번보다 .+ 빨라요|가장 좋은 기록은 .+)\)$/);
+  await expect(page.locator('.xp-line')).toContainText('빨리 푼 시간에는 점수가 없어요');
+  await page.getByRole('button', { name: '다시 하기' }).click();
+  await noTime('기록이 있는 기기에서 켜지 않은 판');
+  await perfect(noTime);
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.time-line')).toHaveCount(0);
+  await expect(page.locator('.result-stats')).not.toContainText('걸린 시간');
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 정답 노출 0: 접기 전 화면은 눈을 어떻게 놓았는지(합이 맞는지)와 무관하게 같다 — 글자·무늬·색·클래스·속성·화면 읽기 알림 어디에도 짝이 드러나지 않는다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '화면 전체를 견주는 검사는 크롬북 화면에서 한 번');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  /**
+   * 접기 전 화면의 모습. outside: 판의 칸을 뺀 문서 전체(글자·모든 속성·화면 읽기 알림 포함),
+   * tiles: 눈마다 그 면(타일)과 칸의 클래스·속성·계산된 모양 — 어느 칸에 놓였는지만 빼고 모두
+   */
+  const lookOf = () => page.evaluate(() => {
+    const app = document.querySelector('#app');
+    const clone = app.cloneNode(true);
+    for (const cell of clone.querySelectorAll('.free-board .cell')) cell.remove();
+    const describe = (el) => [...el.attributes].filter((a) => a.name !== 'data-cell').map((a) => `${a.name}=${a.value}`).sort().join('|');
+    const style = (el) => {
+      const s = getComputedStyle(el);
+      return ['backgroundColor', 'backgroundImage', 'borderTopColor', 'borderTopStyle', 'borderTopWidth', 'color', 'opacity', 'outlineStyle', 'boxShadow', 'transform']
+        .map((k) => s[k]).join('|');
+    };
+    const tiles = [...app.querySelectorAll('.free-board .tile-face')].map((tile) => {
+      const cell = tile.closest('.cell');
+      const label = tile.dataset.label;
+      const cellLook = [...cell.attributes].filter((a) => a.name !== 'data-cell' && a.name !== 'aria-label' && a.name !== 'tabindex').map((a) => `${a.name}=${a.value.replace(/\s*is-cursor\s*/, ' ').trim()}`).sort().join('|');
+      // 칸 이름은 "n줄 m칸, 주사위 눈 k" — 줄·칸(자리)만 빼고 본다
+      return [label, describe(tile), tile.innerHTML, style(tile), cellLook, cell.getAttribute('aria-label').replace(/^\d+줄 \d+칸, /, '')].join(' § ');
+    }).sort();
+    return { outside: clone.outerHTML, tiles, live: [...document.querySelectorAll('[aria-live], [role="status"]')].map((el) => el.textContent).join(' ¶ ') };
+  });
+  /** 같은 칸들에 눈을 놓는 방법을 바꿔 가며(칸을 누르는 순서 = 눈 1~6이 놓이는 자리) 접기 전 화면을 모은다 */
+  const looksFor = async (cells, orders) => {
+    const looks = [];
+    for (const order of orders) {
+      await fresh(page);
+      await placeShape(page, order.map((i) => cells[i]));
+      await page.waitForTimeout(80); // 화면 읽기 알림은 30ms 뒤에 들어간다
+      await expect(page.locator('.free-fold')).toBeEnabled();
+      looks.push(await lookOf());
+    }
+    return looks;
+  };
+  const sameLooks = (looks, label) => {
+    for (const [i, look] of looks.entries()) {
+      expect(look.tiles, `${label} 놓기 ${i}: 면·칸`).toEqual(looks[0].tiles);
+      expect(look.live, `${label} 놓기 ${i}: 화면 읽기`).toBe(looks[0].live);
+      expect(look.outside === looks[0].outside, `${label} 놓기 ${i}: 판 밖의 화면`).toBe(true);
+    }
+  };
+  await page.goto(DICE());
+  // 십자: 합이 모두 7인 놓기 2가지 · 한 쌍만 맞는 놓기 · 모두 틀린 놓기 · 차례대로
+  const cross = shiftCells(SHAPES.cross, 1, 1);
+  const right = diceOrder(cross).map((c) => cross.findIndex((x) => x[0] === c[0] && x[1] === c[1]));
+  const crossOrders = [right, [5, 3, 4, 2, 1, 0], [0, 1, 2, 3, 4, 5], [1, 0, 2, 3, 4, 5], [2, 4, 0, 5, 1, 3]];
+  const judged = crossOrders.map((order) => judgeDice({ cells: order.map((i) => cross[i]), labels: DICE_PIPS }).given);
+  expect(judged.filter((g) => g === '1-6 2-5 3-4').length).toBeGreaterThanOrEqual(1); // 맞는 놓기와
+  expect(new Set(judged).size).toBeGreaterThanOrEqual(4); // 서로 다르게 틀린 놓기가 섞여 있다
+  const first = await looksFor(cross, crossOrders);
+  sameLooks(first, '첫 번째 주사위(십자)');
+  // 짝·합에 관한 낱말·표시가 접기 전 문서 어디에도 없다. 목표 문장의 "합이 7"은 문제 그 자체이고,
+  // 숨겨 둔 힌트 글("… 양 끝이 마주 봐요 …")은 어떤 놓기에서나 같은 방법 안내라 빼고 본다
+  const HINT = '한 줄로 이어진 세 면은 양 끝이 마주 봐요. 합이 7인 두 눈을 양 끝에 놓아요.';
+  const LEAK = /pair-\d|is-pair|is-miss|마주 봐요|합 \d|[1-6][과와] [1-6]/;
+  expect(first[0].outside).toContain(HINT);
+  expect(LEAK.test(first[0].outside.replace(HINT, '')), '접기 전 문서에 짝·합 표시').toBe(false);
+  expect(first[0].live).not.toMatch(/마주|합/);
+  // 정육면체가 안 되는 모양도 눈을 어떻게 놓든 접기 전에는 같은 화면이다(안 되는 모양인지도 드러나지 않는다)
+  const line = shiftCells(SHAPES.line5, 1, 2);
+  const invalid = await looksFor(line, [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [2, 0, 4, 1, 5, 3]]);
+  sameLooks(invalid, '안 되는 모양');
+  // 접어 본 뒤에야 달라진다: 맞는 놓기 → 첫 번째 주사위
+  await fresh(page);
+  await placeShape(page, diceOrder(cross));
+  await foldIt(page);
+  await expect(page.locator('.stage-badge')).toHaveText('주사위가 됐어요');
+  await page.locator('.dice-next').click();
+  // 두 번째 주사위를 만드는 중에도: 2-3-1 모양에 맞게 놓든 틀리게 놓든 접기 전 화면이 같다
+  const n231 = shiftCells(SHAPES.n231, 1, 1);
+  const right2 = diceOrder(n231).map((c) => n231.findIndex((x) => x[0] === c[0] && x[1] === c[1]));
+  const second = await looksFor(n231, [right2, [0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0], [3, 1, 4, 0, 2, 5]]);
+  sameLooks(second, '두 번째 주사위(2-3-1)');
+  expect(LEAK.test(second[0].outside.replace(HINT, '')), '두 번째 주사위: 접기 전 문서에 짝·합 표시').toBe(false);
+  // 힌트(틀린 접기 2번 뒤)의 글과 그림자도 눈의 자리를 알려 주지 않는다: 그림자는 모양만
+  for (const order of [[0, 1, 2, 3, 4, 5], [5, 4, 3, 2, 1, 0]]) {
+    await fresh(page);
+    await placeShape(page, order.map((i) => n231[i]));
+    await foldIt(page);
+    await expect(page.locator('.stage-badge')).toHaveText('합이 7이 아닌 짝이 있어요');
+  }
+  await fresh(page);
+  await page.locator('.tool-hint').click();
+  await expect(page.locator('.hint-sticky')).toHaveText('한 줄로 이어진 세 면은 양 끝이 마주 봐요. 합이 7인 두 눈을 양 끝에 놓아요.');
+  await page.locator('.tool-hint').click();
+  await expect(page.locator('.shadow-cell')).toHaveCount(6);
+  expect(await page.locator('.shadow-cell').evaluateAll((els) => els.map((el) => `${el.className}|${el.textContent}|${el.attributes.length}`))).toEqual(Array(6).fill('shadow-cell||2'));
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 키보드만: Tab으로 판에 들어가 방향키·Enter로 눈 카드를 놓고, Tab으로 [접어 보기], 두 개를 만들어 결과까지', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.goto(DICE());
+  const { toBoard, focusByTab, tabTo, placeByKeys } = keyboardHelpers(page);
+  await toBoard();
+  await placeByKeys(diceOrder(shiftCells(SHAPES.cross, 1, 1)));
+  await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
+  expect(await page.evaluate(() => document.activeElement.getAttribute('aria-label'))).toMatch(/^\d줄 \d칸, 주사위 눈 6$/);
+  expect(await tabTo('.free-fold')).toBeLessThanOrEqual(9);
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  await expect(page.locator('.dice-next')).toBeFocused();
+  await page.keyboard.press('Enter'); // 두 번째 주사위 만들기: 판이 비고 초점은 판의 칸
+  expect(await page.evaluate(() => document.activeElement?.classList.contains('cell'))).toBe(true);
+  await placeByKeys(diceOrder(shiftCells(SHAPES.n33, 1, 1)));
+  await tabTo('.free-fold');
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  // 접힌 뒤 무대로 Tab → 방향키로 돌려 본다(보기 조작은 다른 단계와 같은 규칙)
+  await expect(page.locator('.free-finish')).toBeFocused();
+  await focusByTab('.fold-stage');
+  const before = await viewOf(page);
+  await page.keyboard.press('ArrowRight');
+  expect(poseGap((await viewOf(page)).pose, before.pose)).toBeGreaterThan(10);
+  await tabTo('.free-finish');
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(page.getByText('2번 중 2번 맞힘')).toBeVisible();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  expect(await resultXpSum(page)).toEqual({ tiles: 4, line: 16, gained: 20 });
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 터치(태블릿): 눈 카드를 칸으로 끌어 놓고, 놓인 눈을 다른 칸으로 끌어 옮기고, 탭으로 접는다. 끄는 눈 카드는 놓을 때까지 보인다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'tablet', '터치 끌기는 태블릿 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.goto(DICE());
+  const cdp = await page.context().newCDPSession(page);
+  const center = async (locator) => {
+    const b = await locator.boundingBox();
+    return [b.x + b.width / 2, b.y + b.height / 2];
+  };
+  const touch = (type, x, y) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y }] });
+  const drag = async (from, to, during = null) => {
+    const [fx, fy] = await center(from);
+    const [tx, ty] = await center(to);
+    await touch('touchStart', fx, fy);
+    for (let i = 1; i <= 12; i += 1) {
+      await touch('touchMove', fx + ((tx - fx) * i) / 12, fy + ((ty - fy) * i) / 12);
+      if (i === 6 && during) await during();
+    }
+    await touch('touchEnd');
+  };
+  // 맞는 자리: 눈 n 카드를 diceOrder의 n번째 칸으로 끈다
+  const cells = diceOrder(shiftCells(SHAPES.cross, 1, 1));
+  let ghost = null;
+  for (const [i, c] of cells.entries()) {
+    await drag(page.locator(`.tray-card[data-label="${i + 1}"]`), cellOf(page, c), i === 2 ? async () => {
+      // 끄는 동안: 눈 그림이 있는 복제가 손가락 밑에 보인다(spec 16-11)
+      ghost = await page.evaluate(() => {
+        const g = document.querySelector('.dnd-ghost');
+        return g ? { circles: g.querySelectorAll('.pips circle').length, shown: g.getBoundingClientRect().width > 20 } : null;
+      });
+    } : null);
+    await expect(cellOf(page, c).locator('.tile-face')).toHaveAttribute('data-label', String(i + 1));
+  }
+  expect(ghost).toEqual({ circles: 3, shown: true });
+  await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+  // 놓인 눈 6을 빈 칸으로 끌어 옮겼다가(떨어짐) 제자리로
+  await drag(cellOf(page, cells[5]).locator('.tile-face'), cellOf(page, [6, 4]));
+  await expect(cellOf(page, [6, 4]).locator('.tile-face')).toHaveAttribute('data-label', '6');
+  await expect(page.locator('.free-fold')).toBeDisabled();
+  await drag(cellOf(page, [6, 4]).locator('.tile-face'), cellOf(page, cells[5]));
+  await expect(page.locator('.free-fold')).toBeEnabled();
+  await page.locator('.free-fold').tap();
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  await expect(page.locator('.stage-badge')).toHaveText('주사위가 됐어요');
+  await expect(page.locator('.q-counter')).toHaveText('만든 주사위 1 / 2');
+  await noScroll(page);
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 스크롤과 판 안쪽 넘침이 없고 버튼이 잘리지 않으며, 알림이 조작을 가리지 않고, 판 → 무대 어긋남 0px', async ({ page }, testInfo) => {
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  /** [접어 보기]를 누른 같은 차례에: 판의 칸 가운데와 무대 면 가운데의 가장 큰 어긋남(px), 눈 그림 크기의 차 */
+  const foldDrift = () => page.evaluate(() => {
+    const center = (el) => {
+      const b = el.getBoundingClientRect();
+      return [b.left + b.width / 2 + window.scrollX, b.top + b.height / 2 + window.scrollY];
+    };
+    const pipSize = (el) => el.querySelector('.pips').getBoundingClientRect().width;
+    const cells = [...document.querySelectorAll('.free-board .cell.is-filled')].map((c) => ({ label: c.querySelector('.tile-face').dataset.label, at: center(c), pips: pipSize(c) }));
+    document.querySelector('.free-fold').click();
+    const faces = [...document.querySelectorAll('.fold-stage .net-face')].map((f) => ({ label: f.dataset.label, at: center(f), pips: pipSize(f) }));
+    const pairs = cells.map((c) => [c, faces.find((x) => x.label === c.label)]);
+    return {
+      drift: Math.round(Math.max(...pairs.map(([c, f]) => Math.hypot(f.at[0] - c.at[0], f.at[1] - c.at[1]))) * 100) / 100,
+      pips: Math.round(Math.max(...pairs.map(([c, f]) => Math.abs(f.pips - c.pips))) * 100) / 100,
+      count: cells.length,
+      scene: document.querySelector('.fold-stage .net-scene').style.transform,
+    };
+  });
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    await page.goto(DICE());
+    await page.evaluate(() => localStorage.clear());
+    await page.goto(DICE());
+    const at = `${size.width}×${size.height}`;
+    const phone = size.width <= 560;
+    const board = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
+    const put = (shape) => centerOnBoard(shape, board);
+    const check = async (label) => {
+      await expectPanelFits(page, `${at} ${label}`);
+      if (!phone) await noScroll(page);
+      expect(await hasHorizontalScroll(page), `${at} ${label}`).toBe(false);
+    };
+    await page.getByRole('button', { name: '시간 재기' }).click(); // 시계가 보이는(머리가 가장 넓은) 상태로
+    await expect(page.locator('.timer-clock')).toBeVisible();
+    await check('빈 판');
+    await expect(page.locator('.view-pad')).toBeHidden(); // 놓는 중에는 보기 조작판이 없다
+    // 놓는 판이 매트의 판 자리 안에 들어가고, 칸·눈 카드는 48px 이상
+    const fits = await page.evaluate(() => {
+      const b = document.querySelector('.free-board').getBoundingClientRect();
+      const host = document.querySelector('.free-host').getBoundingClientRect();
+      const small = [...document.querySelectorAll('.free-board .cell, .tray-card')].filter((el) => { const r = el.getBoundingClientRect(); return r.width < 47.5 || r.height < 47.5; }).length;
+      return { inside: b.top >= host.top - 1 && b.bottom <= host.bottom + 1 && b.left >= host.left - 1 && b.right <= host.right + 1, small };
+    });
+    expect(fits, at).toEqual({ inside: true, small: phone ? fits.small : 0 });
+    // 1) 합이 틀린 십자 → 판 → 무대 어긋남 0px, 눈 그림 크기도 같다
+    const cross = put(SHAPES.cross);
+    await placeShape(page, cross);
+    await check('6장을 놓음');
+    expect(await foldDrift(), at).toEqual({ drift: 0, pips: 0, count: 6, scene: FLAT_SCENE });
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    await expect(page.locator('.view-pad')).toBeVisible();
+    await check('합이 틀림');
+    await expectToastClear(page);
+    await page.locator('.free-fix').click();
+    await check('펴서 고치기(이미 접어 본 놓기)');
+    // 2) 정육면체가 안 되는 모양 둘(겹침 · 네 면이 한 점에: 까닭 문장이 가장 길다) → 힌트
+    for (const shape of [SHAPES.line5, SHAPES.block]) {
+      await fresh(page);
+      await placeShape(page, put(shape));
+      await foldIt(page);
+      await check('정육면체가 안 됨');
+      await expectToastClear(page);
+    }
+    await fresh(page);
+    await page.locator('.tool-hint').click();
+    await page.locator('.tool-hint').click();
+    await expect(page.locator('.shadow-cell')).toHaveCount(6);
+    await check('힌트 글·그림자');
+    expect(await page.evaluate(() => {
+      const s = document.querySelector('.hint-sticky').getBoundingClientRect();
+      const b = document.querySelector('.free-board').getBoundingClientRect();
+      return s.bottom <= b.top + 1; // 힌트 글이 놓는 판을 가리지 않는다
+    }), `${at} 힌트 글`).toBe(true);
+    // 3) 첫 번째 주사위 완성 → 같은 모양(막힘) → 두 번째 완성
+    await placeShape(page, diceOrder(cross));
+    await foldIt(page);
+    await expect(page.locator('.found-stamp')).toBeVisible();
+    await check('첫 번째 완성');
+    await expectToastClear(page);
+    const overlaps = await page.evaluate(() => {
+      const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+      const [pad, stamp, badge, tools] = ['.view-pad', '.found-stamp', '.stage-badge', '.fold-tools'].map(rect);
+      return { padOnStamp: hit(pad, stamp), padOnBadge: hit(pad, badge), padOnTools: hit(pad, tools), stampOnTools: hit(stamp, tools) };
+    });
+    expect(overlaps, at).toEqual({ padOnStamp: false, padOnBadge: false, padOnTools: false, stampOnTools: false });
+    // 접힌 뒤 크게 보고 돌려도 넘침이 없다
+    await pressPad(page, '크게 보기', 3);
+    await pressPad(page, '아래쪽으로 돌려 보기', 5);
+    await check('크게 · 아래에서');
+    await page.locator('.dice-next').click();
+    await placeShape(page, cross);
+    await check('같은 모양(막힘)');
+    await fresh(page);
+    await placeShape(page, diceOrder(put(SHAPES.n33)));
+    await foldIt(page);
+    await check('두 번째 완성');
+    await page.locator('.free-finish').click();
+    await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+    await page.waitForTimeout(2300); // 결과 연출이 끝난 뒤
+    if (!phone) await noScroll(page);
+    expect(await hasHorizontalScroll(page), `${at} 결과`).toBe(false);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 보기 조작·정리: 조작판은 접힌 뒤에만, 끌어서 끝없이 돌리고 0.5~2배. 90초 동안 못 만들면 힌트가 켜지고, 나간 뒤에는 타이머·키 처리가 남지 않는다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '마우스 끌기·시계는 크롬북 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.clock.install();
+  await page.goto(DICE());
+  // 90초 동안 주사위를 못 만들면 [힌트]
+  await expect(page.locator('.tool-hint')).toBeHidden();
+  await page.clock.fastForward(89_000);
+  await expect(page.locator('.tool-hint')).toBeHidden();
+  await page.clock.fastForward(2_000);
+  await expect(page.locator('.tool-hint')).toBeVisible();
+  // 접기 전: 조작판 없음, 무대 없음
+  await placeShape(page, diceOrder(shiftCells(SHAPES.cross, 1, 1)));
+  await expect(page.locator('.view-pad')).toBeHidden();
+  await expect(foldStage(page)).toBeHidden();
+  await page.locator('.free-fold').click();
+  await page.clock.runFor(3_000); // 접는 움직임
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+  await expect(foldStage(page)).toHaveClass(/can-view/);
+  await expect(page.locator('.view-pad button')).toHaveCount(7);
+  await expect(page.locator('.tool-hint')).toBeHidden(); // 주사위를 만들면 힌트는 처음부터 다시
+  const home = await viewOf(page);
+  // 버튼: 오른쪽으로 12번(360°)이면 제자리. 끌기: 오른쪽 100px = 50°
+  await pressPad(page, '오른쪽으로 돌려 보기', 12);
+  await expectPose(page, home.pose, '한 바퀴');
+  await dragStage(page, 100, 0);
+  await expectPose(page, turned(home.pose, DRAGGED(100, 0)), '끌기');
+  // 크게 보기는 2배에서 멈추고, 처음 보기로 돌아온다
+  await pressPad(page, '크게 보기', 3);
+  await expect(padButton(page, '크게 보기')).toBeDisabled();
+  expect(Math.round(((await viewOf(page)).scale / home.scale) * 100) / 100).toBe(2);
+  await pressPad(page, '처음 보기로');
+  await expectPose(page, home.pose, '처음 보기로');
+  // 나간 뒤: 타이머(힌트 90초·접기)와 Ctrl+Z 처리가 남지 않는다
+  await page.getByRole('button', { name: '← 단계 선택' }).click();
+  await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
+  await page.clock.fastForward(200_000);
+  await page.keyboard.press('Control+z');
+  await expect(page.locator('.tool-hint, .free-board')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+for (const mode of ['움직임 줄이기', 'fx=low']) {
+  test.describe(`주사위 주문 (${mode})`, () => {
+    if (mode === '움직임 줄이기') test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+    test('주사위를 완성해도 색종이 0개, 다 접히면 짝 무늬가 보인다 (움직임 줄이기는 3장면)', async ({ page }) => {
+      await page.goto(DICE(mode === 'fx=low' ? '&fx=low' : ''));
+      await placeShape(page, diceOrder(shiftCells(SHAPES.cross, 1, 1)));
+      await page.evaluate(() => {
+        const el = document.querySelector('.fold-stage');
+        window.foldStates = [];
+        new MutationObserver(() => window.foldStates.push(el.dataset.fold)).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
+      });
+      await foldIt(page);
+      if (mode === '움직임 줄이기') {
+        const states = await page.evaluate(() => window.foldStates);
+        expect(states).toContain('half');
+        expect(states).not.toContain('folding');
+      }
+      await expect(page.locator('.found-stamp')).toBeVisible();
+      await expect(page.locator('.fold-stage .net-face.is-pair')).toHaveCount(6);
+      await expect(page.locator('.confetti-piece')).toHaveCount(0);
+    });
+  });
+}
+
+test('도감 주문 이어 하기: 내 맘대로 전개도에서 찾은 도감이 이어지고, 새로 고쳐도 남고, 여러 번에 나눠 11칸 — 6칸부터 [오늘은 여기까지](별 1개), 9칸 별 2개, 11칸이면 [결과 보기]만 남는다', async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  const xp = page.locator('.meta-xp b');
+  const SAME_SHAPE_NOTE = '전에 접어 본 모양이라 점수는 없어요.';
+  const foldNet = async (name) => {
+    await fresh(page);
+    await placeShape(page, centerOnBoard(netCells(name), BOARD_SIZES.wide));
+    await foldIt(page);
+  };
+  const enterDex = async () => {
+    await page.getByRole('button', { name: '단계 선택' }).click();
+    await page.locator('.challenge-card', { hasText: '도감 주문' }).click();
+  };
+  // 내 맘대로 전개도에서 십자를 찾는다(+7) → 도감 주문으로: 도감 1칸에서 시작한다
+  await page.goto(FREE());
+  await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
+  await foldIt(page);
+  await expect(xp).toHaveText('+7');
+  await page.goto(DEX());
+  await expect(page.locator('.q-counter')).toHaveText('전개도 도감 1 / 11');
+  await expect(page.locator('.meta-progress')).toContainText('도감 1 / 11');
+  await expect(page.locator('.dex-slot.is-found')).toHaveCount(1);
+  await expect(page.locator('.predict-btn, .answer-btn')).toHaveCount(0); // 예상하기 없이 [접어 보기] 하나 (spec 16-12)
+  await expect(page.locator('.screen-play')).not.toContainText(/예상|예측/);
+  await expect(page.locator('.dex-rule')).toHaveText('도감 6칸을 채우면 별 1개를 받고 끝낼 수 있어요.');
+  await expect(page.locator('.free-stop, .free-finish')).toHaveCount(0);
+  // 같은 십자: 내 맘대로 전개도에서 이미 접어 본 모양이라 도감 주문에서도 0점 (한 모양의 점수는 어느 단계로도 한 번뿐)
+  await foldNet('1-4-1e');
+  await expect(xp).toHaveText('+0');
+  await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
+  await expect(page.locator('.reason')).toContainText('도감 5번과 같은 모양이에요');
+  // 도감 주문에서 새로 찾은 2-3-1(+7)은 내 맘대로 전개도로 돌아가 다시 접어도 0점
+  await foldNet('2-3-1a');
+  await expect(xp).toHaveText('+7');
+  expect(await storedXpOf(page)).toBe(14);
+  await page.goto(FREE());
+  await placeShape(page, shiftCells(SHAPES.n231, 1, 1));
+  await foldIt(page);
+  await expect(xp).toHaveText('+0');
+  await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
+  expect(await storedXpOf(page)).toBe(14);
+  // 도감 주문에서 3가지를 더 찾고(5칸), 안 되는 모양도 하나(노트): 6칸이 안 되면 끝낼 수 없다 → 새로 고침
+  await page.goto(DEX());
+  for (const name of ['3-3', '2-2-2', '1-4-1a']) await foldNet(name);
+  await expect(xp).toHaveText('+22'); // 7 × 3 + 연속 3번 1
+  await fresh(page);
+  await placeShape(page, shiftCells(SHAPES.block, 1, 1));
+  await foldIt(page, 'vertex');
+  await expect(xp).toHaveText('+25');
+  await expect(page.locator('.btn-trio, .free-stop')).toHaveCount(0);
+  await expect(page.locator('.q-counter')).toHaveText('전개도 도감 5 / 11');
+  expect(await storedXpOf(page)).toBe(39);
+  await page.reload();
+  // 새로 고친 뒤에도 도감 5칸·노트 1칸·점수가 그대로다
+  await expect(page.locator('.q-counter')).toHaveText('전개도 도감 5 / 11');
+  await expect(page.locator('.dex-slot.is-found')).toHaveCount(5);
+  await expect(page.locator('.dex-note b')).toHaveText('1');
+  await expect(page.locator('.rank-chip small')).toHaveText('39점');
+  await expect(page.locator('.dex-rule')).toBeVisible();
+  // 6번째: 별 1개를 받을 수 있다는 알림 + 접은 장면의 세 버튼 줄에 [오늘은 여기까지]
+  await foldNet('1-4-1b');
+  await expect(page.locator('.reason')).toContainText('처음 찾은 전개도예요.');
+  await expect(page.locator('.reason')).toContainText('도감 6칸! 지금 끝내도 별 1개를 받아요.');
+  await expect(page.locator('.btn-trio .btn')).toHaveText([/^오늘은 여기까지/, '펴서 고치기', '새로 만들기']);
+  await expect(page.locator('.free-fix')).toBeFocused();
+  // 놓는 판으로 돌아가면 판 아래쪽에 [오늘은 여기까지]: 지금 받는 별과 다음 별
+  await page.locator('.free-new').click();
+  await expect(page.locator('.free-stop')).toHaveText('오늘은 여기까지지금 끝내면 별 1개 · 9칸이면 별 2개');
+  await expect(page.locator('.dex-rule')).toHaveCount(0);
+  await page.locator('.free-stop').click();
+  // 결과 1: 도전 성공 · 별 1개(도감 6칸). 정답률 대신 새로 찾은 전개도 · 접어 본 모양
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 1개');
+  await expectBuildResult(page, [['새로 찾은 전개도', '1가지'], ['접어 본 모양', '1가지']]);
+  await expect(page.locator('.behavior')).toHaveText(['전개도 도감6 / 11+7', '다음 별까지3칸', '고쳐서 다시 도전0번']);
+  await expect(page.locator('.xp-line')).toContainText('도전 성공 +10 · 별 1개 +2');
+  expect(await resultXpSum(page)).toEqual({ tiles: 7, line: 12, gained: 19 });
+  expect(await storedXpOf(page)).toBe(58);
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await expect(page.locator('.challenge-card', { hasText: '도감 주문' }).locator('.stars')).toHaveAttribute('aria-label', '별 3개 중 1개');
+  await expect(page.locator('.lesson-chips .collection-chip')).toHaveText(['도감 6 / 11', '노트 1 / 24']);
+  // 다시 들어와 3가지 더(9칸): 별이 2개로 — 늘어난 별만큼만 +2
+  await page.locator('.challenge-card', { hasText: '도감 주문' }).click();
+  await expect(page.locator('.free-stop')).toContainText('지금 끝내면 별 1개 · 9칸이면 별 2개');
+  for (const name of ['1-4-1c', '1-4-1d', '1-4-1f']) await foldNet(name);
+  await expect(page.locator('.reason')).toContainText('도감 9칸! 지금 끝내도 별 2개를 받아요.');
+  await page.locator('.free-stop').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  await expect(page.locator('.xp-line')).toContainText('별 1개 +2');
+  await expect(page.locator('.xp-line')).not.toContainText('도전 성공');
+  expect(await resultXpSum(page)).toEqual({ tiles: 22, line: 2, gained: 24 });
+  // 다시 들어와 마지막 2가지(11칸): 달성 문장과 [결과 보기]만 남는다 → 별 3개, 도장 "전개도 박사"
+  await enterDex();
+  await expect(page.locator('.free-stop')).toContainText('지금 끝내면 별 2개 · 11칸이면 별 3개');
+  await foldNet('2-3-1b');
+  await expect(page.locator('.btn-trio .btn')).toHaveCount(3);
+  await foldNet('2-3-1c');
+  await expect(page.locator('.q-counter')).toHaveText('전개도 도감 11 / 11');
+  await expect(page.locator('.goal-done')).toHaveText('전개도 11가지를 모두 찾았어요! 도감을 다 채웠어요.');
+  await expect(page.locator('.free-buttons button')).toHaveText(['결과 보기']);
+  await expect(page.locator('.free-finish')).toBeFocused();
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.behavior').first()).toHaveText('전개도 도감11 / 11+14');
+  await expect(page.locator('.new-badge-list')).toContainText('전개도 박사');
+  expect(await resultXpSum(page)).toEqual({ tiles: 14, line: 2, gained: 16 });
+  expect(await storedXpOf(page)).toBe(98); // 십자 7 + 2-3-1 7 + (22 + 3) + 19 + 24 + 16
+  // 이미 11칸인 학생이 다시 들어오면: 처음부터 달성 문장과 [결과 보기]. 끝내도 더 받는 점수는 없다
+  await enterDex();
+  await expect(page.locator('.goal-done')).toHaveText('전개도 11가지를 모두 찾았어요!');
+  await expect(page.locator('.free-stop, .dex-rule, .tool-finish:visible')).toHaveCount(0);
+  await expect(page.locator('.tool-hint')).toBeHidden();
+  await foldNet('3-3'); // 접어 볼 수는 있다(접어 본 모양이라 0점)
+  await expect(page.locator('.bonus-note')).toHaveText(SAME_SHAPE_NOTE);
+  await expect(page.locator('.btn-trio .btn')).toHaveText(['결과 보기', '펴서 고치기', '새로 만들기']);
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.rank-card .xp-gain')).toHaveText('+0');
+  await expect(page.locator('.practice-note')).toHaveText(FREE_REPLAY_NOTE);
+  expect(await storedXpOf(page)).toBe(98);
+  expect(errors).toEqual([]);
+});
+
+test('도감 주문 배치(네 크기): 놓는 판·접은 장면·까닭 고르기·[오늘은 여기까지]·11칸 달성 모두 스크롤과 판 안쪽 넘침이 없고 버튼이 잘리지 않는다. 키보드로도 끝낸다', async ({ page }, testInfo) => {
+  test.setTimeout(240_000);
+  const errors = collectErrors(page);
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    const at = `${size.width}×${size.height}`;
+    const phone = size.width <= 560;
+    const board = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
+    const check = async (label) => {
+      await expectPanelFits(page, `${at} ${label}`);
+      if (!phone) await noScroll(page);
+      expect(await hasHorizontalScroll(page), `${at} ${label}`).toBe(false);
+    };
+    const fold = async (label, name, pick = null) => {
+      await fresh(page);
+      await placeShape(page, centerOnBoard(netCells(name), board));
+      await check(`${label} · 6장을 놓음`);
+      await page.locator('.free-fold').click();
+      await expect(page.locator('.free-result')).toBeVisible();
+      if (await page.locator('.reason-chip').first().isVisible()) {
+        await check(`${label} · 고르는 중`);
+        if (pick === 'skip') await page.locator('.reason-skip').click();
+        else await page.locator(`.reason-chip[data-reason="${pick}"]`).click();
+      }
+      await expect(page.locator('.free-buttons button').first()).toBeVisible();
+      await check(label);
+    };
+    // (가) 5칸: 아직 끝낼 수 없다 — 별 안내 한 줄
+    await seedDex(page, 5, DEX());
+    await check('5칸 · 빈 판');
+    await expect(page.locator('.dex-rule')).toBeVisible();
+    await placeShape(page, [[1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [5, 4]]);
+    await check('5칸 · 떨어진 면(안내 두 줄)');
+    await fold('5칸 · 접어 본 전개도', '1-4-1a');
+    await fold('5칸 · 안 되는 모양(까닭 맞힘)', 'other-a', 'overlap');
+    await fold('5칸 · 안 되는 모양(까닭 틀림)', 'block-b', 'overlap');
+    await fold('6칸째(별 1개 알림 + 세 버튼)', '1-4-1f');
+    await expect(page.locator('.btn-trio .free-stop')).toBeVisible();
+    expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
+    await expectToastClear(page);
+    // (나) 6칸 이상: 놓는 판 아래쪽의 [오늘은 여기까지]
+    await fresh(page);
+    await expect(page.locator('.free-stop')).toBeVisible();
+    await check('6칸 · 빈 판');
+    await placeShape(page, [[1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [5, 4]]);
+    await check('6칸 · 떨어진 면(안내 두 줄) + 오늘은 여기까지');
+    await fold('6칸 · 안 되는 모양(넘어가기)', 'line5-c', 'skip');
+    await fold('6칸 · 안 되는 모양(네 면, 까닭 맞힘)', 'block-d', 'vertex');
+    await fold('6칸 · 같은 판에 다시 접은 모양', 'block-d');
+    await fresh(page);
+    await page.locator('.tool-hint').click();
+    await page.locator('.tool-hint').click();
+    await expect(page.locator('.shadow-cell')).toHaveCount(6);
+    await check('6칸 · 힌트 글·그림자 + 오늘은 여기까지');
+    // 그림자는 도감에 없는 전개도다
+    const shadow = await page.locator('.shadow-cell').evaluateAll((els) => {
+      const unit = els[0].getBoundingClientRect().width;
+      const box = els[0].parentElement.getBoundingClientRect();
+      return els.map((el) => [Math.round((el.getBoundingClientRect().left - box.left) / unit), Math.round((el.getBoundingClientRect().top - box.top) / unit)]);
+    });
+    await placeShape(page, shadow);
+    await page.locator('.free-fold').click();
+    await expect(page.locator('.reason')).toContainText('처음 찾은 전개도예요.');
+    await check('7칸째(그림자대로)');
+    // (다) 10칸 → 11칸 달성: 달성 문장 + [결과 보기]만
+    await seedDex(page, 10, DEX());
+    await check('10칸 · 빈 판');
+    await fold('11칸 달성', '3-3');
+    await expect(page.locator('.goal-done')).toBeVisible();
+    await expect(page.locator('.free-buttons button')).toHaveCount(1);
+    // (라) 이미 11칸: 처음부터 달성 문장 + [결과 보기], 접은 뒤에는 세 버튼
+    await seedDex(page, 11, DEX());
+    await expect(page.locator('.goal-done')).toBeVisible();
+    await check('11칸 · 빈 판');
+    await placeShape(page, [[1, 1], [2, 1], [3, 1], [4, 1], [1, 2], [5, 4]]);
+    await check('11칸 · 떨어진 면(안내 두 줄)');
+    await fold('11칸 · 안 되는 모양(까닭 틀림)', 'other-h', 'vertex');
+    await expect(page.locator('.btn-trio .btn')).toHaveCount(3);
+  }
+  // 키보드만으로 [오늘은 여기까지] (크롬북)
+  if (testInfo.project.name === 'chromebook') {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await seedDex(page, 6, DEX());
+    const { tabTo } = keyboardHelpers(page);
+    await tabTo('.free-stop');
+    await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+    await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 1개');
+    await noScroll(page);
+  }
   expect(errors).toEqual([]);
 });
 
@@ -2528,6 +3491,12 @@ const flatTargets = (page) => page.evaluate(() => {
   }
   return out;
 });
+/**
+ * 칸 크기 = "무대 크기·전개도 칸 수만으로 정한 크기". 1px까지는 같다고 본다: 무대 상자를 재는 때(앱은 놓는 순간, 검사는 그 뒤)와
+ * 기기의 글꼴·스크롤 막대에 따라 상자가 1px쯤 달라 내림한 값이 한 칸 어긋날 수 있다(GitHub의 리눅스에서 59 ↔ 60).
+ * 지키려는 것은 "조작판을 피해 줄이는 처리가 없다"(V1에서는 10~50% 줄었다)이다
+ */
+const expectNaturalUnit = (m, label) => expect(Math.abs(m.unit - m.natural), `${label}: 칸 크기 ${m.unit}px ↔ 무대·칸 수로 정한 크기 ${m.natural}px`).toBeLessThanOrEqual(1);
 
 test('답하기 전에는 조작판이 펼친 전개도의 면·빈 자리를 가리지 않고(조작판이 없다), 전개도 칸 크기는 무대 크기와 칸 수만으로 정해진다 — 조작판을 피해 작게 놓는 문제가 없다 (세 단계 × 시드 1~12, 네 크기)', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
@@ -2544,7 +3513,7 @@ test('답하기 전에는 조작판이 펼친 전개도의 면·빈 자리를 �
         const at = `${size.width}×${size.height} ${stageId} 시드 ${seed}`;
         const m = await flatTargets(page);
         expect({ hits: m.hits, covered: m.covered, small: m.small }, at).toEqual({ hits: [], covered: [], small: [] });
-        expect(m.unit, `${at}: 칸 크기`).toBe(m.natural);
+        expectNaturalUnit(m, at);
         expect(m.buttons, at).toBe(3); // 접어 보기 + 좌우 돌리기 둘
         if (stageId !== 'cube-complete') units.add(m.unit);
       }
@@ -2610,7 +3579,7 @@ test('답하기 전 펼친 전개도를 좌우로 돌려도(V1-2) 빈 자리·�
         const m = await flatTargets(page);
         const at = `폭 ${width}px ${stageId} 시드 ${seed}`;
         expect({ hits: m.hits, covered: m.covered, small: m.small }, at).toEqual({ hits: [], covered: [], small: [] });
-        expect(m.unit, `${at}: 칸 크기`).toBe(m.natural);
+        expectNaturalUnit(m, at);
         await expect(page.locator('.view-pad')).toBeHidden();
       }
     }
@@ -2624,6 +3593,8 @@ test('답하기 전 조작 띠는 V1 이전과 같은 자리·막대 길이이�
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
   // bf86e8c를 따로 빌드해 읽은 값(매트 왼쪽 위 기준 [x, y, 너비, 높이]). 휴대폰은 조작판이 아래 띠 두 줄이라 접기 버튼 위·막대 아래로 놓인다 —
   // 답하기 전에는 좌우 돌리기 둘을 붙여 두고([위쪽] 자리까지) 잠긴 막대를 둘째 줄 가득 넓힌다(구멍·빈 줄 없이, V1b-2)
+  // 넓은 화면·태블릿의 [접어 보기] 너비(136)와 그 옆 막대의 왼쪽 끝(162)·너비는 버튼 글자의 폭에 달려 있어 기기 글꼴마다 1px쯤 다르다
+  // (macOS에서 잰 값. GitHub의 리눅스는 137 · 163). 그 값들은 아래 expectBand에서 ±2px까지 같다고 본다 — 나머지는 글자 폭과 무관해 정확히 견준다
   const BAND = {
     '1366×768': { mat: [810, 598], stage: [2, 16, 806, 440], toggle: [16, 534, 136, 48], slider: [162, 532, 516, 52], turns: [[688, 534, 48, 48], [746, 534, 48, 48]] },
     '1366×680': { mat: [812, 540], stage: [2, 16, 808, 382], toggle: [16, 476, 136, 48], slider: [162, 474, 518, 52], turns: [[690, 476, 48, 48], [748, 476, 48, 48]] },
@@ -2639,6 +3610,26 @@ test('답하기 전 조작 띠는 V1 이전과 같은 자리·막대 길이이�
     const turns = [...document.querySelectorAll('.fold-tools .band-turn, .view-pad button')].filter((el) => el.getClientRects().length > 0 && /^(왼쪽|오른쪽)으로 돌려 보기$/.test(el.getAttribute('aria-label')));
     return { mat: [Math.round(mat.width), Math.round(mat.height)], stage: at(document.querySelector('.fold-stage')), toggle: at(document.querySelector('.fold-toggle')), slider: at(document.querySelector('.fold-slider')), turns: turns.map(at) };
   });
+  const TEXT_SLACK = 2; // 버튼 글자 폭에서 오는 차이(px)
+  /**
+   * 답하기 전 조작 띠가 V1 이전과 같은가. 글자 폭과 무관한 값(매트·무대 크기, 좌우 돌리기 48px 버튼의 자리, 띠의 줄 자리·높이, 띠의 양 끝)은 정확히.
+   * [접어 보기]의 너비와 막대의 왼쪽 끝만 글자 폭만큼(±2px) 달라도 되고, 그때도 막대는 버튼 바로 옆(사이 10px)에서 시작해 같은 오른쪽 끝까지 간다.
+   * 휴대폰은 버튼·막대 너비가 띠 너비로 정해져(글자 폭과 무관) 모두 정확히 견준다
+   */
+  const expectBand = (got, want, label, phone) => {
+    if (phone) {
+      expect(got, label).toEqual(want);
+      return;
+    }
+    expect({ mat: got.mat, stage: got.stage, turns: got.turns }, label).toEqual({ mat: want.mat, stage: want.stage, turns: want.turns });
+    expect([got.toggle[0], got.toggle[1], got.toggle[3], got.slider[1], got.slider[3]], `${label}: 띠의 줄 자리·높이`)
+      .toEqual([want.toggle[0], want.toggle[1], want.toggle[3], want.slider[1], want.slider[3]]);
+    expect(Math.abs(got.toggle[2] - want.toggle[2]), `${label}: [접어 보기] 너비 ${got.toggle[2]}px (기준 ${want.toggle[2]}px)`).toBeLessThanOrEqual(TEXT_SLACK);
+    expect(Math.abs(got.slider[0] - want.slider[0]), `${label}: 막대 왼쪽 끝 ${got.slider[0]}px (기준 ${want.slider[0]}px)`).toBeLessThanOrEqual(TEXT_SLACK);
+    // 막대는 [접어 보기] 바로 옆(사이 10px)에서 시작하고, 오른쪽 끝은 글자 폭과 상관없이 같은 자리다 (반올림 1px)
+    expect(Math.abs(got.slider[0] - (got.toggle[0] + got.toggle[2] + 10)), `${label}: 버튼과 막대 사이`).toBeLessThanOrEqual(1);
+    expect(Math.abs((got.slider[0] + got.slider[2]) - (want.slider[0] + want.slider[2])), `${label}: 막대 오른쪽 끝`).toBeLessThanOrEqual(1);
+  };
   for (const size of sizes) {
     await page.setViewportSize(size);
     const key = `${size.width}×${size.height}`;
@@ -2647,7 +3638,7 @@ test('답하기 전 조작 띠는 V1 이전과 같은 자리·막대 길이이�
       await page.goto(fileUrl(FILE, `?unlock=all&seed=1&sound=off&stage=${stageId}`));
       await expect(page.locator('.net-face').first()).toBeVisible();
       const before = await read();
-      expect(before, `${key} ${stageId} 답하기 전`).toEqual(BAND[key]);
+      expectBand(before, BAND[key], `${key} ${stageId} 답하기 전`, phone);
       // 답한다 — 초점이 옮겨 간 요소를 차례로 적어 둔다(초점이 사라지지 않는지 보려고). 좌우 돌리기에 초점을 둔 채 답한다
       await page.evaluate(() => {
         window.focusTrail = [];
@@ -3720,7 +4711,7 @@ test('글자: 아래에서 본 2×2 장면과 구멍으로 본 안쪽 면에서�
   // 1) 자유 배치의 2×2 덩어리 장면(접다 멈춤): 아래에서 보면 모든 면의 안쪽이 보인다
   await page.goto(FREE());
   await placeShape(page, shiftCells(SHAPES.block, 1, 1));
-  await foldAs(page, 'yes');
+  await foldIt(page, 'skip'); // 까닭 고르기를 넘어가면 표시(●·바로 세운 글자)가 나온다
   await expect(foldStage(page)).toHaveClass(/marks-blocked/);
   expect((await mirrored()).back).toBe(0); // 처음 보기에서는 모두 앞면
   await sweep('2×2 장면', { backSeen: true });
@@ -3739,14 +4730,14 @@ test('글자: 아래에서 본 2×2 장면과 구멍으로 본 안쪽 면에서�
   // 2) 겹치는 모양(한 줄 5칸): 겹친 면 "겹쳐요"와 빈 자리 "비어요", 구멍으로 보이는 안쪽 면
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.line5, 1, 2));
-  await foldAs(page, 'yes');
+  await foldIt(page, 'skip');
   await expect(page.locator('.net-ghost').first()).toBeVisible();
   await sweep('겹침 장면', { backSeen: true });
   // 3) 닫힌 정육면체: 어디서 보든 눈 쪽 세 면만 앞면이고, 뒤집히는 것은 가려진 뒤쪽 세 면뿐이다
   await fresh(page);
   await placeShape(page, shiftCells(SHAPES.cross, 1, 1));
   expect(await page.locator('.is-back').count()).toBe(0); // 놓는 판·펼친 전개도에는 뒤집힌 면이 없다
-  await foldAs(page, 'yes');
+  await foldIt(page);
   expect(await page.locator('.net-face.is-back').count()).toBe(3);
   await sweep('정육면체', { backSeen: true });
   await pressPad(page, '처음 보기로');
@@ -4027,15 +5018,15 @@ test('자유 배치: 판 → 무대 이어 접기 어긋남 0px (네 크기) —
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
-  /** 예상 버튼을 누른 같은 차례에: 판의 칸 가운데와 무대 면 가운데의 가장 큰 어긋남(px), 무대 변환 */
+  /** [접어 보기]를 누른 같은 차례에: 판의 칸 가운데와 무대 면 가운데의 가장 큰 어긋남(px), 무대 변환 */
   const foldDrift = () => page.evaluate(() => {
-    // 문서 좌표(스크롤을 더한 자리): 좁은 화면은 예상 버튼을 누를 때 매트가 보이게 페이지를 올린다
+    // 문서 좌표(스크롤을 더한 자리): 좁은 화면은 [접어 보기]를 누를 때 매트가 보이게 페이지를 올린다
     const center = (el) => {
       const b = el.getBoundingClientRect();
       return [b.left + b.width / 2 + window.scrollX, b.top + b.height / 2 + window.scrollY];
     };
     const cells = [...document.querySelectorAll('.free-board .cell.is-filled')].map((c) => ({ label: c.querySelector('.tile-face').dataset.label, at: center(c) }));
-    document.querySelector('.predict-btn[data-answer="yes"]').click();
+    document.querySelector('.free-fold').click();
     const faces = [...document.querySelectorAll('.fold-stage .net-face')].map((f) => ({ label: f.dataset.label, at: center(f) }));
     const drift = Math.max(...cells.map((c) => {
       const f = faces.find((x) => x.label === c.label);

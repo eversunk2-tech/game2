@@ -5,10 +5,12 @@ import { createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
 import {
   PRACTICE_OFF_ONCE_TEXT,
   PRACTICE_OFF_TEXT,
+  customStats,
   defaultHighlights,
   gradeLabel,
   practiceNoteText,
   readUrlOptions,
+  resultStats,
   stageXpLine,
   starHint,
   stageStates,
@@ -185,6 +187,26 @@ test('시간 재기 문장 (점수 없음, 내 기록과만 비교)', () => {
   assert.equal(timeRecordText({ ms: 130_000, prevMs: null }), '내 기록 2분 10초 (첫 기록이에요)');
   assert.equal(timeRecordText({ ms: 130_000, prevMs: 142_000 }), '내 기록 2분 10초 (지난번보다 12초 빨라요)');
   assert.equal(timeRecordText({ ms: 150_000, prevMs: 130_000 }), '내 기록 2분 30초 (가장 좋은 기록은 2분 10초)');
+});
+
+test('결과 화면의 기록 칸: 기본은 정답률 · 맞힘/시도 · 걸린 시간. 게임이 stats를 주면 정답률 대신 그 칸, 시간 재기를 켜지 않은 판은 걸린 시간 없음', () => {
+  const record = { accuracy: 0.8, attempts: 5, correct: 4, durationMs: 130_000 };
+  assert.deepEqual(resultStats({ record }), [['정답률', '80%'], ['맞힘/시도', '5번 중 4번 맞힘'], ['걸린 시간', '2분 10초']]);
+  // 답이 없는 판(시뮬레이션 등): 맞힘/시도 칸은 없다 (지금까지와 같다)
+  assert.deepEqual(resultStats({ record: { accuracy: null, attempts: 0, correct: 0, durationMs: 5000 } }), [['정답률', '-'], ['걸린 시간', '5초']]);
+  // 시간 재기를 고를 수 있는 단계에서 켜지 않았으면 걸린 시간을 보이지 않는다
+  assert.deepEqual(resultStats({ record, showTime: false }), [['정답률', '80%'], ['맞힘/시도', '5번 중 4번 맞힘']]);
+  // 게임이 준 칸(맞힘·틀림으로 보이지 않는 단계): 정답률 · 맞힘/시도 자리에 들어간다
+  const custom = [{ label: '찾은 전개도', value: '3가지' }, { label: '접어 본 모양', value: '5가지' }];
+  assert.deepEqual(resultStats({ record, custom }), [['찾은 전개도', '3가지'], ['접어 본 모양', '5가지'], ['걸린 시간', '2분 10초']]);
+  assert.deepEqual(resultStats({ record, custom, showTime: false }), [['찾은 전개도', '3가지'], ['접어 본 모양', '5가지']]);
+  // 쓸 수 없는 값은 버리고(이름·값이 없는 칸), 3칸까지. 쓸 칸이 하나도 없으면 기본 칸
+  assert.deepEqual(customStats([{ label: 'a', value: 1 }, null, { label: '', value: 2 }, { label: 'b' }, { label: 'c', value: 0 }, { label: 'd', value: 3 }, { label: 'e', value: 4 }]),
+    [['a', '1'], ['c', '0'], ['d', '3']]);
+  for (const bad of [null, undefined, 'x', [], [{}], [{ label: ' ', value: 1 }]]) {
+    assert.equal(customStats(bad), null);
+    assert.equal(resultStats({ record, custom: bad })[0][0], '정답률');
+  }
 });
 
 test('?fx=low 또는 코어 2개 이하면 저사양 모드', () => {

@@ -1,18 +1,21 @@
 /**
- * 4단계 "내 맘대로 전개도"(cube-free) 화면. spec 16-1
+ * 직접 만드는 전개도 화면: 4단계 "내 맘대로 전개도"(cube-free, spec 16-1)와 도전 주문서 "도감 주문"(cube-dex, spec 16-3).
  *
- * 면 카드 6장(가~바)을 놓는 판에 마음대로 놓고 → 될지 예상(예상 버튼이 곧 접기) → 놓은 그대로 접힌다.
- * 판정·표시는 판별 단계와 같은 fromCells + checkNet + view.reveal(). 서로 다른 전개도 3가지를 찾으면 [결과 보기].
+ * 면 카드 6장(가~바)을 놓는 판에 마음대로 놓고 → [접어 보기] → 놓은 그대로 접힌다. 접기 전에 될지 예상을 묻지 않는다(spec 16-12).
+ * 판정·표시는 판별 단계와 같은 fromCells + checkNet + view.reveal().
+ * - 내 맘대로 전개도: 서로 다른 전개도 3가지를 찾으면 [결과 보기]. 별은 이번 판에 찾은 서로 다른 전개도 수(안 되는 모양은 별과 무관)
+ * - 도감 주문: 같은 판으로 전개도 도감 11칸을 채운다. 도감은 판을 넘어 이어진다. 6칸부터 [오늘은 여기까지]로 끝낼 수 있고
+ *   별은 도감 수(6칸 ★1 · 9칸 ★2 · 11칸 ★3), 11칸을 채우면 [결과 보기]만 남는다
  * - 같은 모양(돌리기·뒤집기 포함)을 이번 판에서 다시 접으면 기록·점수 없음, 떨어진 배치는 접지 않음
- * - 새 전개도는 도감(cube-nets), 안 되는 모양은 노트(cube-non-nets)에 (ctx.collect)
- * - 점수(예측 적중·새 발견·노트·까닭 설명)는 이 기기에서 그 모양을 처음 접을 때만 (spec 16-8).
- *   이미 접어 본 모양(도감·노트에 있음)은 기록·별에는 넣고 점수는 없다(ctx.log.answer의 scored: false)
+ * - 새 전개도는 도감(cube-nets), 안 되는 모양은 노트(cube-non-nets)에 (ctx.collect). 두 단계가 같은 도감·노트를 쓴다
+ * - 점수는 이 기기에서 그 모양을 처음 접을 때만 (spec 16-8): 되는 모양 = 만들기 성공 +2(연속·다시 일어서기는 엔진 규칙) + 도감 +5,
+ *   안 되는 모양 = 노트 +1 + 까닭을 맞히면 +2. 이미 접어 본 모양(도감·노트에 있음)은 기록에는 넣고 점수는 없다(scored: false)
  * - 처음 접는 모양의 점수는 "이 기기에서 한 번만 받는 점수"다(scored: 'once', spec 16-9): 판을 시작할 때 별이 3개여도 받고,
  *   도감·노트 등록 점수처럼 접은 그 자리에서 바로 저장된다(판 중간에 나가도 남는다). 모양은 접는 순간 "접어 본 모양"이 되므로
- *   예상을 틀린 모양도, 나갔다 온 모양도 점수를 다시 받을 수 없다
- * - 안 되는 모양을 "안 될 거예요"로 맞히면 까닭 고르기가 먼저다: 고르기(넘어가기) 전에는 까닭 문장도, 무대의 까닭 표시
+ *   어느 단계에서 접었든, 나갔다 왔든 한 모양의 점수는 한 번뿐이다
+ * - 안 되는 모양을 접으면 까닭 고르기가 먼저다: 고르기(넘어가기) 전에는 까닭 문장도, 무대의 까닭 표시
  *   (이름표·겹쳐요·비어요·●)도 보이지 않는다 (판별 단계와 같은 순서)
- * - 별은 예상 정확도(엔진 기본). 시간·접은 횟수는 별에 쓰지 않는다
+ * - 기록: 접은 것 하나가 학습 기록 하나(정육면체가 되면 맞음, 안 되면 오개념 tag). 화면에는 "틀렸다"는 느낌의 말을 쓰지 않는다
  * - 힌트: 안 되는 모양을 연달아 2번 접었거나 90초 동안 새 전개도를 못 찾으면 [힌트]. 1번째 글, 2번째 그림자(누를 때만)
  */
 import { XP } from '../../shared/core/rewards.js';
@@ -21,6 +24,9 @@ import { LABELS } from './fold.js';
 import { createFreeBoard, gridAdapter } from './free-board.js';
 import {
   BOARD_SIZES,
+  DEX_STOP_MIN,
+  FREE_EXPECTED,
+  FREE_FOLD_NOTES,
   FREE_GOAL,
   FREE_REPLAY_NOTE,
   HINT_AFTER_INVALID,
@@ -29,9 +35,16 @@ import {
   boardReadiness,
   centerOnBoard,
   createFreeSession,
+  dexHighlights,
   dexItemName,
+  dexMilestone,
+  dexNextStar,
+  dexStars,
+  dexStats,
   freeFeedback,
   freeHighlights,
+  freeStars,
+  freeStats,
   freeSummary,
   hintNet,
 } from './logic.js';
@@ -44,14 +57,17 @@ const PHONE = '(max-width: 560px)';
 
 export function playFree(stage, ctx) {
   const { h } = ctx;
+  const dexMode = stage.kind === 'dex'; // 도감 주문: 목표가 이번 판 3가지 대신 이 기기의 도감 11칸
   const phone = Boolean(globalThis.matchMedia?.(PHONE).matches);
   const size = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
   const labels = LABELS.slice(0, 6);
-  const goal = stage.count ?? FREE_GOAL;
-  const noteTotal = ctx.collection('cube-non-nets').total;
+  const dexTotal = ctx.collection('cube-nets').total;
+  const goal = dexMode ? dexTotal : (stage.count ?? FREE_GOAL);
+  const dexCount = () => ctx.collection('cube-nets').found.size;
   const session = createFreeSession({
     stageId: stage.id,
     goal,
+    dexGoal: dexMode ? dexTotal : null,
     dex: [...ctx.collection('cube-nets').found],
     note: [...ctx.collection('cube-non-nets').found],
   });
@@ -61,7 +77,7 @@ export function playFree(stage, ctx) {
   let explainCount = 0;
   const playXp = () => ctx.reward.peek?.().xp ?? 0;
   let mode = 'edit';
-  let goalReached = false;
+  let goalReached = session.done(); // 도감 주문에 이미 11칸인 학생이 들어오면 처음부터 채운 상태다
 
   // ── 매트: 놓는 판 ↔ 3D 무대(+ 접기 조작 띠, 보는 방향·크기 조작판) ─────────────────
   const view = createNetView({ h, sfx: ctx.sfx });
@@ -75,6 +91,7 @@ export function playFree(stage, ctx) {
   const undoBtn = tool('tool-undo', 'undo', '되돌리기', () => board.undo());
   const hintBtn = tool('tool-hint', 'bulb', '힌트', () => useHint());
   hintBtn.hidden = true;
+  // 목표를 채운 뒤 놓는 판에서 끝내기: 내 맘대로 전개도는 매트 띠의 [결과 보기]. 도감 주문은 작업 지시서 아래쪽 버튼을 쓴다(showStop)
   const finishTool = h('button', { type: 'button', class: 'btn btn-primary tool-finish', hidden: true, onclick: () => finish() }, '결과 보기', icon('play'));
   const statusCount = h('b', null, '0 / 6');
   const statusExtra = h('span', { class: 'status-extra' });
@@ -82,28 +99,14 @@ export function playFree(stage, ctx) {
   const editTools = h('div', { class: 'mat-tools edit-tools' }, clearBtn, undoBtn, hintBtn, finishTool, status);
   const mat = h('div', { class: 'mat free-mat' }, legend, sticky, host, stamp, editTools, tools.el, tools.pad);
 
-  // ── 작업 지시서: 설계 주문 ────────────────────
+  // ── 작업 지시서: 설계 주문 · 도감 주문 ────────────────────
   const order = ctx.ui.order({ kind: stage.order ?? '설계 주문', label: '설계 판' });
   order.counter.classList.add('q-counter');
-  const predictButton = (value, iconName, text) => h('button', {
-    type: 'button',
-    class: 'btn answer-btn predict-btn',
-    dataset: { answer: value },
-    disabled: true,
-    onclick: () => predict(value),
-  }, h('span', { class: `answer-sym sym-${value}` }, icon(iconName)), h('span', null, text));
-  const predictYes = predictButton('yes', 'ring', '될 거예요');
-  const predictNo = predictButton('no', 'cross', '안 될 거예요');
-  const predictNote = h('p', { class: 'predict-note' });
+  // 접기 전에 될지 묻지 않는다: 6장을 이어 놓으면 [접어 보기] 하나로 접는다 (spec 16-12)
+  const foldBtn = h('button', { type: 'button', class: 'btn btn-primary free-fold', disabled: true, onclick: () => foldNow() }, icon('play'), h('span', null, '접어 보기'));
+  const foldNote = h('p', { class: 'free-note' });
   const traySlot = h('div', { class: 'tray' });
-  const editSection = h('div', { class: 'free-edit' },
-    traySlot,
-    h('div', { class: 'predict' },
-      h('p', { class: 'predict-q' }, '접기 전에 예상해요'),
-      h('div', { class: 'answer-row' }, predictYes, predictNo),
-      predictNote,
-    ),
-  );
+  const editSection = h('div', { class: 'free-edit' }, traySlot, h('div', { class: 'free-go' }, foldBtn, foldNote));
   const noteSlot = h('div', { class: 'reason-slot' });
   const pickSlot = h('div', { class: 'pick-slot' });
   const bonusSlot = h('div', { class: 'bonus-slot' });
@@ -114,13 +117,13 @@ export function playFree(stage, ctx) {
   const dexSlots = new Map(CUBE_NETS.map((n) => [n.name, h('li', { class: 'dex-slot', dataset: { net: n.name } })]));
   const noteCount = h('b', null, '0');
   const noteSlotEl = h('li', { class: 'dex-slot dex-note' }, h('span', { class: 'dex-note-text' }, icon('cross'), '노트'), noteCount);
-  const dexCount = h('span', { class: 'dex-count' });
+  const dexCountEl = h('span', { class: 'dex-count' });
   // 도감 칸을 그대로 두면 오른쪽 판 안쪽이 넘치는 낮은 화면에서만 칸을 접고 머리 한 줄("전개도 도감 3 / 11 · 노트 5 / 24")만 보인다
   // — 까닭 쪽지·버튼이 판 안에 다 들어오게 (fitDex, spec 16-10)
   const dexNoteLine = h('span', { class: 'dex-note-line', hidden: true });
   const dexGrid = h('ul', { class: 'dex-grid' }, [...dexSlots.values()], noteSlotEl);
   const dexEl = h('section', { class: 'dex', 'aria-label': '전개도 도감' },
-    h('div', { class: 'dex-head' }, h('b', null, icon('book'), '전개도 도감'), h('span', { class: 'dex-counts' }, dexCount, dexNoteLine)),
+    h('div', { class: 'dex-head' }, h('b', null, icon('book'), '전개도 도감'), h('span', { class: 'dex-counts' }, dexCountEl, dexNoteLine)),
     dexGrid,
   );
   function foldDex(folded) {
@@ -184,18 +187,15 @@ export function playFree(stage, ctx) {
     // 화면 읽기: 판의 안내 + (상태가 바뀌었으면) 접을 수 있는지 한 번에
     let extra = '';
     if (r.reason !== lastReason) {
-      if (r.ready) extra = ' 이제 될지 예상하고 접어 볼 수 있어요.';
+      if (r.ready) extra = ' 이제 접어 볼 수 있어요.';
       else if (r.reason === 'apart') extra = ' 떨어진 면이 있어요. 한 장으로 이어 놓아야 접을 수 있어요.';
     }
     lastReason = r.reason;
     if (message || extra) ctx.feedback.announce(`${message ?? ''}${extra}`.trim());
     board.markDetached(r.reason === 'apart' ? r.detached.map((i) => st.labels[i]) : []);
-    predictYes.disabled = !r.ready;
-    predictNo.disabled = !r.ready;
-    predictNote.classList.toggle('is-wrong', r.reason === 'apart');
-    if (r.reason === 'count') predictNote.textContent = '면 6장을 모두 놓으면 예상하고 접을 수 있어요.';
-    else if (r.reason === 'apart') predictNote.textContent = '떨어진 면이 있어요. 전개도는 한 장으로 이어져 있어야 접을 수 있어요.';
-    else predictNote.textContent = rewardsOn() ? `고르면 바로 접혀요. 처음 접는 모양은 예상이 맞으면 +${XP.first}` : '고르면 바로 접혀요.';
+    foldBtn.disabled = !r.ready;
+    foldNote.classList.toggle('is-wrong', r.reason === 'apart');
+    foldNote.textContent = FREE_FOLD_NOTES[r.reason ?? 'ready'];
     statusCount.textContent = `${st.count} / ${st.total}`;
     statusExtra.textContent = r.reason === 'apart' ? ' · 떨어진 면이 있어요' : '';
     undoBtn.disabled = !board.canUndo();
@@ -203,6 +203,12 @@ export function playFree(stage, ctx) {
   }
 
   function setProgress() {
+    if (dexMode) {
+      const count = dexCount();
+      order.setCounter(`전개도 도감 ${count} / ${dexTotal}`);
+      ctx.setProgress?.(count, dexTotal, { label: '도감', done: count });
+      return;
+    }
     const found = session.found().size;
     order.setCounter(`찾은 전개도 ${Math.min(found, goal)} / ${goal}`);
     ctx.setProgress?.(Math.min(found, goal), goal, { label: '찾은 전개도', done: found, check: true });
@@ -211,7 +217,7 @@ export function playFree(stage, ctx) {
   /** 도감 띠: 찾은 칸은 작은 그림, 못 찾은 칸은 ?, 이번 판에 처음 찾은 칸은 "새로!", 방금 접은 모양과 같은 칸은 파랑 테두리 */
   function renderDex({ same = null } = {}) {
     const { found, total } = ctx.collection('cube-nets');
-    dexCount.textContent = `${found.size} / ${total}`;
+    dexCountEl.textContent = `${found.size} / ${total}`;
     CUBE_NETS.forEach((n, i) => {
       const slot = dexSlots.get(n.name);
       const got = found.has(n.name);
@@ -262,7 +268,9 @@ export function playFree(stage, ctx) {
       hintText.textContent = '그림자 힌트';
       return;
     }
-    const net = hintNet(session.found(), ctx.collection('cube-nets').found);
+    // 그림자: 아직 못 찾은 전개도 하나. 도감 주문은 도감에 없는 것(이번 판이 아니라 이 기기에서 못 찾은 것)
+    const dexFound = ctx.collection('cube-nets').found;
+    const net = hintNet(dexMode ? dexFound : session.found(), dexFound);
     const cells = net ? centerOnBoard(net.cells, size) : null;
     if (!cells) return;
     hintLevel = 2;
@@ -284,14 +292,14 @@ export function playFree(stage, ctx) {
     tools.pad.hidden = true;
     stamp.hidden = true;
     resultSection.hidden = true;
-    buttonsSlot.replaceChildren();
+    showStop();
     foldDex(false);
     board.el.hidden = false;
     editTools.hidden = false;
     editSection.hidden = false;
     sticky.hidden = hintLevel === 0;
     legend.hidden = !sticky.hidden;
-    finishTool.hidden = !goalReached;
+    finishTool.hidden = dexMode || !goalReached;
     board.setEnabled(true);
     if (!keep) board.clearAll();
     renderDex();
@@ -313,31 +321,33 @@ export function playFree(stage, ctx) {
     resultSection.hidden = false;
   }
 
-  // ── 예상하고 접기 ─────────────────────────────
-  function predict(value) {
+  // ── 접어 보기 ─────────────────────────────
+  function foldNow() {
     if (mode !== 'edit') return;
     const st = board.state();
     if (!boardReadiness(st.cells, labels.length).ready) return;
     const layout = board.layout(); // 판을 숨기기 전에 칸 크기·자리를 잰다
-    const step = session.fold(st.cells, st.labels, value);
-    // 도감·노트 등록이 먼저다: 모양은 접는 순간 "접어 본 모양"이 되고(등록 점수와 함께 바로 저장), 예상 점수는 그때 실제로
-    // 새로 들어간 모양에만 준다. 처음 접는 모양의 답은 "이 기기에서 한 번만 점수"(scored: 'once' — 별 3개 뒤에도 받고 바로 저장),
-    // 이미 접어 본 모양은 기록·별에는 넣고 점수는 없다(scored: false). 점수는 엔진이 계산하고 여기서는 오른 만큼만 읽는다
+    const dexBefore = dexCount();
+    const step = session.fold(st.cells, st.labels);
+    // 도감·노트 등록이 먼저다: 모양은 접는 순간 "접어 본 모양"이 되고(등록 점수와 함께 바로 저장), 만들기 성공 점수는 그때 실제로
+    // 새로 들어간 모양에만 준다. 처음 접는 모양의 기록은 "이 기기에서 한 번만 점수"(scored: 'once' — 별 3개 뒤에도 받고 바로 저장),
+    // 이미 접어 본 모양은 기록에는 넣고 점수는 없다(scored: false). 점수는 엔진이 계산하고 여기서는 오른 만큼만 읽는다
     const before = playXp();
     const collected = step.collect ? ctx.collect(step.collect.id, step.collect.item) : null;
     const afterCollect = playXp();
     const first = step.first && Boolean(collected?.isNew);
-    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.correct, tag: step.tag, given: value, expected: step.expected, scored: first ? 'once' : false });
+    // 기록: 접은 것 하나가 학습 기록 하나 — 정육면체가 되면 맞음, 안 되면 그 까닭의 오개념 tag
+    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.valid, tag: step.tag, given: step.name, expected: FREE_EXPECTED, scored: first ? 'once' : false });
     const gain = { discover: afterCollect - before, answer: playXp() - afterCollect };
     earned.answer += gain.answer;
     earned[step.valid ? 'nets' : 'notes'] += gain.discover;
     if (step.kind === 'new' && collected?.isNew) newThisPlay.add(step.name);
 
     enterFold();
-    // 좁은 화면(휴대폰)에서 예상 버튼을 누르느라 내려가 있으면, 접히는 매트가 보이게 올린다
+    // 좁은 화면(휴대폰)에서 [접어 보기]를 누르느라 내려가 있으면, 접히는 매트가 보이게 올린다
     if (!globalThis.matchMedia?.('(min-width: 901px)').matches) mat.scrollIntoView?.({ block: 'nearest' });
     view.setNet(step.net, { layout });
-    // 까닭 고르기를 할 때는 고르기(넘어가기) 전까지 무대의 까닭 표시(이름표·겹쳐요·비어요·●)를 보이지 않는다
+    // 안 되는 모양은 까닭 고르기가 먼저다: 고르기(넘어가기) 전까지 무대의 까닭 표시(이름표·겹쳐요·비어요·●)를 보이지 않는다
     const feedback = freeFeedback(step);
     const reasonFirst = !feedback.marks;
     if (feedback.marks) view.reveal();
@@ -345,17 +355,13 @@ export function playFree(stage, ctx) {
     tools.lock(false);
     view.animateTo(1);
 
-    // 알림 · 소리 (알림은 짧게, 긴 문장은 작업 지시서의 쪽지에)
-    const { toast } = feedback;
-    if (step.kind === 'repeat') {
-      ctx.sfx.play('click');
-      ctx.feedback.info(toast);
-    } else if (step.correct) {
+    // 알림 · 소리 (알림은 짧게, 긴 문장은 작업 지시서의 쪽지에). 안 되는 모양은 틀린 것이 아니라 탐구라 안내 알림으로만 알린다
+    if (step.kind === 'repeat') ctx.sfx.play('click');
+    if (feedback.tone === 'correct') {
       ctx.sfx.play('correct');
-      ctx.feedback.correct(toast);
+      ctx.feedback.correct(feedback.toast);
     } else {
-      ctx.sfx.play('wrong');
-      ctx.feedback.wrong(toast);
+      ctx.feedback.info(feedback.toast);
     }
 
     // 무대 도장: 새 전개도 발견
@@ -365,13 +371,16 @@ export function playFree(stage, ctx) {
       ctx.feedback.celebrate?.({ kind: 'found', at: stamp });
     }
 
-    showNote(step, collected, feedback.note);
+    // 도감 주문: 새 전개도로 별이 하나 늘었으면(6칸·9칸) 쪽지에 알린다
+    const milestone = dexMode && step.kind === 'new' && collected?.isNew ? dexMilestone(dexBefore, dexCount()) : '';
+    showNote(step, collected, feedback, milestone);
     showBonus(step, first, gain);
     renderDex({ same: step.valid && step.kind !== 'new' ? step.name : null });
     setProgress();
 
-    // 힌트 조건
-    if (step.valid && step.kind !== 'repeat') resetHint();
+    // 힌트 조건: 새 전개도를 찾으면(도감 주문은 도감에 새로 들어가면) 처음부터 다시 센다
+    const progressed = dexMode ? step.kind === 'new' : step.valid && step.kind !== 'repeat';
+    if (progressed) resetHint();
     else if (session.invalidRun() >= HINT_AFTER_INVALID) setHintReady(true);
 
     // 버튼
@@ -380,7 +389,7 @@ export function playFree(stage, ctx) {
     if (goalReached) setHintReady(false);
     showButtons({ justReached });
 
-    // 까닭 고르기 (안 되는 모양을 "안 될 거예요"로 맞혔을 때, 선택)
+    // 까닭 고르기 (안 되는 모양을 접었을 때, 선택)
     pickSlot.replaceChildren();
     if (reasonFirst) {
       const pick = createReasonPick({
@@ -393,7 +402,7 @@ export function playFree(stage, ctx) {
           order.el.classList.remove('is-picking');
           // 고른 뒤(맞든 틀리든, 넘어가도) 까닭 문장과 무대의 까닭 표시를 보인다
           view.reveal();
-          showNote(step, collected, freeFeedback(step, { picked: true }).note);
+          showNote(step, collected, freeFeedback(step, { picked: true }), milestone);
           showBonus(step, first, gain, xp);
           fitDex(); // 까닭 문장이 들어가 글이 길어졌다
           buttonsSlot.querySelector('button')?.focus({ preventScroll: true });
@@ -407,20 +416,22 @@ export function playFree(stage, ctx) {
     fitDex(); // 쪽지·버튼이 다 놓인 뒤에 잰다
   }
 
-  function showNote(step, collected, text) {
-    const lines = [text];
+  /** 쪽지: 되면 초록 ✓, 안 되는 모양은 까닭을 고른 뒤에 벽돌색 까닭 쪽지(그 전에는 안내 쪽지) */
+  function showNote(step, collected, feedback, extra = '') {
+    const lines = [feedback.note];
     if (step.kind === 'invalid' && collected) {
       lines.push(collected.isNew ? `노트에 적었어요 (${collected.count} / ${collected.total}).` : `노트에 이미 있는 모양이에요 (${collected.count} / ${collected.total}).`);
     }
-    const type = step.kind === 'repeat' ? 'info' : step.correct ? 'correct' : 'wrong';
-    const note = ctx.ui.note({ type, title: step.title, text: lines.join(' ') });
+    if (extra) lines.push(extra);
+    const type = feedback.tone;
+    const note = ctx.ui.note({ type, title: feedback.title, text: lines.join(' ') });
     note.classList.add('reason', type === 'correct' ? 'is-correct' : type === 'wrong' ? 'is-wrong' : 'is-info');
     note.setAttribute('role', 'status');
     noteSlot.replaceChildren(note);
   }
 
   /**
-   * 보너스 쪽지: 이번 접기로 엔진이 준 점수(gain: 예상 답 answer · 도감·노트 등록 discover, explainXp: 까닭 설명)를 글로 보인다.
+   * 보너스 쪽지: 이번 접기로 엔진이 준 점수(gain: 만들기 성공 answer · 도감·노트 등록 discover, explainXp: 까닭 설명)를 글로 보인다.
    * 점수는 이 기기에서 처음 접는 모양(first)에만 있다 — 별 3개를 받은 뒤 다시 하는 판에서도 같다. 이미 접어 본 모양은 까닭을 알려 준다.
    */
   function showBonus(step, first, gain, explainXp = 0) {
@@ -432,64 +443,106 @@ export function playFree(stage, ctx) {
       return;
     }
     if (!first) {
-      // 전에(다른 판에서) 접어 본 모양: 점수가 없는 까닭을 한 줄로
+      // 전에(다른 판·다른 단계에서) 접어 본 모양: 점수가 없는 까닭을 한 줄로
       bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, '전에 접어 본 모양'), '이라 점수는 없어요.'));
       return;
     }
     const parts = [];
     if (gain.discover > 0) parts.push(`${step.valid ? '새 발견' : '노트에 새 모양'} +${gain.discover}`);
     if (gain.answer > 0) {
-      parts.push(`예측 적중 +${Math.min(gain.answer, XP.first)}`);
+      parts.push(`만들기 성공 +${Math.min(gain.answer, XP.first)}`);
       if (gain.answer > XP.first) parts.push(`다시 일어서기·연속 +${gain.answer - XP.first}`);
     }
     if (explainXp > 0) parts.push(`까닭 설명 +${explainXp}`);
     const streak = ctx.streak?.() ?? 0;
-    if (step.correct && gain.answer > 0 && streak >= 2) parts.push(`연속 ${streak}번`);
-    // 틀린 뒤: 다음에 처음 접는 모양의 예상을 맞히면 다시 일어서기 +1
-    const bounce = !step.correct && peek.bounceReady;
+    if (step.valid && gain.answer > 0 && streak >= 2) parts.push(`연속 ${streak}번`);
+    // 안 되는 모양을 처음 접은 뒤: 다음에 새 전개도를 만들면 다시 일어서기 +1
+    const bounce = !step.valid && peek.bounceReady;
     if (parts.length === 0 && !bounce) return;
     bonusSlot.replaceChildren(ctx.ui.bonus(
       parts.length > 0 && h('b', null, parts.join(' · ')),
-      bounce && [parts.length > 0 ? ' · ' : null, h('b', null, '다시 일어서기'), ` · 다음 새 모양 예상을 맞히면 +${XP.bounce}`],
+      bounce && [parts.length > 0 ? ' · ' : null, h('b', null, '다시 일어서기'), ` · 다음에 새 전개도를 만들면 +${XP.bounce}`],
     ));
   }
 
-  /** 솜씨 점수를 쓰는지 (rewards.off가 아님). 처음 접는 모양의 점수는 별과 상관없이 받는다 */
-  const rewardsOn = () => Boolean(ctx.reward.peek?.()?.on);
+  const actionButton = (cls, iconName, text, onclick, { after = false } = {}) => h('button', { type: 'button', class: `btn ${cls}`, onclick },
+    after ? [h('span', null, text), icon(iconName)] : [icon(iconName), h('span', null, text)]);
+  const backToBoard = (keep) => () => {
+    ctx.sfx.play('click');
+    enterEdit({ keep });
+    board.focus();
+  };
+
+  /** 도감 주문의 [오늘은 여기까지]: 6칸부터. 지금 끝내면 받는 별과 다음 별까지를 함께 적는다(좁은 세 버튼 줄에서는 이름만) */
+  function stopButton() {
+    const count = dexCount();
+    const stars = dexStars(count);
+    const next = dexNextStar(count);
+    return h('button', { type: 'button', class: 'btn free-stop', onclick: () => finish() },
+      h('span', { class: 'stop-main' }, icon('flag'), h('span', null, '오늘은 여기까지')),
+      h('small', { class: 'stop-sub' }, `지금 끝내면 별 ${stars}개${next ? ` · ${next}칸이면 별 ${stars + 1}개` : ''}`),
+    );
+  }
+
+  /** 놓는 중의 아래쪽 줄 (도감 주문만): 11칸이면 [결과 보기], 6칸부터 [오늘은 여기까지], 그 전에는 별을 받는 칸 수 안내 */
+  function showStop() {
+    if (!dexMode) {
+      buttonsSlot.replaceChildren();
+      return;
+    }
+    const count = dexCount();
+    if (count >= dexTotal) {
+      buttonsSlot.replaceChildren(
+        h('p', { class: 'goal-done' }, icon('check'), `전개도 ${dexTotal}가지를 모두 찾았어요!`),
+        actionButton('btn-primary free-finish', 'play', '결과 보기', () => finish(), { after: true }),
+      );
+    } else if (count >= DEX_STOP_MIN) buttonsSlot.replaceChildren(stopButton());
+    else buttonsSlot.replaceChildren(h('p', { class: 'dex-rule' }, icon('star'), `도감 ${DEX_STOP_MIN}칸을 채우면 별 1개를 받고 끝낼 수 있어요.`));
+  }
 
   function showButtons({ justReached }) {
-    const fix = h('button', { type: 'button', class: 'btn btn-primary free-fix', onclick: () => {
-      ctx.sfx.play('click');
-      enterEdit({ keep: true });
-      board.focus();
-    } }, icon('unfold'), '펴서 고치기');
-    const fresh = h('button', { type: 'button', class: 'btn free-new', onclick: () => {
-      ctx.sfx.play('click');
-      enterEdit({ keep: false });
-      board.focus();
-    } }, icon('trash'), '새로 만들기');
-    const result = h('button', { type: 'button', class: 'btn btn-primary free-finish', onclick: () => finish() }, '결과 보기', icon('play'));
+    const fix = actionButton('btn-primary free-fix', 'unfold', '펴서 고치기', backToBoard(true));
+    const fresh = actionButton('free-new', 'trash', '새로 만들기', backToBoard(false));
+    const result = actionButton('btn-primary free-finish', 'play', '결과 보기', () => finish(), { after: true });
     if (justReached) {
-      const more = h('button', { type: 'button', class: 'btn free-more', onclick: () => {
-        ctx.sfx.play('click');
-        enterEdit({ keep: false });
-        board.focus();
-      } }, '더 찾아보기');
-      buttonsSlot.replaceChildren(h('p', { class: 'goal-done' }, icon('check'), `서로 다른 전개도 ${goal}가지를 모두 찾았어요!`), h('div', { class: 'btn-pair' }, result, more));
+      const done = h('p', { class: 'goal-done' }, icon('check'),
+        dexMode ? `전개도 ${dexTotal}가지를 모두 찾았어요! 도감을 다 채웠어요.` : `서로 다른 전개도 ${goal}가지를 모두 찾았어요!`);
+      // 도감 주문은 11칸을 채우면 끝이다: [결과 보기]만 남긴다. 내 맘대로 전개도는 더 찾아볼 수 있다
+      const more = dexMode ? null : h('button', { type: 'button', class: 'btn free-more', onclick: backToBoard(false) }, '더 찾아보기');
+      buttonsSlot.replaceChildren(done, more ? h('div', { class: 'btn-pair' }, result, more) : result);
       result.focus({ preventScroll: true });
       return;
     }
-    fix.classList.toggle('btn-primary', !goalReached);
-    // 목표를 채운 뒤에는 세 버튼을 한 줄에 놓는다(두 줄이면 낮은 화면에서 판이 넘쳐 아래 버튼이 잘린다)
-    buttonsSlot.replaceChildren(goalReached ? h('div', { class: 'btn-trio' }, result, fix, fresh) : h('div', { class: 'btn-pair' }, fix, fresh));
-    (goalReached ? result : fix).focus({ preventScroll: true });
+    if (goalReached) {
+      // 목표를 채운 뒤에는 세 버튼을 한 줄에 놓는다(두 줄이면 낮은 화면에서 판이 넘쳐 아래 버튼이 잘린다)
+      fix.classList.remove('btn-primary');
+      buttonsSlot.replaceChildren(h('div', { class: 'btn-trio' }, result, fix, fresh));
+      result.focus({ preventScroll: true });
+      return;
+    }
+    if (dexMode && dexCount() >= DEX_STOP_MIN) {
+      // 도감 주문: 6칸부터는 접은 장면에서도 [오늘은 여기까지]로 끝낼 수 있다 (세 버튼 한 줄)
+      buttonsSlot.replaceChildren(h('div', { class: 'btn-trio has-stop' }, stopButton(), fix, fresh));
+    } else buttonsSlot.replaceChildren(h('div', { class: 'btn-pair' }, fix, fresh));
+    fix.focus({ preventScroll: true });
   }
 
   // ── 끝내기: 결과 "오늘의 솜씨" ─────────────────
   function finish() {
     const sum = freeSummary(session.history());
-    // 별 3개를 받은 뒤 다시 한 판의 안내: 엔진 기본 문장("연습 점수는 없어요") 대신 이 단계의 규칙을 알려 준다
-    ctx.finish({ highlights: freeHighlights(sum, { earned, explainCount }), practiceNote: FREE_REPLAY_NOTE });
+    // 결과의 기록 칸은 정답률 대신 "찾은 전개도 · 접어 본 모양"으로 보인다(stats). 별 3개를 받은 뒤 다시 한 판의 안내도 이 단계의 말로
+    if (dexMode) {
+      const count = dexCount();
+      if (count < DEX_STOP_MIN) return;
+      ctx.finish({
+        stars: dexStars(count),
+        highlights: dexHighlights(sum, { earned, explainCount, dexCount: count, dexTotal }),
+        stats: dexStats(sum),
+        practiceNote: FREE_REPLAY_NOTE,
+      });
+      return;
+    }
+    ctx.finish({ stars: freeStars(sum.found), highlights: freeHighlights(sum, { earned, explainCount }), stats: freeStats(sum), practiceNote: FREE_REPLAY_NOTE });
   }
 
   // Ctrl+Z: 되돌리기 (놓는 중일 때. 누른 버튼이 꺼져 초점이 문서로 가도 되게 문서에서 받는다)

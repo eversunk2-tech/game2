@@ -55,6 +55,7 @@ createGameApp({
       b('끝내기', () => { ctx.finish(); }),
       b('솜씨 칸으로 끝내기', () => { ctx.finish({ highlights: [{ icon: 'target', label: '예측 적중', value: '4 / 5', xp: 8 }, { icon: '없는-아이콘', label: '새 모양', value: '2가지', xp: 10 }] }); }),
       b('실패로 끝내기', () => { ctx.finish({ cleared: false }); }),
+      b('기록 칸 주고 끝내기', () => { ctx.finish({ stars: 2, stats: [{ label: '찾은 모양', value: '3가지' }, { label: '해 본 모양', value: '5가지' }] }); }),
     ));
   },
 }).start();
@@ -420,6 +421,61 @@ test('도전 주문서: 차시의 일반 단계를 모두 마치면 열리고, �
   await expect(btn(page, '시간 재기')).toHaveCount(0);
   await btn(page, '끝내기').click();
   await expect(page.locator('.time-line')).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
+test('결과 화면의 기록 칸: 시간 재기를 켜지 않은 도전 주문서는 걸린 시간이 없고, 게임이 stats를 주면 정답률·맞힘/시도·"다시 살펴볼 점" 대신 그 칸을 보인다', async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto(`${URL}?sound=off&unlock=all`);
+  await btn(page, '시작하기').click();
+  const stat = page.locator('.result-stats .stat');
+  // 보통 단계: 정답률 · 맞힘/시도 · 걸린 시간 (지금까지와 같다), 틀린 답이 있으면 "다시 살펴볼 점"
+  await page.locator('.stage-path .stage-card').first().click();
+  await btn(page, '틀림').click();
+  await btn(page, '맞힘').click();
+  await btn(page, '끝내기').click();
+  await expect(stat.locator('dt')).toHaveText(['정답률', '맞힘/시도', '걸린 시간']);
+  await expect(page.locator('.review-note')).toContainText('시험 오개념 (1번)');
+  // 게임이 기록 칸을 준 판(맞힘·틀림으로 보이지 않는 단계): 정답률·맞힘/시도 자리에 그 칸, "다시 살펴볼 점"도 없다. 걸린 시간은 그대로
+  await btn(page, '다시 하기').click();
+  await btn(page, '틀림').click();
+  await btn(page, '맞힘').click();
+  await btn(page, '기록 칸 주고 끝내기').click();
+  await expect(stat.locator('dt')).toHaveText(['찾은 모양', '해 본 모양', '걸린 시간']);
+  await expect(stat.locator('dd').first()).toHaveText('3가지');
+  await expect(page.locator('.screen-result')).not.toContainText(/정답률|번 중 \d+번 맞힘/);
+  await expect(page.locator('.review-note')).toHaveCount(0);
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  // 학습 기록에는 답이 그대로 남는다(선생님이 본다)
+  await btn(page, '단계 선택').click();
+  await btn(page, '처음 화면').click();
+  await btn(page, '학습 기록').click();
+  await expect(page.locator('.report-table tbody tr').first()).toContainText('1/2');
+  await expect(page.locator('.mistakes')).toContainText('시험 오개념 (2번)');
+  // 시간 재기를 고를 수 있는 도전 주문서: 켜지 않고 끝내면 결과에 걸린 시간·내 기록이 없다
+  await btn(page, '처음 화면').click();
+  await btn(page, '시작하기').click();
+  await page.locator('.challenge-card').first().click();
+  await expect(btn(page, '시간 재기')).toHaveAttribute('aria-pressed', 'false');
+  await btn(page, '맞힘').click();
+  await btn(page, '끝내기').click();
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(stat.locator('dt')).toHaveText(['정답률', '맞힘/시도']);
+  await expect(page.locator('.time-line')).toHaveCount(0);
+  // 켜고 끝내면 걸린 시간과 내 기록이 보인다
+  await btn(page, '다시 하기').click();
+  await btn(page, '시간 재기').click();
+  await btn(page, '맞힘').click();
+  await btn(page, '끝내기').click();
+  await expect(stat.locator('dt')).toHaveText(['정답률', '맞힘/시도', '걸린 시간']);
+  await expect(page.locator('.time-line')).toContainText('내 기록');
+  // 시간 재기가 없는 도전 주문서는 지금까지처럼 걸린 시간이 보인다
+  await btn(page, '단계 선택').click();
+  await page.locator('.challenge-card').nth(1).click();
+  await btn(page, '맞힘').click();
+  await btn(page, '끝내기').click();
+  await expect(stat.locator('dt')).toHaveText(['정답률', '맞힘/시도', '걸린 시간']);
   expect(errors).toEqual([]);
 });
 
