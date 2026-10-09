@@ -93,12 +93,48 @@ createGameApp({
 </script></body></html>`;
 const ONCE_URL = 'http://engine.test/once.html';
 
+// 끌어다 놓기 시험 페이지: 카드가 스크롤 상자(overflow: hidden auto) 안에 있고, 상자는 그 밖에 있다.
+// 카드 모양은 조상 선택자·조상의 CSS 변수에 기대게 했다(복제가 <body> 아래에서도 같은 모양인지 보려고). 상자 '넣는 곳'만 카드를 옮겨 넣는다
+const DND_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/src/shared/styles/base.css">
+<style>
+  body { margin: 0; padding: 20px; }
+  #root { display: flex; flex-wrap: wrap; gap: 30px; align-items: flex-start; --card: 64px; --card-color: rgb(255, 216, 107); }
+  .clip { position: relative; z-index: 0; width: 240px; height: 96px; padding: 10px; overflow: hidden auto; border: 2px solid rgb(30, 33, 64); background: rgb(240, 240, 240); }
+  .clip .card { width: var(--card); height: var(--card); margin-right: 6px; border: 2px solid rgb(30, 33, 64); border-radius: 8px; background: var(--card-color); font-size: 24px; font-weight: 700; }
+  .clip .card .lab { color: rgb(200, 40, 40); }
+  .bin { position: relative; z-index: 1; width: 150px; height: 150px; border: 2px dashed rgb(30, 33, 64); background: rgb(255, 255, 255); }
+  .bin .card { width: 40px; height: 40px; }
+  #outside { margin-top: 40px; padding: 30px; }
+</style></head><body>
+<div id="root">
+  <div class="clip">
+    <button type="button" class="card dnd-item" id="card-a" data-v="가" aria-pressed="false"><span class="lab">가</span></button><button type="button" class="card dnd-item" data-v="나" aria-pressed="false"><span class="lab">나</span></button><button type="button" class="card dnd-item" data-v="다" aria-pressed="false"><span class="lab">다</span></button>
+  </div>
+  <button type="button" class="bin dnd-target" data-bin="yes">넣는 곳</button>
+  <button type="button" class="bin dnd-target" data-bin="no">안 받는 곳</button>
+</div>
+<p id="outside">놓을 수 없는 곳</p>
+<script type="module">
+import { enableDragDrop } from '/src/shared/ui/drag-drop.js';
+window.drops = [];
+window.dnd = enableDragDrop({
+  root: document.getElementById('root'),
+  onDrop(item, target) {
+    window.drops.push(item.dataset.v + '>' + target.dataset.bin);
+    if (target.dataset.bin === 'yes') target.append(item);
+  },
+});
+</script></body></html>`;
+const DND_URL = 'http://engine.test/dnd.html';
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }));
   await page.route('http://engine.test/**', async (route) => {
     const { pathname } = new globalThis.URL(route.request().url());
     if (pathname === '/engine.html') return route.fulfill({ contentType: 'text/html', body: ENGINE_PAGE });
     if (pathname === '/once.html') return route.fulfill({ contentType: 'text/html', body: ONCE_PAGE });
+    if (pathname === '/dnd.html') return route.fulfill({ contentType: 'text/html', body: DND_PAGE });
     const file = path.resolve(`.${pathname}`);
     const contentType = file.endsWith('.css') ? 'text/css' : 'text/javascript';
     return route.fulfill({ contentType, body: await readFile(file, 'utf8') });
@@ -546,4 +582,279 @@ test('1366×680: 칭호 오름·새 도장 3개·다시 살펴볼 점·도전 �
   await page.keyboard.press('Escape');
   const { scrollHeight, innerHeight } = await page.evaluate(() => ({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight }));
   expect(scrollHeight).toBeLessThanOrEqual(innerHeight);
+});
+
+// ── 끌어다 놓기: 끄는 동안 보이는 복제 (ui/drag-drop.js) ─────────────
+/** 마우스(크롬북)·한 손가락 터치(태블릿, CDP)로 같은 끌기를 한다: down → move … → up */
+async function pointerOf(page, testInfo) {
+  if (testInfo.project.name !== 'tablet') {
+    return {
+      kind: 'mouse',
+      down: async (x, y) => { await page.mouse.move(x, y); await page.mouse.down(); },
+      move: (x, y) => page.mouse.move(x, y, { steps: 4 }),
+      up: () => page.mouse.up(),
+    };
+  }
+  const cdp = await page.context().newCDPSession(page);
+  const send = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y]) => ({ x, y })) });
+  let at = [0, 0];
+  return {
+    kind: 'touch',
+    down: async (x, y) => { at = [x, y]; await send('touchStart', [at]); },
+    move: async (x, y) => {
+      const from = at;
+      for (let i = 1; i <= 4; i += 1) {
+        at = [from[0] + ((x - from[0]) * i) / 4, from[1] + ((y - from[1]) * i) / 4];
+        await send('touchMove', [at]);
+      }
+    },
+    up: () => send('touchEnd', []),
+  };
+}
+
+/** 끄는 중인 화면: 복제(.dnd-ghost)의 자리·모양·잘림, 원래 카드, 강조된 상자, 남은 표시 */
+const dragState = (page) => page.evaluate(() => {
+  const round = (r) => [r.left, r.top, r.width, r.height].map((v) => Math.round(v * 10) / 10);
+  const ghosts = [...document.querySelectorAll('.dnd-ghost')];
+  const ghost = ghosts[0];
+  const item = document.querySelector('.dnd-item.is-dragging, .dnd-item.is-returning');
+  const look = (el) => {
+    const c = getComputedStyle(el);
+    const lab = el.querySelector('.lab');
+    return [c.backgroundColor, c.borderTopWidth, c.borderRadius, c.fontSize, c.fontWeight, lab ? getComputedStyle(lab).color : '', el.textContent.trim()].join(' | ');
+  };
+  // 복제가 어느 상자에도 잘리지 않는가: 조상 가운데 overflow가 visible이 아닌 것
+  const clippers = [];
+  for (let p = ghost?.parentElement; p; p = p.parentElement) {
+    const c = getComputedStyle(p);
+    if (c.overflowX !== 'visible' || c.overflowY !== 'visible') clippers.push(p.tagName);
+  }
+  const g = ghost ? getComputedStyle(ghost) : null;
+  return {
+    ghosts: ghosts.length,
+    ghost: ghost ? round(ghost.getBoundingClientRect()) : null,
+    ghostLook: ghost ? look(ghost) : null,
+    ghostParent: ghost?.parentElement.tagName ?? null,
+    ghostStyle: g ? [g.position, g.zIndex, g.pointerEvents, g.opacity, g.visibility] : null,
+    ghostHidden: ghost ? [ghost.getAttribute('aria-hidden'), ghost.inert, ghost.id, ghost.classList.contains('dnd-item')] : null,
+    clippers,
+    item: item ? round(item.getBoundingClientRect()) : null,
+    itemLook: item ? look(item) : null,
+    itemOpacity: item ? getComputedStyle(item).opacity : null,
+    itemClass: item ? [...item.classList].filter((c) => c.startsWith('is-')).join(' ') : null,
+    over: [...document.querySelectorAll('.dnd-target.is-over')].map((t) => t.dataset.bin),
+    rootDragging: document.getElementById('root').classList.contains('is-dragging-any'),
+    selected: document.querySelectorAll('.is-selected').length,
+    scroll: [window.scrollX, window.scrollY, document.querySelector('.clip').scrollTop],
+    ids: document.querySelectorAll('#card-a').length,
+  };
+});
+/** 끌기를 마친 뒤 남은 것이 없다: 복제, 끄는 중·돌아가는 중·강조 표시 */
+const NOTHING_LEFT = { ghosts: 0, item: null, over: [], rootDragging: false, selected: 0 };
+const leftOf = (s) => ({ ghosts: s.ghosts, item: s.item, over: s.over, rootDragging: s.rootDragging, selected: s.selected });
+const centerOf = async (locator) => {
+  const b = await locator.boundingBox();
+  return [b.x + b.width / 2, b.y + b.height / 2];
+};
+
+test('끌어다 놓기: 끄는 카드가 스크롤 상자 밖에서도 잘리지 않고 놓을 때까지 보인다(복제는 body 아래 맨 위, 모양·크기 같음, 원래 자리는 흐림). 놓으면 들어가고, 놓을 수 없는 곳·받지 않는 상자·Esc·취소에서는 제자리로 돌아가며 남는 것이 없다', async ({ page }, testInfo) => {
+  const errors = collectErrors(page);
+  // 창에 남아 있는 리스너 수(움직임·취소·키·가려짐). pointerup은 Playwright도 누를 때마다 붙였다 떼므로 세지 않는다
+  await page.addInitScript(() => {
+    const active = new Map();
+    const add = window.addEventListener.bind(window);
+    const remove = window.removeEventListener.bind(window);
+    window.addEventListener = (type, fn, ...rest) => {
+      if (/^(pointermove|pointercancel|keydown|blur)$/.test(type)) active.set(fn, (active.get(fn) ?? new Set()).add(type));
+      return add(type, fn, ...rest);
+    };
+    window.removeEventListener = (type, fn, ...rest) => {
+      active.get(fn)?.delete(type);
+      return remove(type, fn, ...rest);
+    };
+    window.listeners_ = () => [...active.values()].reduce((sum, types) => sum + types.size, 0);
+    document.addEventListener('pointerdown', (e) => { window.lastPointerId_ = e.pointerId; }, true);
+  });
+  await page.goto(DND_URL);
+  // 복제가 제자리로 돌아갈 때의 모습을 적어 둔다(150ms 안에 지나가므로 그 순간에 적는다): 복제의 움직임 설정·도착 자리, 원래 카드의 흐림
+  await page.evaluate(() => {
+    window.returns_ = [];
+    new MutationObserver((records) => {
+      for (const { target } of records) {
+        if (!target.classList?.contains('is-returning') || target.dataset.seen_) continue;
+        target.dataset.seen_ = '1';
+        if (target.classList.contains('dnd-ghost')) {
+          // 스타일은 클래스 바로 뒤에 적히므로 다음 차례에 읽는다
+          queueMicrotask(() => window.returns_.push(`복제 ${target.style.transition} → ${target.style.transform}`));
+        } else window.returns_.push(`카드 흐림 ${getComputedStyle(target).opacity}`);
+      }
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+  });
+  const returns = async () => {
+    const seen = await page.evaluate(() => window.returns_.splice(0));
+    await page.evaluate(() => { for (const el of document.querySelectorAll('[data-seen_]')) delete el.dataset.seen_; });
+    return seen.sort();
+  };
+  const pointer = await pointerOf(page, testInfo);
+  const card = (v) => page.locator(`#root .dnd-item[data-v="${v}"], #root .card[data-v="${v}"]`).first();
+  const bin = (name) => page.locator(`.bin[data-bin="${name}"]`);
+  const drops = () => page.evaluate(() => window.drops);
+  const listeners0 = await page.evaluate(() => window.listeners_());
+  const clip = await page.locator('.clip').boundingBox();
+
+  // 1) 가 → 넣는 곳. 문턱(8px) 전에는 복제가 없다
+  const [ax, ay] = await centerOf(card('가'));
+  const home = await card('가').boundingBox();
+  const [yx, yy] = await centerOf(bin('yes'));
+  await pointer.down(ax, ay);
+  await pointer.move(ax + 4, ay + 3);
+  expect((await dragState(page)).ghosts).toBe(0);
+  // 스크롤 상자 밖(아래로 150px)으로 끈다: 예전에는 여기서 카드가 잘려 보이지 않았다
+  const out = [ax + 30, ay + 150];
+  await pointer.move(...out);
+  let s = await dragState(page);
+  expect(s.ghosts).toBe(1);
+  expect(s.ghost[1]).toBeGreaterThan(clip.y + clip.height); // 복제 전체가 스크롤 상자 밖에 있다
+  // 집은 자리 그대로 포인터를 따라온다: 처음 자리에서 (30, 150)만큼, 크기는 카드와 같다
+  [home.x + 30, home.y + 150, home.width, home.height].forEach((v, i) => expect(Math.abs(s.ghost[i] - v), `복제 상자 ${s.ghost}`).toBeLessThanOrEqual(1));
+  expect([s.ghostParent, s.clippers]).toEqual(['BODY', []]); // 어느 상자에도 잘리지 않는다
+  expect(s.ghostStyle).toEqual(['fixed', '1000', 'none', '1', 'visible']);
+  expect(s.ghostHidden).toEqual(['true', true, '', false]); // 화면 읽기·초점·끌기 대상이 아니고 id가 겹치지 않는다
+  expect(s.ids).toBe(1);
+  expect(s.ghostLook).toBe('rgb(255, 216, 107) | 2px | 8px | 24px | 700 | rgb(200, 40, 40) | 가'); // 조상 선택자·CSS 변수로 정한 모양도 그대로
+  expect(s.itemLook).toBe(s.ghostLook);
+  // 원래 카드는 제자리에서 흐려진다 — 또렷한 카드가 둘로 보이지 않는다
+  expect(s.item).toEqual([home.x, home.y, home.width, home.height].map((v) => Math.round(v * 10) / 10));
+  expect([s.itemOpacity, s.itemClass, s.rootDragging]).toEqual(['0.35', 'is-dragging', true]);
+  expect(s.scroll).toEqual([0, 0, 0]); // 끄는 동안 페이지·상자가 스크롤되지 않는다
+  expect(await page.evaluate(() => window.listeners_())).toBeGreaterThan(listeners0);
+  // 상자 위에 오면 그 상자가 강조되고, 놓으면 들어간다. 복제·표시는 바로 없어진다
+  await pointer.move(yx, yy);
+  s = await dragState(page);
+  expect([s.ghosts, s.over]).toEqual([1, ['yes']]);
+  await pointer.up();
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+  expect(await drops()).toEqual(['가>yes']);
+  await expect(bin('yes').locator('.card')).toHaveCount(1);
+  expect(await page.evaluate(() => window.listeners_())).toBe(listeners0);
+
+  // 2) 나 → 안 받는 곳: onDrop은 불리지만 카드가 제자리에 그대로다 → 복제가 제자리로 돌아간 뒤 없어진다(그동안 원래 카드는 흐린 채)
+  const [bx, by] = await centerOf(card('나'));
+  const homeB = await card('나').boundingBox();
+  const [nx, ny] = await centerOf(bin('no'));
+  await pointer.down(bx, by);
+  await pointer.move(nx, ny);
+  expect((await dragState(page)).over).toEqual(['no']);
+  await pointer.up();
+  await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+  expect(await returns()).toEqual(['복제 transform 150ms ease-out → translate(0px, 0px)', '카드 흐림 0.35']);
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+  expect(await drops()).toEqual(['가>yes', '나>no']);
+  expect(await card('나').boundingBox()).toEqual(homeB);
+
+  // 3) 놓을 수 없는 곳에서 떼기: 놓기는 없고, 복제가 돌아가는 것이 보인다(끝나면 처음 자리에 온다)
+  const [ox, oy] = await centerOf(page.locator('#outside'));
+  await pointer.down(bx, by);
+  await pointer.move(ox, oy);
+  expect((await dragState(page)).over).toEqual([]);
+  // 돌아가는 동안 복제가 어디 있는지 프레임마다 적는다
+  await page.evaluate(() => {
+    window.flight_ = [];
+    const tick = () => {
+      const ghost = document.querySelector('.dnd-ghost.is-returning');
+      if (ghost) window.flight_.push(ghost.getBoundingClientRect().top);
+      if (document.querySelector('.dnd-ghost') || window.flight_.length === 0) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  await pointer.up();
+  await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+  expect(await returns()).toEqual(['복제 transform 150ms ease-out → translate(0px, 0px)', '카드 흐림 0.35']);
+  const flight = await page.evaluate(() => window.flight_);
+  // 한 번에 사라지지 않고 제자리 쪽으로(위로) 움직이는 것이 보인다 — 적힌 자리가 떼던 자리와 제자리 사이에서 줄어든다
+  expect(flight.length).toBeGreaterThanOrEqual(1);
+  expect(flight.every((top, i) => top <= oy && top >= homeB.y - 1 && (i === 0 || top <= flight[i - 1] + 0.5)), `돌아가는 자리 ${flight.map(Math.round)}`).toBe(true);
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+  expect(await drops()).toHaveLength(2);
+
+  // 4) Esc: 끌기를 그만둔다 — 복제는 돌아가고, 그 뒤 상자 위에서 떼어도 놓이지 않는다. 제 카드 위에서 떼어도 "고르기"가 되지 않는다
+  await pointer.down(bx, by);
+  await pointer.move(yx, yy);
+  expect((await dragState(page)).over).toEqual(['yes']);
+  await page.keyboard.press('Escape');
+  s = await dragState(page);
+  expect([s.over, s.rootDragging]).toEqual([[], false]);
+  await pointer.up();
+  await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+  expect(await returns()).toEqual(['복제 transform 150ms ease-out → translate(0px, 0px)', '카드 흐림 0.35']);
+  await pointer.down(bx, by);
+  await pointer.move(bx + 60, by + 90);
+  await page.keyboard.press('Escape');
+  await pointer.move(bx + 2, by + 2);
+  await pointer.up();
+  await page.waitForTimeout(250);
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+  expect(await drops()).toHaveLength(2);
+  expect(await page.evaluate(() => window.listeners_())).toBe(listeners0);
+
+  // 5) 끄는 도중 포인터가 취소되거나(pointercancel) 창이 가려지면(blur) 그 자리에서 그만둔다
+  for (const stop of ['pointercancel', 'blur']) {
+    await pointer.down(bx, by);
+    await pointer.move(yx, yy);
+    expect((await dragState(page)).ghosts).toBe(1);
+    await page.evaluate((type) => {
+      const id = window.lastPointerId_;
+      window.dispatchEvent(type === 'blur' ? new Event('blur') : new PointerEvent('pointercancel', { pointerId: id }));
+    }, stop);
+    await pointer.up();
+    await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+    expect(leftOf(await dragState(page)), stop).toEqual(NOTHING_LEFT);
+    expect(await drops(), stop).toHaveLength(2);
+    expect(await page.evaluate(() => window.listeners_()), stop).toBe(listeners0);
+    await page.waitForTimeout(50);
+  }
+
+  // 6) 눌러서 고르고 상자 누르기 · 키보드(Tab + Enter)는 그대로다
+  await card('나').click();
+  await expect(card('나')).toHaveAttribute('aria-pressed', 'true');
+  await bin('yes').click();
+  expect(await drops()).toEqual(['가>yes', '나>no', '나>yes']);
+  await card('다').focus();
+  await page.keyboard.press('Enter');
+  await bin('no').focus();
+  await page.keyboard.press('Enter');
+  expect(await drops()).toEqual(['가>yes', '나>no', '나>yes', '다>no']);
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+
+  // 7) 끄는 도중 화면이 치워지면(destroy) 복제·표시·리스너가 남지 않는다
+  const [cx, cy] = await centerOf(card('다'));
+  await pointer.down(cx, cy);
+  await pointer.move(yx, yy);
+  expect((await dragState(page)).ghosts).toBe(1);
+  await page.evaluate(() => window.dnd.destroy());
+  expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT);
+  expect(await page.evaluate(() => window.listeners_())).toBe(listeners0);
+  await pointer.up();
+  expect(await drops()).toHaveLength(4);
+  expect(errors).toEqual([]);
+});
+
+test.describe('끌어다 놓기 (움직임 줄이기)', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+
+  test('놓을 수 없는 곳에서 떼면 복제가 움직임 없이 바로 없어지고 카드는 제자리에 또렷하게 남는다', async ({ page }, testInfo) => {
+    const errors = collectErrors(page);
+    await page.goto(DND_URL);
+    const pointer = await pointerOf(page, testInfo);
+    const [ax, ay] = await centerOf(page.locator('.dnd-item[data-v="가"]'));
+    const [ox, oy] = await centerOf(page.locator('#outside'));
+    await pointer.down(ax, ay);
+    await pointer.move(ox, oy);
+    expect((await dragState(page)).ghosts).toBe(1);
+    await pointer.up();
+    expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT); // 같은 차례에 없어진다
+    expect(await page.locator('.dnd-item[data-v="가"]').evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+    expect(await page.evaluate(() => window.drops)).toEqual([]);
+    expect(errors).toEqual([]);
+  });
 });

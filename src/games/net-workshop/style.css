@@ -44,8 +44,8 @@
     repeating-linear-gradient(90deg, rgb(255 255 255 / 35%) 0 1px, transparent 1px 6px) top / 100% 5px no-repeat;
 }
 
-/* 매트 아래쪽 조작 띠: [접어 보기/펴기] [접는 정도] · 놓는 중: [모두 빼기] [되돌리기] [힌트] [놓은 면]
-   ([↺] [↻]는 무대 오른쪽 위 보기 조작판 .view-pad로 옮겼다) */
+/* 매트 아래쪽 조작 띠: [접어 보기/펴기] [접는 정도] [↺] [↻] · 놓는 중: [모두 빼기] [되돌리기] [힌트] [놓은 면]
+   ([↺] [↻]는 답하기 전에만 이 띠에 있고, 답한 뒤에는 무대 오른쪽 위 보기 조작판 .view-pad의 것을 쓴다 — 아래 .is-locked) */
 .mat-tools {
   position: absolute;
   left: 14px;
@@ -103,7 +103,8 @@
      [작게][위쪽][크게]
      [왼쪽][처음][오른쪽]
           [아래쪽]
-   무대보다 위 층이라 크게 본 입체가 밑으로 들어가도 버튼은 늘 눌린다. 버튼이 없는 칸은 무대 끌기가 그대로 된다 */
+   무대보다 위 층이라 크게 본 입체가 밑으로 들어가도 버튼은 늘 눌린다. 버튼이 없는 칸은 무대 끌기가 그대로 된다.
+   답한 뒤에만 나타난다(spec 17-16) — 답하기 전에는 펼친 전개도의 면·빈 자리를 가리지 않게 숨기고, 좌우 돌리기만 아래 띠에 둔다 */
 .view-pad {
   position: absolute;
   right: 14px;
@@ -118,6 +119,9 @@
   pointer-events: none;
 }
 .view-pad .btn { pointer-events: auto; min-height: var(--tap); }
+/* 답하기 전(view3d.js가 조작 띠와 조작판에 .is-locked): 조작판 없음, 아래 띠에 좌우 돌리기 둘. 답한 뒤: 조작판, 아래 띠의 둘은 숨김 */
+.view-pad.is-locked { display: none; }
+.fold-tools:not(.is-locked) .band-turn { display: none; }
 .view-left { grid-area: left; }
 .view-right { grid-area: right; }
 .view-up { grid-area: up; }
@@ -642,7 +646,7 @@
 .dex-head { display: flex; justify-content: space-between; align-items: baseline; }
 .dex-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; }
 .dex-count, .dex-note-line { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
-/* 안 되는 모양을 접은 장면: 도감 칸을 접고 머리 한 줄만 ("전개도 도감 3 / 11 · 노트 5 / 24") */
+/* 도감 칸을 펴 두면 넘치는 낮은 화면의 접은 장면(play-free.js fitDex): 칸을 접고 머리 한 줄만 ("전개도 도감 3 / 11 · 노트 5 / 24") */
 .dex.is-folded { gap: 0; }
 .dex-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
 .dex-slot {
@@ -719,6 +723,8 @@
   .free-mat { height: clamp(420px, calc(124px + (100vw - 60px) * 5 / 7), 530px); }
   .net-panel { height: auto; overflow: visible; }
   .free-edit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  /* 접은 장면의 쪽지 사이를 조금 좁혀(10 → 8px), 태블릿 세로에서 글이 가장 긴 장면(연속 칩 + 틀린 까닭)도 도감 칸을 편 채 한 화면에 들어오게 */
+  .free-result { gap: 8px; }
   .dex-grid { grid-template-columns: repeat(12, minmax(0, 1fr)); }
   .net-panel .next-btn { margin-top: 4px; }
 }
@@ -744,10 +750,16 @@
   /* 도장은 두 줄 조작 띠(아래 112px) 위로 */
   .found-stamp { --size: 96px; right: 12px; bottom: 124px; }
   /* 휴대폰: 결과 이름표는 무대 위쪽 띠에 따로 둔다 — 접힌 입체·"✗ 겹쳐요"와 겹치지 않게 (재검토 2 R2).
-     이름표가 무대 위로 나가 있어 overflow는 풀어 두고, 크게 본 입체가 조작 띠·매트 옆으로 넘어가지 않게 아래·좌우만 자른다 */
-  .mat > .fold-stage { inset: 54px 0 120px; overflow: visible; clip-path: inset(-54px 0 0 0); }
+     이름표가 무대 위로 나가 있어 overflow는 풀어 둔다. 크게 본 입체가 조작 띠·매트 옆으로 넘어가지 않게 아래·좌우를 자르는 것은
+     보기 조작이 되는 동안(.can-view)과 처음 모습으로 돌아가는 0.2초(.is-easing)에만 — 답하기 전과 다 편 전개도는 V1 이전처럼
+     무대 아래로 넘어간 면·빈 자리가 그대로 보이고 눌린다(spec 17-16, V1b-3) */
+  .mat > .fold-stage { inset: 54px 0 120px; overflow: visible; }
   /* 자유 배치: 무대의 왼쪽 위는 놓는 판 자리 그대로 두고(이어 접기 어긋남 0) 아래쪽만 두 줄 조작 띠만큼 줄인다 */
-  .free-host .fold-stage { inset: 0 0 50px; overflow: visible; clip-path: inset(-54px 0 0 0); }
+  .free-host .fold-stage { inset: 0 0 50px; overflow: visible; }
+  .mat > .fold-stage.can-view,
+  .mat > .fold-stage.is-easing,
+  .free-host .fold-stage.can-view,
+  .free-host .fold-stage.is-easing { clip-path: inset(-54px 0 0 0); }
   .stage-badge { top: -46px; left: 0; max-width: 100%; padding: 4px 10px 4px 8px; font-size: 0.92rem; line-height: 1.25; }
   .free-host .stage-badge { top: -46px; }
   /* 조작 띠 두 줄: 왼쪽에 [접어 보기/펴기] 위 · [접는 정도] 아래, 오른쪽에 보기 조작판 4칸 × 2줄
@@ -767,4 +779,15 @@
     gap: 4px 2px;
   }
   .view-tip { display: none; }
+  /* 휴대폰은 조작판이 아래 띠에 있어 무대를 가리지 않는다. 띠 두 줄을 답하기 전에도 그대로 두고(답하는 순간 화면이 밀리지 않게)
+     답하기 전에는 조작판의 좌우 돌리기 둘만 보인다 — 답하면 나머지 다섯이 제자리에 나타난다. 아래 띠의 좌우 돌리기는 쓰지 않는다.
+     답하기 전의 띠(V1b-2): 좌우 돌리기 둘을 붙여 놓고([위쪽] 자리까지) 잠긴 접기 막대를 둘째 줄 가득 넓힌다 — 구멍·빈 줄이 없게.
+     [접어 보기]는 그 자리 그 크기 그대로(너비 = 띠 너비 − 조작판 198px − 사이 6px)이고 매트·무대는 0px 움직인다 */
+  .view-pad.is-locked { display: grid; }
+  .view-pad.is-locked .view-new { display: none; }
+  .view-pad.is-locked .view-right { grid-area: up; }
+  .fold-tools.is-locked { right: 10px; }
+  .fold-tools.is-locked .fold-toggle { align-self: flex-start; width: calc(100% - 204px); }
+  .fold-tools .band-turn,
+  .fold-tools.is-locked .band-turn { display: none; }
 }

@@ -506,10 +506,10 @@ button, input, textarea, select { font: inherit; color: inherit; }
 
 /* ── 끌어다 놓기 (ui/drag-drop.js) ───────── */
 .dnd-item { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; transition: transform 0.15s ease-out; }
-.dnd-item.is-dragging {
-  position: relative; z-index: 50; pointer-events: none; cursor: grabbing;
-  transition: none; box-shadow: 6px 12px 0 rgb(30 33 64 / 22%);
-}
+/* 끄는 동안 보이는 것은 <body>에 붙인 복제(.dnd-ghost)다 — 스크롤 상자·overflow: hidden 상자에 잘리지 않고 늘 맨 위.
+   자리·크기·모양은 drag-drop.js가 인라인으로 적고, 여기서는 들어 올린 그림자만 정한다. 원래 item은 제자리에서 흐려진다 */
+.dnd-ghost { box-shadow: 6px 12px 0 rgb(30 33 64 / 22%) !important; cursor: grabbing; }
+.dnd-item.is-dragging, .dnd-item.is-returning { opacity: 0.35 !important; pointer-events: none; transition: none; }
 .dnd-item.is-selected { outline: 4px solid var(--primary); outline-offset: 3px; }
 .has-selection .dnd-target, .is-dragging-any .dnd-target { outline: 3px dashed var(--primary); outline-offset: 3px; }
 .dnd-target.is-over { outline: 4px solid var(--primary); background: var(--primary-soft); }

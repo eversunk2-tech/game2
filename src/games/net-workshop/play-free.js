@@ -115,7 +115,8 @@ export function playFree(stage, ctx) {
   const noteCount = h('b', null, '0');
   const noteSlotEl = h('li', { class: 'dex-slot dex-note' }, h('span', { class: 'dex-note-text' }, icon('cross'), '노트'), noteCount);
   const dexCount = h('span', { class: 'dex-count' });
-  // 안 되는 모양을 접은 장면에서는 도감 칸을 접고 머리 한 줄("전개도 도감 3 / 11 · 노트 5 / 24")만 보인다 — 까닭 쪽지·버튼이 판 안에 다 들어오게
+  // 도감 칸을 그대로 두면 오른쪽 판 안쪽이 넘치는 낮은 화면에서만 칸을 접고 머리 한 줄("전개도 도감 3 / 11 · 노트 5 / 24")만 보인다
+  // — 까닭 쪽지·버튼이 판 안에 다 들어오게 (fitDex, spec 16-10)
   const dexNoteLine = h('span', { class: 'dex-note-line', hidden: true });
   const dexGrid = h('ul', { class: 'dex-grid' }, [...dexSlots.values()], noteSlotEl);
   const dexEl = h('section', { class: 'dex', 'aria-label': '전개도 도감' },
@@ -126,6 +127,26 @@ export function playFree(stage, ctx) {
     dexEl.classList.toggle('is-folded', folded);
     dexGrid.hidden = folded;
     dexNoteLine.hidden = !folded;
+  }
+  /**
+   * 접은 장면의 도감 칸: 펼쳐 놓고 재서, 넘칠 때만 접는다 (spec 16-10). 자리가 남는 화면에서는 칸을 그대로 보여 준다
+   * (방금 접은 모양과 같은 칸의 테두리, 노트 칸의 수).
+   * - 오른쪽 판의 높이가 정해진 넓은 화면: 판 안쪽이 넘치면 접는다(맨 아래 버튼이 잘리지 않게)
+   * - 판이 매트 아래에 놓이는 화면(태블릿 세로): 펴 두면 화면이 세로로 넘치고, 접으면 한 화면에 들어올 때만 접는다.
+   *   휴대폰처럼 접어도 내려 봐야 하는 화면에서는 접지 않는다
+   * 판의 글·버튼이 바뀌거나 화면 크기가 바뀔 때마다 다시 잰다 — 재고 접는 것이 한 차례 안에서 끝나 깜빡이지 않는다
+   */
+  function fitDex() {
+    foldDex(false);
+    if (mode !== 'fold') return;
+    if (order.el.scrollHeight > order.el.clientHeight) {
+      foldDex(true);
+      return;
+    }
+    const pageOver = () => document.documentElement.scrollHeight > globalThis.innerHeight;
+    if (!pageOver()) return;
+    foldDex(true);
+    if (pageOver()) foldDex(false);
   }
   order.el.classList.add('net-panel', 'free-panel');
   order.el.append(editSection, resultSection, dexEl, buttonsSlot);
@@ -145,7 +166,12 @@ export function playFree(stage, ctx) {
   tools.el.hidden = true;
   tools.pad.hidden = true; // 보는 방향·크기 조작판은 접힌 뒤(무대가 보일 때)에만
 
-  const resizer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => board.fit(host)) : null;
+  const resizer = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => {
+      board.fit(host);
+      if (mode === 'fold') fitDex(); // 판 높이가 바뀌면 도감 칸이 들어가는지 다시 잰다
+    })
+    : null;
   resizer?.observe(host);
   board.fit(host);
 
@@ -342,7 +368,6 @@ export function playFree(stage, ctx) {
     showNote(step, collected, feedback.note);
     showBonus(step, first, gain);
     renderDex({ same: step.valid && step.kind !== 'new' ? step.name : null });
-    foldDex(!step.valid);
     setProgress();
 
     // 힌트 조건
@@ -370,6 +395,7 @@ export function playFree(stage, ctx) {
           view.reveal();
           showNote(step, collected, freeFeedback(step, { picked: true }).note);
           showBonus(step, first, gain, xp);
+          fitDex(); // 까닭 문장이 들어가 글이 길어졌다
           buttonsSlot.querySelector('button')?.focus({ preventScroll: true });
         },
       });
@@ -378,6 +404,7 @@ export function playFree(stage, ctx) {
       order.el.classList.add('is-picking');
       pick.focus();
     }
+    fitDex(); // 쪽지·버튼이 다 놓인 뒤에 잰다
   }
 
   function showNote(step, collected, text) {

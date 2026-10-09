@@ -17,6 +17,7 @@ import {
 import { SOUNDS } from '../../src/shared/ui/audio.js';
 import { CONFETTI_MAX, RESULT_MS, confettiSpecs, isLowFx } from '../../src/shared/ui/celebrate.js';
 import { anchorPlacement, belowPlacement } from '../../src/shared/ui/feedback.js';
+import { RETURN_MS, ghostTransform, sameSpot } from '../../src/shared/ui/drag-drop.js';
 import { ICONS, STAR_PATH } from '../../src/shared/ui/icons.js';
 
 test('형광펜 낱말: 마지막 낱말, 괄호로 시작하면 그 앞 낱말, 이어 붙이면 원래 이름', () => {
@@ -214,4 +215,24 @@ test('효과음: 기획서 4절 이름이 모두 있고, 음 길이가 짧다', 
   }
   // combo: 연속 수가 늘면 음이 높아진다
   assert.ok(SOUNDS.combo(2)[0].f > SOUNDS.combo(1)[0].f);
+});
+
+test('끌어다 놓기: 끄는 복제의 자리(처음 자리에서 끈 만큼, 조상이 확대돼 있으면 그 비율), 놓은 뒤 카드가 제자리에 그대로인지 판단', () => {
+  // 복제는 처음 자리에 고정해 두고 transform으로만 옮긴다
+  assert.equal(ghostTransform(0, 0), 'translate(0px, 0px)');
+  assert.equal(ghostTransform(120.5, -40), 'translate(120.5px, -40px)');
+  assert.equal(ghostTransform(10, 20, [1, 1]), 'translate(10px, 20px)');
+  assert.equal(ghostTransform(10, 20, [1.5, 1.5]), 'translate(10px, 20px) scale(1.5, 1.5)');
+  // 제자리에 그대로(2px까지): 복제가 돌아간다. 옮겨졌거나 크기가 바뀌었거나 숨겨졌으면(0 × 0) 복제는 그 자리에서 사라진다
+  const home = { left: 100, top: 50, width: 64, height: 64 };
+  assert.equal(sameSpot(home, { ...home }), true);
+  assert.equal(sameSpot(home, { left: 101.5, top: 48.5, width: 64, height: 65 }), true);
+  assert.equal(sameSpot(home, { ...home, left: 103 }), false);
+  assert.equal(sameSpot(home, { ...home, top: 400 }), false);
+  assert.equal(sameSpot(home, { ...home, width: 40, height: 40 }), false);
+  assert.equal(sameSpot(home, { left: 0, top: 0, width: 0, height: 0 }), false);
+  assert.equal(sameSpot({ left: 0, top: 0, width: 0, height: 0 }, { left: 0, top: 0, width: 0, height: 0 }), false); // 보이지 않는 것은 "그대로"가 아니다
+  assert.equal(sameSpot(home, null), false);
+  assert.equal(sameSpot(home, { ...home, left: 104 }, 5), true);
+  assert.ok(RETURN_MS >= 100 && RETURN_MS <= 200); // 돌아가는 것이 보이되 다음 조작을 기다리게 하지 않는다
 });
