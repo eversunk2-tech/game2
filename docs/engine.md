@@ -223,6 +223,7 @@ import { icon, starIcon } from '../../shared/ui/icons.js';
 h('button', { type: 'button', class: 'btn' }, icon('rotr'), '돌려 보기');
 // 이름: back sound mute lock check cross info rotl rotr play unfold bulb book stamp spark clock user target search cube trash undo hand shield grid flag arrow copy home rise star ring
 //       up down (위·아래 꺾쇠) zoomin zoomout (돋보기 안의 + −)
+//       blockadd blockremove (상자 + −: 쌓기·빼기) viewtop viewfront viewside (윗면·앞면·오른쪽 면을 칠한 상자: 그 방향에서 보기) layers (층)
 // 답 버튼의 ○ · ✕ 는 이모지(⭕❌) 대신 icon('ring') · icon('cross')
 ```
 
