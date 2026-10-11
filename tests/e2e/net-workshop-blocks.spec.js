@@ -888,7 +888,9 @@ test('정답 노출 0 (어느 방향에서 보았을까?): 답하기 전에는 �
       await expect(stage).not.toHaveClass(/can-view|can-edit/);
       await expect(page.locator('.blk-dirs')).toBeHidden();
       await expect(page.locator('.view-pad')).toBeHidden();
-      expect(await stage.evaluate((el) => [el.dataset.facing ?? null, el.dataset.count ?? null, el.getAttribute('tabindex')])).toEqual([null, null, '0']);
+      // 멈춘 판에는 초점이 머물지 않는다. 이름은 조형물이 놓인 자리만 말한다(어느 쪽에서 본 모습인지는 말하지 않는다)
+      expect(await stage.evaluate((el) => [el.dataset.facing ?? null, el.dataset.count ?? null, el.getAttribute('tabindex')])).toEqual([null, null, '-1']);
+      expect(await stage.getAttribute('aria-label')).toMatch(/^판 위의 조형물: 노란 탑 3층은 \d줄 \d칸, 파란 기둥 2층은 \d줄 \d칸, 분홍 상자 1층은 \d줄 \d칸\. 화살표 가는 앞줄 쪽, 나는 오른쪽, 다는 뒷줄 쪽, 라는 왼쪽에서 판을 봐요\.$/);
       // 조형물은 가려진 것 없이 모두 그려져 있고(쌓기나무 6개), 자리 값(data-*)이 없다
       expect(await page.locator('.blk-stage .blk-face').count()).toBe(picturedFaces(q.h).length);
       expect(await page.locator('.blk-stage [data-kind], .blk-stage [data-x], .blk-stage [data-face]').count()).toBe(0);
@@ -922,6 +924,8 @@ test('정답 노출 0 (어느 방향에서 보았을까?): 답하기 전에는 �
       // 답한다: 그 방향으로 돌아가고(조작판·방향 버튼이 나타난다), 그 모습이 그림과 같은 모눈이 된다
       await page.locator(`.blk-choice[data-answer="${q.dir}"]`).click();
       await expect(stage).toHaveAttribute('data-facing', VIEW_OF[q.dir]);
+      await expect(stage).toHaveAttribute('tabindex', '0');
+      await expect(stage).toHaveAttribute('aria-label', /끌거나 방향키로 돌려 보고/);
       await expect(page.locator('.blk-dirs')).toBeVisible();
       await expect(page.locator('.view-pad')).toBeVisible();
       await expect(page.locator('.blk-dir')).toHaveText(['가', '나', '다', '라']);
@@ -1011,7 +1015,8 @@ test('정답 노출 0 (모두 몇 개일까?): 답하기 전의 그림에는 보
       const pictured = picturedFaces(q.target);
       expect(await page.locator('.blk-stage .blk-face').count()).toBe(pictured.length);
       expect(await page.locator('.blk-stage .blk-tile, .blk-stage [data-kind], .blk-stage [data-x], .blk-stage .is-hidden-cube, .blk-stage .blk-chip').count()).toBe(0);
-      expect(await stage.evaluate((el) => [el.dataset.count ?? null, el.dataset.facing ?? null])).toEqual([null, null]);
+      expect(await stage.evaluate((el) => [el.dataset.count ?? null, el.dataset.facing ?? null, el.getAttribute('tabindex'), el.getAttribute('aria-label')]))
+        .toEqual([null, null, '-1', '쌓기나무로 만든 모양 그림이에요. 답한 뒤에 돌려 볼 수 있어요.']);
       await expect(page.locator('.blk-dirs')).toBeHidden();
       await expect(page.locator('.view-pad')).toBeHidden();
       await expect(page.locator('.blk-apart')).toBeHidden();
@@ -1153,9 +1158,12 @@ test('숨겨진 쌓기나무: 위에서 본 모양이 다르면 그 자리에 �
   const questions = questionsFor('blocks-hidden');
   const answers = [];
   for (const q of questions) {
+    // 앞 문항의 힌트 표시가 남아 있지 않다(쌓기를 고쳐 그림을 다시 그려도)
+    await expect(page.locator('.blk-plan .blk-plan-num, .blk-hint-text')).toHaveCount(0);
     // 위에서 본 모양이 다른 쌓기(한 줄 세 칸은 어느 문항의 바닥 모양과도 다르게 고른다)
     const line = [[1, 1, 1], [0, 0, 0], [0, 0, 0]];
     await padBuild(page, testInfo, line);
+    await expect(page.locator('.blk-plan .blk-plan-num')).toHaveCount(0);
     await press(testInfo, page.locator('.blk-check'));
     await expect(page.locator('.reason')).toContainText('위에서 본 모양이 달라요.');
     await expect(page.locator('.blk-plan .is-diff').first()).toBeVisible();
@@ -1193,6 +1201,16 @@ test('숨겨진 쌓기나무: 위에서 본 모양이 다르면 그 자리에 �
       // 그대로 내면 "이미 한 쌓기" — 기록하지 않는다
       await press(testInfo, page.locator('.blk-check'));
       await expect(page.locator('.toast')).toContainText('이미 한 쌓기예요.');
+      // 엉뚱한 자리에 하나 더 쌓아 두 번 틀린다 → 힌트: 위에서 본 모양의 가려진 자리에 ? 표시
+      const far = [0, 1, 2].flatMap((y) => [0, 1, 2].map((x) => [x, y])).find(([x, y]) => q.top[y][x] === 0);
+      await press(testInfo, cell(page, far[0], far[1]));
+      await press(testInfo, page.locator('.blk-check'));
+      await press(testInfo, page.locator('.blk-check'));
+      answers.push(false, false);
+      await press(testInfo, page.locator('.blk-hint'));
+      await expect(page.locator('.blk-plan .blk-plan-num')).toHaveText('?');
+      await expect(page.locator('.blk-hint-text')).toContainText(`? 자리(${spotName(q.spot[0], q.spot[1])})는 그림에서 가려져 있어요.`);
+      await press(testInfo, page.locator('.blk-undo'));
       await press(testInfo, cell(page, q.spot[0], q.spot[1]));
       await press(testInfo, page.locator('.blk-check'));
       answers.push(true);

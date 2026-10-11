@@ -52,6 +52,7 @@ import {
   tellApart,
   towerLine,
 } from '../../src/games/net-workshop/blocks/blocks-logic.js';
+import { toastOf } from '../../src/games/net-workshop/blocks/play-blocks.js';
 
 const stage = (id) => BLOCK_STAGES.find((s) => s.id === id);
 const questions = (id, seed) => makeBlockQuestions(stage(id), createRng(`${seed}:${id}`));
@@ -419,6 +420,18 @@ test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교
     assert.doesNotMatch(t, /쌓은 모양|undefined|null|NaN/, t);
     // 조사: 받침에 맞지 않는 꼴이 없다 (예: "탑가", "상자이", "기둥는", "개로"는 맞고 "칸를"은 틀림)
     assert.doesNotMatch(t, /탑가|탑는|상자이 |상자은|기둥가|기둥는|칸를|칸는 /, t);
+  }
+});
+
+test('알림에 띄우는 짧은 글: 까닭의 첫 문장만("맞아요!"뿐이면 다음 문장까지)', () => {
+  assert.equal(toastOf('맞아요! 1층에 4개, 2층에 1개, 모두 5개예요. 그림에 보이지 않는 쌓기나무가 1개 숨어 있었어요.'), '맞아요! 1층에 4개, 2층에 1개, 모두 5개예요.');
+  assert.equal(toastOf('그림과 같은 쪽에서 보면 달라요. 쌓은 자리가 달라요. 바닥에 닿은 자리부터 맞춰 봐요.'), '그림과 같은 쪽에서 보면 달라요.');
+  assert.equal(toastOf('만들 수 있어요. 2줄 1칸 자리는 가려져 있어요.'), '만들 수 있어요.');
+  assert.equal(toastOf('마침표가 없는 글'), '마침표가 없는 글');
+  // 채점 문장은 모두 한두 문장으로 줄어든다(세 줄짜리 알림이 답 버튼을 가리지 않게)
+  for (const seed of SEEDS.slice(0, 30)) {
+    for (const q of questions('blocks-count', seed)) for (const n of q.options) assert.ok(toastOf(judgeCount(q, n).message).length <= 60, toastOf(judgeCount(q, n).message));
+    for (const q of questions('blocks-where', seed)) for (const dir of AROUND) assert.ok(toastOf(judgeDirection(q, dir).message).length <= 60);
   }
 });
 

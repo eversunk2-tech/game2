@@ -242,12 +242,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   const gGhost = svgEl('g', { class: 'blk-ghost' });
   const gMarks = svgEl('g', { class: 'blk-marks' });
   const svg = svgEl('svg', { class: 'blk-svg', 'aria-hidden': 'true', focusable: 'false' }, gBack, gShapes, gGhost, gMarks);
-  const el = h('div', {
-    class: `blk-stage${still ? ' is-still' : ''}`,
-    tabindex: still ? null : '0',
-    role: 'group',
-    'aria-label': still ? '쌓기나무 그림' : '쌓기나무 무대. 끌거나 방향키로 돌려 보고, + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.',
-  }, svg);
+  const el = h('div', { class: `blk-stage${still ? ' is-still' : ''}`, tabindex: still ? null : '0', role: 'group', 'aria-label': STAGE_LABEL }, svg);
+  let label = null; // 단계가 준 이름(없으면 기본 이름)
 
   let map = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   let colors = null; // [줄][칸] = { token, mark } (조형물) 또는 null
@@ -775,6 +771,9 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   resizer?.observe(el);
 
   const syncClasses = () => {
+    // 멈춘 그림은 초점이 머물 까닭이 없고(누를 것이 없다) 이름도 그림이라고 알린다
+    el.setAttribute('aria-label', label ?? (frozen ? PICTURE_LABEL : STAGE_LABEL));
+    if (!still) el.setAttribute('tabindex', frozen ? '-1' : '0');
     el.classList.toggle('can-edit', editable && !frozen);
     el.classList.toggle('can-view', canView());
     el.classList.toggle('is-frozen', frozen);
@@ -822,6 +821,11 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       emitView();
       render();
     },
+    /** 무대의 이름(화면 읽기)을 단계의 말로 바꾼다. null이면 기본 이름으로 */
+    setLabel(text) {
+      label = text || null;
+      syncClasses();
+    },
     /** 판 가장자리 글자를 바꾼다 [{ text, at }] */
     setEdge(list) {
       edgeList = list;
@@ -848,6 +852,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     home() {
       view = homeView();
       mixing = null;
+      el.classList.remove('is-easing');
       shown = { roll: [...view.roll], zoom: view.zoom };
       delete el.dataset.facing;
       emitView();
@@ -880,6 +885,9 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     },
   };
 }
+
+const STAGE_LABEL = '쌓기나무 무대. 끌거나 방향키로 돌려 보고, + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.';
+const PICTURE_LABEL = '쌓기나무로 만든 모양 그림이에요. 답한 뒤에 돌려 볼 수 있어요.';
 
 /** 판 가장자리에서 바깥쪽 방향 [dx, dy] */
 const EDGE_OUT = { front: [0, -1], right: [1, 0], back: [0, 1], left: [-1, 0] };

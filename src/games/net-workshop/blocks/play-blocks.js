@@ -49,7 +49,8 @@ const HINT_AFTER_WRONG = 2;
  * 긴 까닭은 작업 지시서의 쪽지에 그대로 있다 — 알림이 세 줄이 되면 좁은 화면에서 답 버튼을 가린다.
  */
 export function toastOf(message) {
-  const parts = String(message).split(/(?<=[.!?])\s+/);
+  // (정규식의 뒤돌아보기는 옛 사파리에서 문법 오류라 쓰지 않는다)
+  const parts = (String(message).match(/[^.!?]+[.!?]+/g) ?? [String(message)]).map((part) => part.trim());
   let out = parts[0] ?? '';
   for (let i = 1; i < parts.length && out.length < 8; i += 1) out += ` ${parts[i]}`;
   return out;
@@ -60,6 +61,14 @@ const lookOf = (id) => {
   return { token: `--face-${s.face}`, mark: s.mark };
 };
 const colorsOf = (color) => color.map((row) => row.map((id) => (id ? lookOf(id) : null)));
+
+/** 조형물이 놓인 자리를 글로: "노란 탑 3층은 2줄 1칸, 파란 기둥 2층은 …" (줄은 앞줄부터, 칸은 왼쪽부터) */
+function placesOf(color) {
+  return SCULPTURES.map((s) => {
+    for (let y = 0; y < color.length; y += 1) for (let x = 0; x < color[y].length; x += 1) if (color[y][x] === s.id) return `${s.name} ${s.height}층은 ${spotName(x, y)}`;
+    return '';
+  }).filter(Boolean).join(', ');
+}
 
 /** 둘레 네 방향(가~라) ↔ 무대의 보기 이름 */
 const VIEW_OF = { front: 'front', right: 'side', back: 'back', left: 'left' };
@@ -372,6 +381,8 @@ function playWhere(stage, ctx, questions) {
     view.setViewEnabled(false);
     bench.controls.lock(true);
     view.setMap(q.h, { colors: colorsOf(q.color) });
+    // 판 위의 배치를 글로도 알린다(그림을 보지 못해도 풀 수 있게 — 모습이 아니라 놓인 자리라 답이 아니다)
+    view.setLabel(`판 위의 조형물: ${placesOf(q.color)}. 화살표 가는 앞줄 쪽, 나는 오른쪽, 다는 뒷줄 쪽, 라는 왼쪽에서 판을 봐요.`);
   }
 
   function answer(dir) {
@@ -381,6 +392,7 @@ function playWhere(stage, ctx, questions) {
     const result = judgeDirection(q, dir);
     markChoice(buttons, dir, q.dir, result.correct);
     // 답한 뒤: 입체가 풀려 그 방향으로 돈다. 틀렸으면 고른 쪽으로 먼저 돌아간 뒤 바른 쪽으로
+    view.setLabel(null);
     view.setFrozen(false);
     view.setViewEnabled(true);
     bench.controls.lock(false);
@@ -428,15 +440,11 @@ function playScene(stage, ctx, questions) {
     view.setViewEnabled(false);
     view.home();
     view.setMap(emptyMap(), { colors: null });
-    const where = SCULPTURES.map((s) => {
-      for (let y = 0; y < q.color.length; y += 1) for (let x = 0; x < q.color[y].length; x += 1) if (q.color[y][x] === s.id) return `${s.name}은 ${spotName(x, y)}`;
-      return '';
-    }).join(', ');
     mapCard.replaceChildren(figure(h, '위에서 내려다본 그림', createSceneMap({
       color: q.color,
       look: lookOf,
       dir: q.dir,
-      label: `위에서 내려다본 그림. ${where}에 있어요. 화살표는 ${MAP_SIDES[q.dir]}에서 판을 향해요.`,
+      label: `위에서 내려다본 그림. ${placesOf(q.color)}. 화살표는 ${MAP_SIDES[q.dir]}에서 판을 향해요.`,
     })));
     mapCard.hidden = false;
     buttons = q.options.map((o, i) => choiceButton(h, {
@@ -788,6 +796,7 @@ function playHidden(stage, ctx, questions) {
   let index = 0;
   let phase = 'build'; // build(맞게 쌓기) → guess(예상) → other(다른 개수로 한 번 더) → done
   let first = null; // 처음에 맞힌 내 쌓기
+  let hinted = null; // 힌트로 위에서 본 모양에 적어 준 자리 { x, y, value } (문항·장면이 바뀌면 지운다)
 
   const PROMPTS = {
     build: '그림과 위에서 본 모양에 맞게 쌓아 봐요.',
@@ -804,6 +813,7 @@ function playHidden(stage, ctx, questions) {
     const q = questions[index];
     phase = 'build';
     first = null;
+    hinted = null;
     bench.setQuestion(index + 1, PROMPTS.build);
     drawGiven(q);
     checker.reset();
@@ -817,7 +827,6 @@ function playHidden(stage, ctx, questions) {
     bench.controls.lock(false);
   }
 
-  let hinted = null;
   function useHint() {
     const q = questions[index];
     ctx.reward.event('inspect');
