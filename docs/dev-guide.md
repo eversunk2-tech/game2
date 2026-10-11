@@ -11,6 +11,7 @@ npm run dev          # http://localhost:5173 (src/를 그대로 보여 줌, 빌�
 npm test             # 단위 테스트 (node --test, tests/unit/**/*.test.js)
 npm run build        # dist/<id>.html (게임마다 파일 하나, 제목 글꼴을 쓰인 글자만 잘라 넣음) + dist/index.html (게임 모음)
 npm run test:e2e     # 빌드 후 Playwright (크롬북 1366×768, 태블릿 820×1180 터치)
+E2E_WIDE_TEXT=font npm run test:e2e   # 글꼴 흉내 모드: 본문을 한글 폭이 넓은 글꼴로 바꿔 리눅스 CI의 줄 넘김을 미리 본다(engine.md 11절). 이것도 실패 0이어야 한다
 npm run new -- <id> "<이름>"   # src/games/_template 복사 + docs/games/<id>/spec.md 기획서
 ```
 

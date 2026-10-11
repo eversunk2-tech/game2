@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { starsFromAccuracy } from '../../src/shared/core/progress.js';
 import { createRng } from '../../src/shared/core/random.js';
 import { XP, createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
 import { SYMMETRY_COUNT, fromCells, transformCells } from '../../src/games/net-workshop/fold.js';
@@ -19,6 +18,8 @@ import {
   diceLayoutKey,
   diceOrdinal,
   dicePairs,
+  diceStarNote,
+  diceStars,
   diceSummary,
   judgeDice,
   pipName,
@@ -234,7 +235,7 @@ test('한 판의 흐름: 문항은 "n번째 주사위"(itemId에 모양 이름�
   assert.equal(s.done(), true);
   assert.equal(s.readiness(byName('3-3').cells, DICE_PIPS).reason, 'done');
   assert.deepEqual(s.made().map((m) => m.name), ['1-4-1e', '2-3-1a']);
-  assert.deepEqual(diceSummary(s.history()), { folds: 4, made: 2, firstTry: 1, fixes: 1, bounces: 1 });
+  assert.deepEqual(diceSummary(s.history()), { folds: 4, made: 2, wrong: 2, firstTry: 1, fixes: 1, bounces: 1 });
   for (const step of s.history()) assert.match(step.itemId, /^cube-dice:[12]$/);
 });
 
@@ -268,6 +269,7 @@ test('접기 전 정답 노출 0: 접어 보기 전의 안내·막힘은 놓은 
 });
 
 // ── 점수: 엔진의 지금 규칙 그대로 (처음에 맞힘 +2 · 고쳐서 맞힘 +1 · 다시 일어서기 +1 · 도전 처음 성공 +10 · 별 +2씩) ──────────
+// 별은 접어서 틀린 횟수로 정한다 (spec 16-13, 사용자 결정): 0번 ★3 · 1번 ★2 · 2번 이상 ★1
 
 /** 무작위로 한 판을 끝까지: 주사위마다 틀린 접기(합이 틀림·정육면체가 안 됨)를 0번 이상 한 뒤 맞힌다 → 접기 목록 [{ cells, labels }] */
 function randomFolds(rng, { wrongRate = 0.5, maxWrong = 4 } = {}) {
@@ -305,16 +307,17 @@ function dicePlayXp(folds, { startStars = 0, finished = true } = {}) {
     assert.equal(play.instant(), 0); // 표시 없는 답: 판을 마칠 때 저장한다(중간에 나가면 남지 않는다)
   }
   const done = finished && session.done();
-  const stars = done ? starsFromAccuracy(correct / attempts) : 0;
+  const stars = done ? diceStars(diceSummary(session.history()).wrong) : 0; // 화면(play-dice.js finish)과 같은 식
   const stage = done ? stageXp({ prevStars: startStars, stars, cleared: true, challenge: true }).total : 0;
   return { xp: done ? play.xp() + stage : 0, play: play.xp(), stage, stars, attempts, correct, earned, session, done };
 }
 
 /**
- * 독립 계산 (엔진의 rewards.js를 쓰지 않는다): engine.md 점수 표만 보고 짠 주사위 주문 한 판.
+ * 독립 계산 (엔진의 rewards.js·게임의 diceStars를 쓰지 않는다): engine.md 점수 표와 spec 16-13의 별 기준만 보고 짠 주사위 주문 한 판.
  * tries: 주사위마다 맞히기까지의 틀린 접기 수 [w1, w2]. 문항이 둘뿐이라 연속 보너스(3번마다)는 없다.
+ * rule: 'wrong'(지금 — 틀린 횟수로: 0번 ★3 · 1번 ★2 · 2번 이상 ★1) | 'accuracy'(N2 처음의 정답률 기준, 견주기용)
  */
-function modelDice(tries, { startStars = 0 } = {}) {
+function modelDice(tries, { startStars = 0, rule = 'wrong' } = {}) {
   let xp = 0;
   let armed = false;
   for (const wrong of tries) {
@@ -330,14 +333,52 @@ function modelDice(tries, { startStars = 0 } = {}) {
     }
   }
   if (startStars >= 3) xp = 0; // 별 3개를 받은 단계를 다시 하면 연습 점수 없음
-  const attempts = tries.reduce((sum, w) => sum + w + 1, 0);
-  const accuracy = tries.length / attempts;
-  const stars = accuracy >= 0.9 ? 3 : accuracy >= 0.7 ? 2 : 1;
+  const wrongTotal = tries.reduce((sum, w) => sum + w, 0);
+  const accuracy = tries.length / (tries.length + wrongTotal);
+  let stars = wrongTotal === 0 ? 3 : wrongTotal === 1 ? 2 : 1;
+  if (rule === 'accuracy') stars = accuracy >= 0.9 ? 3 : accuracy >= 0.7 ? 2 : 1;
   const stage = (startStars === 0 ? 10 : 0) + Math.max(0, stars - startStars) * 2;
   return { play: xp, stage, xp: xp + stage, stars };
 }
 
-test('주사위 주문 점수: 두 개를 모두 한 번에 맞히면 4 + 도전 성공 10 + 별 3개 6 = 20점, 한 번 틀리면 정답률 67%라 별 1개 16점', () => {
+test('주사위 주문의 별(spec 16-13): 접어서 틀린 횟수로 — 한 번도 안 틀리면 별 3개, 한 번 틀리면 별 2개, 두 번 이상이면 별 1개. 접기 전에 막힌 것은 세지 않는다', () => {
+  assert.deepEqual([0, 1, 2, 3, 9].map(diceStars), [3, 2, 1, 1, 1]);
+  assert.deepEqual([-1, undefined, null, NaN, 1.9].map(diceStars), [3, 3, 3, 3, 2]); // 이상한 값은 버림(음수·없음 = 0번)
+  // 결과 화면의 별 기준 안내: 별 3개는 엔진의 말("별 3개를 모두 받았어요!")을 그대로 쓴다
+  assert.equal(diceStarNote(3), null);
+  assert.equal(diceStarNote(2), '한 번도 틀리지 않으면 별 3개!');
+  assert.equal(diceStarNote(1), '한 번만 틀리면 별 2개, 한 번도 틀리지 않으면 별 3개!');
+  for (const stars of [1, 2]) assert.doesNotMatch(diceStarNote(stars), /정답률|%|맞히면/); // 정답률 기준의 말("한 번만 더 맞히면")이 아니다
+
+  const rng = createRng('dice-stars');
+  const [x, y] = [byName('1-4-1e').cells, byName('2-3-1a').cells];
+  const right = (cells) => ({ cells, labels: pipsFor(cells, rng, true) });
+  const wrong = (cells) => ({ cells, labels: pipsFor(cells, rng, false) });
+  const invalid = (name) => ({ cells: byName(name).cells, labels: [...DICE_PIPS] });
+  const anyInvalid = INVALID_HEXOMINOES.map((n) => n.name);
+  const starsOf = (folds) => dicePlayXp(folds).stars;
+  assert.equal(starsOf([right(x), right(y)]), 3);
+  // 한 번 틀림: 합이 틀리든, 정육면체가 안 되는 모양이든, 첫째 주사위든 둘째 주사위든 별 2개 (정답률 기준이었다면 67% = 별 1개)
+  assert.equal(starsOf([wrong(x), right(x), right(y)]), 2);
+  assert.equal(starsOf([right(x), wrong(y), right(y)]), 2);
+  assert.equal(starsOf([invalid(anyInvalid[0]), right(x), right(y)]), 2);
+  assert.equal(starsOf([right(x), invalid(anyInvalid[5]), right(y)]), 2);
+  // 두 번 이상: 별 1개 (한 주사위에서 두 번이든, 주사위마다 한 번씩이든, 합·모양을 섞든)
+  assert.equal(starsOf([wrong(x), right(x), wrong(y), right(y)]), 1);
+  assert.equal(starsOf([invalid(anyInvalid[1]), wrong(x), right(x), right(y)]), 1);
+  assert.equal(starsOf([invalid(anyInvalid[2]), invalid(anyInvalid[3]), invalid(anyInvalid[4]), right(x), right(y)]), 1);
+  // 접기 전에 막힌 것(같은 틀린 놓기를 돌려서 다시 · 접어 본 안 되는 모양 다시 · 첫 주사위와 같은 모양)은 접지 않은 것이라 세지 않는다
+  const miss = wrong(x);
+  const again = { cells: transformCells(miss.cells, 3), labels: miss.labels };
+  const blocked = dicePlayXp([miss, again, again, right(x), { cells: transformCells(x, 2), labels: [...DICE_PIPS] }, right(y)]);
+  assert.deepEqual([blocked.stars, blocked.attempts, diceSummary(blocked.session.history()).wrong], [2, 3, 1]);
+  const blockedShape = dicePlayXp([invalid(anyInvalid[0]), invalid(anyInvalid[0]), right(x), right(y)]);
+  assert.deepEqual([blockedShape.stars, blockedShape.attempts], [2, 3]);
+  // 끝내지 않은 판에는 별이 없다
+  assert.equal(dicePlayXp([wrong(x), right(x)]).stars, 0);
+});
+
+test('주사위 주문 점수: 두 개를 모두 한 번에 맞히면 4 + 도전 성공 10 + 별 3개 6 = 20점, 한 번 틀리면 별 2개라 18점, 두 번 틀리면 별 1개라 16점 이하', () => {
   const rng = createRng('dice-score');
   const [x, y] = [byName('1-4-1e').cells, byName('3-3').cells];
   const right = (cells) => ({ cells, labels: pipsFor(cells, rng, true) });
@@ -345,12 +386,17 @@ test('주사위 주문 점수: 두 개를 모두 한 번에 맞히면 4 + 도전
   const perfect = dicePlayXp([right(x), right(y)]);
   assert.deepEqual([perfect.play, perfect.stage, perfect.xp, perfect.stars], [4, 16, 20, 3]);
   assert.deepEqual(perfect.earned, { first: 4, again: 0 });
-  // 첫 주사위를 한 번 틀림: 고쳐서 +1, 다음 주사위 한 번에 +2, 다시 일어서기 +1 = 4 (모두 맞힌 것과 같고, 별이 적다)
+  // 첫 주사위를 한 번 틀림: 고쳐서 +1, 다음 주사위 한 번에 +2, 다시 일어서기 +1 = 4 (모두 맞힌 것과 같고, 별이 하나 적다: 10 + 별 2개 4)
   const slip = dicePlayXp([wrong(x), right(x), right(y)]);
-  assert.deepEqual([slip.play, slip.stars, slip.stage, slip.xp], [4, 1, 12, 16]);
+  assert.deepEqual([slip.play, slip.stars, slip.stage, slip.xp], [4, 2, 14, 18]);
   assert.deepEqual(slip.earned, { first: 2, again: 2 });
-  // 둘째 주사위를 틀림: 2 + 1 = 3
-  assert.deepEqual([dicePlayXp([right(x), wrong(y), right(y)]).play, dicePlayXp([wrong(x), right(x), wrong(y), right(y)]).play], [3, 2]);
+  // 둘째 주사위를 틀림: 2 + 1 = 3 (별 2개, 17점). 두 주사위를 한 번씩 틀림: 1 + 1 = 2 (별 1개, 14점). 첫 주사위를 두 번 틀림: 4 (별 1개, 16점)
+  const [slipSecond, slipBoth, slipTwice] = [[right(x), wrong(y), right(y)], [wrong(x), right(x), wrong(y), right(y)], [wrong(x), wrong(x), right(x), right(y)]].map((f) => dicePlayXp(f));
+  assert.deepEqual([slipSecond.play, slipSecond.stars, slipSecond.xp], [3, 2, 17]);
+  assert.deepEqual([slipBoth.play, slipBoth.stars, slipBoth.xp], [2, 1, 14]);
+  assert.deepEqual([slipTwice.play, slipTwice.stars, slipTwice.xp], [4, 1, 16]);
+  // 틀릴수록 받는 점수가 줄어든다(늘지 않는다): 20 > 18 ≥ 17 > 16 ≥ 14
+  assert.ok(perfect.xp > slip.xp && slip.xp >= slipSecond.xp && slipSecond.xp > slipTwice.xp && slipTwice.xp >= slipBoth.xp);
   // 문항 id에 모양을 넣었다면: 틀린 접기와 고친 접기가 다른 문항이 되어 +2 +1(다시 일어서기) = 3 > 한 번에 맞힘 2 — 그래서 넣지 않는다
   const byShape = createPlayReward();
   byShape.answer({ itemId: 'cube-dice:1:1-4-1e', correct: false });
@@ -397,7 +443,7 @@ test('무작위 4,000판: 어떻게 틀려도(일부러 틀려도) 모두 한 �
   assert.ok(blocked > 200);
 });
 
-test('되풀이: 별 3개를 받은 뒤에는 몇 번을 다시 해도 0점. 별 3개 전에 다시 하면 엔진 공통 규칙대로 연습 점수(판마다 4점까지)를 받는다', () => {
+test('되풀이: 별 3개를 받은 뒤에는 몇 번을 다시 해도 0점. 별 3개 전에 다시 하면 엔진 공통 규칙대로 연습 점수(판마다 4점까지)를 받는다. 별 기준을 틀린 횟수로 바꿔도 더 받는 길은 생기지 않는다', () => {
   const rng = createRng('dice-replay');
   const device = () => {
     let stars = 0;
@@ -423,18 +469,54 @@ test('되풀이: 별 3개를 받은 뒤에는 몇 번을 다시 해도 0점. 별
   assert.equal(honest.play(perfectFolds()).xp, 20);
   for (let i = 0; i < 5; i += 1) assert.equal(honest.play(rng.next() < 0.5 ? perfectFolds() : slipFolds()).xp, 0);
   assert.equal(honest.total(), 20);
-  // 한 번 틀린 뒤(16점, 별 1개) 다시 해서 모두 맞힘: 연습 4 + 별 2개 4 = 8 → 그 뒤 0점
+  // 한 번 틀린 뒤(18점, 별 2개) 다시 해서 모두 맞힘: 연습 4 + 별 1개 2 = 6 → 그 뒤 0점 (합 24 — 정답률 기준일 때의 16 + 8과 같다)
   const second = device();
-  assert.deepEqual([second.play(slipFolds()).xp, second.play(perfectFolds()).xp, second.play(perfectFolds()).xp], [16, 8, 0]);
+  assert.deepEqual([second.play(slipFolds()).xp, second.play(perfectFolds()).xp, second.play(perfectFolds()).xp], [18, 6, 0]);
+  assert.equal(second.total(), 24);
+  // 두 번 틀림(별 1개) → 한 번 틀림(별 2개) → 모두 맞힘(별 3개): 16 → 4 + 2 → 4 + 2 → 0
+  const stairs = device();
+  const twoSlips = () => [{ cells: rng.pick(INVALID_HEXOMINOES).cells, labels: [...DICE_PIPS] }, ...slipFolds()]; // 안 되는 모양 한 번 + 합이 틀린 놓기 한 번
+  assert.deepEqual([stairs.play(twoSlips()).xp, stairs.play(slipFolds()).xp, stairs.play(perfectFolds()).xp, stairs.play(perfectFolds()).xp], [16, 6, 6, 0]);
   // 별 3개가 되기 전에는 다시 할 때마다 연습 점수를 받는다(엔진 공통: 별 3개가 안 된 단계의 복습은 보상한다 — 일반 단계와 같다).
-  // 주사위 주문은 문항이 둘뿐이라 판마다 4점까지다
+  // 주사위 주문은 문항이 둘뿐이라 판마다 4점까지다. 한 번씩 틀리며 되풀이하면 별 2개에 머문다
   const repeater = device();
-  repeater.play(slipFolds());
+  assert.equal(repeater.play(slipFolds()).xp, 18);
   for (let i = 0; i < 6; i += 1) {
     const r = repeater.play(slipFolds());
-    assert.deepEqual([r.xp, r.stars], [4, 1]);
+    assert.deepEqual([r.xp, r.stars], [4, 2]);
   }
-  assert.equal(repeater.stars(), 1);
+  assert.equal(repeater.stars(), 2);
+  // 별 기준만 바꿔 견준다(독립 계산): 무작위 2,000기기가 같은 판들을 했을 때
+  //  · 판마다의 연습 점수는 두 기준에서 같다(별 기준은 연습 점수를 바꾸지 않는다 — 시작 별이 3개가 된 뒤는 둘 다 0)
+  //  · 별 3개에 이른 기기가 그때까지 받은 합은 두 기준에서 같다: 도전 성공 10 + 별 6 + 판마다의 연습 점수
+  //  · 어느 때든 틀린 횟수 기준의 합 − 정답률 기준의 합 = 지금 별의 차 × 2 (0 · 2 · 4점: 별을 조금 일찍 받을 뿐 더 받지 않는다)
+  let reached = 0;
+  for (let trial = 0; trial < 2000; trial += 1) {
+    const plays = Array.from({ length: rng.int(1, 7) }, () => [rng.pick([0, 0, 1, 2, 3]), rng.pick([0, 0, 0, 1, 2])]);
+    const run = (rule) => {
+      let stars = 0;
+      let total = 0;
+      let perfectAt = null;
+      plays.forEach((tries, i) => {
+        const r = modelDice(tries, { startStars: stars, rule });
+        if (stars < 3 && r.stars === 3) perfectAt = i;
+        stars = Math.max(stars, r.stars);
+        total += r.xp;
+      });
+      return { stars, total, perfectAt };
+    };
+    const [now, old] = [run('wrong'), run('accuracy')];
+    assert.ok(now.stars >= old.stars, `기기 ${trial}`);
+    assert.equal(now.total - old.total, (now.stars - old.stars) * 2, `기기 ${trial}: ${JSON.stringify(plays)}`);
+    if (now.stars === 3) {
+      reached += 1;
+      assert.deepEqual([old.stars, old.total, old.perfectAt], [3, now.total, now.perfectAt], `기기 ${trial}`);
+      const practice = plays.slice(0, now.perfectAt + 1).reduce((sum, tries) => sum + modelDice(tries).play, 0);
+      assert.equal(now.total, 10 + 6 + practice, `기기 ${trial}`);
+      assert.ok(now.total <= 16 + 4 * (now.perfectAt + 1));
+    }
+  }
+  assert.ok(reached > 800);
   // 무작위 300기기: 별 3개가 된 다음 판부터는 늘 0점, 그 전의 판은 단계 점수(도전 성공 10 + 별 6)를 빼면 판마다 4점 이하
   for (let trial = 0; trial < 300; trial += 1) {
     const d = device();

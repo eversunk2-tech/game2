@@ -278,6 +278,12 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
     placeNext(at);
   }
   root.addEventListener('click', onClickCapture, true);
+  // 끌어 놓은 바로 뒤의 "따라오는 click 건너뛰기"(justDropped)는 새로 누르는 순간 반드시 푼다: 터치 끌기에는 click이 따라오지 않아
+  // 타이머로만 풀면, 기기가 느려 타이머가 밀린 사이의 첫 누르기(빈 칸에 다음 카드 놓기)가 먹히지 않을 수 있다
+  const onPressCapture = () => {
+    justDropped = false;
+  };
+  root.addEventListener('pointerdown', onPressCapture, true);
   // 카드·면을 고르거나 풀 때 들어 올림 테두리를 다시 그린다 (모든 click 처리가 끝난 뒤)
   let afterTimer = null;
   const onClickAfter = () => {
@@ -396,6 +402,7 @@ export function createFreeBoard({ ctx, adapter, root, onChange = null }) {
       clearTimeout(afterTimer);
       dnd.destroy();
       root.removeEventListener('click', onClickCapture, true);
+      root.removeEventListener('pointerdown', onPressCapture, true);
       root.removeEventListener('click', onClickAfter);
       boardEl.removeEventListener('keydown', onKey);
     },

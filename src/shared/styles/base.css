@@ -422,13 +422,15 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .go-pill .icon { width: 0.9em; height: 0.9em; }
 
 /* ── 플레이 ───────────────────────────── */
-.play-header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; min-height: 56px; }
+/* 머리 높이는 판을 하는 동안 바뀌지 않는다: 정보 칸(.play-meta)의 폭이 처음부터 끝까지 같아(연속 칸은 자리를 미리 잡아 둔다 — 아래 .meta-streak)
+   제목·목표 글의 줄 수와 정보 칸의 줄바꿈이 판 도중에 달라지지 않는다. 좁은 폭에서 정보 칸이 한 줄에 못 들어가면 처음부터 아랫줄(오른쪽 맞춤)에 놓인다 */
+.play-header { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; min-height: 56px; }
 .play-header-text { flex: 1; min-width: 220px; }
 .play-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .play-title { font-size: var(--fs-xl); line-height: 1.15; }
 .play-chip { flex: none; }
 .play-goal { color: var(--ink-2); font-size: 0.95rem; line-height: 1.4; }
-.play-meta { display: flex; align-items: center; gap: 10px; }
+.play-meta { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .play-meta:empty { display: none; }
 .play-area { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 
@@ -561,9 +563,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
   min-height: var(--tap); padding: 3px 14px; border-radius: 12px;
   background: var(--paper); border: 1.5px solid var(--line); line-height: 1.2;
 }
-.meta-box small { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+.meta-box small { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .meta-box b { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; }
-.meta-streak { flex-direction: row; gap: 6px; }
+.meta-streak { flex-direction: row; gap: 4px; order: -1; padding-inline: 10px; }
+/* 연속 칸은 정보 칸들의 맨 왼쪽에 자리를 늘 잡아 둔다(2 미만이면 보이지 않을 뿐): 연속이 생기거나 끊겨도 머리의 어떤 것도 움직이지 않는다.
+   글자 자리는 한 자리 수("연속 0")만큼만 잡고 글자는 그 위 가운데에 놓는다 — 두 자리 수가 되어도 칸의 폭은 같다(글자가 안쪽 여백으로 5px쯤 나갈 뿐).
+   자리를 좁게 잡을수록 제목·목표 글의 자리가 넓다. 휴대폰은 연속·점수 칸을 아예 숨긴다(아래 560px 규칙) */
+.meta-streak b { position: relative; display: inline-block; white-space: nowrap; }
+.meta-streak b::before { content: '연속 0'; visibility: hidden; }
+.meta-streak .streak-n { position: absolute; left: 50%; top: 0; transform: translateX(-50%); }
+@media (min-width: 561px) {
+  .meta-streak[hidden] { display: inline-flex !important; visibility: hidden; }
+}
 /* 문제 n / N 점 막대 (ctx.setProgress) */
 .q-dots { display: inline-flex; gap: 5px; align-items: center; min-height: 18px; }
 .q-dots i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: var(--paper); }
@@ -573,9 +584,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .q-dots.is-check i.is-done { background: var(--correct); color: #fff; }
 .q-dots.is-check .icon { width: 14px; height: 14px; stroke-width: 3; vertical-align: 0; }
 .meta-streak .icon { color: var(--tangerine); width: 1.3em; height: 1.3em; stroke-width: 2.4; }
-.meta-timer { flex-direction: row; gap: 10px; padding: 0; border: 0; background: none; }
+/* 시간 재기: 버튼과 시계가 같은 자리를 쓴다(한 칸에 겹친다). 켜면 버튼 글자가 작게 위로 올라가고 그 아래에 시계가 보인다 —
+   켜도 꺼도 칸의 폭과 높이가 같아, 제목·목표 글의 자리와 머리 높이가 달라지지 않는다 */
+.meta-timer { display: inline-grid; padding: 0; border: 0; background: none; }
+.meta-timer > * { grid-area: 1 / 1; }
 .timer-toggle[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary-edge); color: var(--primary-edge); }
-.timer-clock { min-width: 3.2em; text-align: center; }
+.timer-label { display: inline-flex; align-items: center; gap: 8px; transition: transform var(--dur-1) var(--ease-out); }
+.timer-toggle[aria-pressed="true"] .timer-label { transform: translateY(-11px) scale(0.74); }
+.timer-clock { position: relative; z-index: 1; align-self: end; justify-self: center; margin-bottom: 4px; line-height: 1.1; pointer-events: none; }
 
 /* 단계 지도: 도전 주문서 줄 */
 .head-chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -752,11 +768,18 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .hero-art { height: 340px; min-height: 0; }
   .stage-path { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stage-path::before { display: none; }
-  .result-wrap { grid-template-columns: minmax(0, 1fr); }
+  .result-wrap { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .result-wrap.is-single { grid-template-columns: minmax(0, 1fr); }
+  /* 결과가 한 줄로 쌓이는 폭: 증명서와 옆 칸 사이를 조금 좁혀, 별 기준 안내·내 기록·새 도장 2개·다시 살펴볼 점이 모두 있는 결과도
+     태블릿 세로(820×1180) 한 화면에 들어오게 */
+  .certificate { gap: 12px; padding: 22px 26px 20px; }
+  .side-col { gap: 12px; }
   .summary-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .report-row { grid-template-columns: minmax(0, 1fr); }
   .challenge-row { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  /* 점 막대가 긴 단계(예: 11칸)도 정보 칸이 제목 옆 한 줄에 들어가게 점을 조금 줄인다 */
+  .q-dots:not(.is-check) { gap: 3px; }
+  .q-dots:not(.is-check) i { width: 10px; height: 10px; }
 }
 
 /* 휴대폰 */

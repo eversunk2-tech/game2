@@ -5,7 +5,7 @@
  * 마주 보는 두 눈의 합이 7이 되는 전개도를 서로 다른 모양으로 2개 만들면 [결과 보기].
  * - 판정: 정육면체가 되는지는 판별 단계와 같은 checkNet, 마주 보는 눈은 마주 보는 면 단계와 같은 oppositeFace (logic.judgeDice)
  * - 접은 것은 모두 기록한다. 문항은 "n번째 주사위"(itemId = cube-dice:n) — 처음에 맞히면 +2, 고쳐서 맞히면 +1 (엔진 점수 표 그대로).
- *   별은 접은 시도의 정확도(엔진 기본: 90% 이상 ★3, 70% 이상 ★2). 도감·노트에는 넣지 않는다(직접 만드는 단계의 "접어 본 모양"과 섞지 않는다)
+ *   별은 접어서 틀린 횟수(spec 16-13: 0번 ★3 · 1번 ★2 · 2번 이상 ★1). 도감·노트에는 넣지 않는다(직접 만드는 단계의 "접어 본 모양"과 섞지 않는다)
  * - 다 접으면 마주 보는 두 면에 같은 무늬와 "합 7"을 보인다. 틀리면 "1과 5가 마주 봐요. 마주 보는 두 눈의 합은 7이에요."(tag 마주 보는 면),
  *   정육면체가 안 되는 모양이면 판별 단계와 같은 표시(겹쳐요·비어요·●)와 그 까닭의 tag
  * - 접기 전 화면에는 어느 눈끼리 마주 보는지·합이 맞는지가 글자·무늬·색·클래스·속성·화면 읽기 알림 어디에도 없다:
@@ -14,7 +14,6 @@
  * - 힌트: 틀린 접기를 연달아 2번 했거나 90초 동안 주사위를 못 만들면 [힌트]. 1번째 글, 2번째 그림자(전개도 모양만, 누를 때만)
  */
 import { josa } from '../../shared/core/korean.js';
-import { starsFromAccuracy } from '../../shared/core/progress.js';
 import { XP } from '../../shared/core/rewards.js';
 import { icon } from '../../shared/ui/icons.js';
 import { createFreeBoard, gridAdapter } from './free-board.js';
@@ -32,6 +31,8 @@ import {
   diceHighlights,
   diceHintNet,
   diceOrdinal,
+  diceStarNote,
+  diceStars,
   diceSummary,
   pipName,
 } from './logic.js';
@@ -411,11 +412,10 @@ export function playDice(stage, ctx) {
   // ── 끝내기: 결과 "오늘의 솜씨" ─────────────────
   function finish() {
     if (!session.done()) return;
-    // 별은 접은 시도의 정확도(엔진 기본 기준). 직접 넘겨서, 주사위가 2개뿐인 이 단계에 맞지 않는 "한 번만 더 맞히면" 안내가 나오지 않게 한다
-    ctx.finish({
-      stars: starsFromAccuracy(ctx.log.stats().accuracy),
-      highlights: diceHighlights(diceSummary(session.history()), { earned, goal }),
-    });
+    // 별은 접어서 틀린 횟수로 정한다(spec 16-13): 0번 ★3 · 1번 ★2 · 2번 이상 ★1. 결과의 별 기준 안내도 같은 말로
+    const sum = diceSummary(session.history());
+    const stars = diceStars(sum.wrong);
+    ctx.finish({ stars, starNote: diceStarNote(stars), highlights: diceHighlights(sum, { earned, goal }) });
   }
 
   // Ctrl+Z: 되돌리기 (놓는 중일 때. 누른 버튼이 꺼져 초점이 문서로 가도 되게 문서에서 받는다)

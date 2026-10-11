@@ -780,6 +780,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   // 끌어서 돌리기(마우스·한 손가락) · 두 손가락 벌리기 · 휠
   const pointers = new Map(); // pointerId → 마지막 자리 { x, y }
   let gesture = null; // { mode: 'wait'(문턱 전) | 'turn' | 'pinch', x, y, zone, zoom, … }
+  const TOUCH_MOVE = { passive: false }; // touchmove를 preventDefault 하려면 passive가 아니어야 한다 (돌리는 동안에만 듣는다)
   let swallowClick = false; // 끌기 뒤 따라오는 click 한 번을 삼킨다
   let swallowTimer = 0;
   let wheelTimer = 0;
@@ -810,6 +811,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     globalThis.removeEventListener?.('pointermove', onPointerMove);
     globalThis.removeEventListener?.('pointerup', onPointerUp);
     globalThis.removeEventListener?.('pointercancel', onPointerUp);
+    globalThis.removeEventListener?.('touchmove', onTouchMove, TOUCH_MOVE);
     el.classList.remove('is-turning');
     if (!g || g.mode === 'wait') return;
     settle();
@@ -826,6 +828,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   }
 
   function onPointerDown(event) {
+    // 새로 눌렀다: 앞선 끌기의 "따라오는 click 삼키기"가 (기기가 느려 타이머가 밀려) 남아 있어도 이 누르기의 click은 삼키지 않는다
+    if (swallowClick && !gesture) {
+      clearTimeout(swallowTimer);
+      swallowTimer = 0;
+      swallowClick = false;
+    }
     if (!canView() || (event.pointerType === 'mouse' && event.button !== 0)) return;
     if (event.isPrimary && gesture) endGesture(); // 뗀 것을 못 받은 포인터가 남아 있으면 버린다
     if (pointers.size >= 2) return; // 셋째 손가락은 쓰지 않는다
@@ -836,6 +844,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       globalThis.addEventListener('pointermove', onPointerMove);
       globalThis.addEventListener('pointerup', onPointerUp);
       globalThis.addEventListener('pointercancel', onPointerUp);
+      globalThis.addEventListener('touchmove', onTouchMove, TOUCH_MOVE);
       return;
     }
     // 두 번째 손가락: 벌리기·오므리기
@@ -874,6 +883,16 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     // 두 손가락에서 한 손가락이 되면: 남은 손가락의 마지막 자리부터 이어 돌린다(튀지 않는다)
     if (pointers.size === 1 && gesture?.mode === 'pinch') gesture.mode = 'turn';
     else if (pointers.size === 0) endGesture(true);
+  }
+
+  /**
+   * 손가락으로 돌리는(벌리는) 동안의 touchmove는 "우리가 썼다"고 알린다(preventDefault).
+   * 보기 조작이 켜진 무대는 touch-action: none이라 화면이 스크롤되지는 않지만, 알리지 않으면 브라우저는 이 움직임을 화면 쓸기로도 세어
+   * 손을 떼는 순간 보이지 않는 관성 스크롤(fling)을 시작한다. 크롬(크롬북·안드로이드·리눅스)은 그 관성이 도는 동안의 첫 탭을
+   * "관성 멈추기"로 여겨 click을 만들지 않는다 — 입체를 휙 돌린 바로 뒤에 누른 버튼이 먹히지 않는다.
+   */
+  function onTouchMove(event) {
+    if (gesture && event.cancelable) event.preventDefault();
   }
 
   function onClickCapture(event) {

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { collectErrors } from './helpers.js';
+import { collectErrors, expectNoFling, srcBody, touchFlick, touchGestures } from './helpers.js';
 
 // ── 엔진 기능 시험 페이지 ──────────────────────────
 // src/를 그대로(빌드 없이) 띄워 엔진 기능을 하나씩 확인한다:
@@ -138,7 +138,7 @@ test.beforeEach(async ({ page }) => {
     if (pathname === '/dnd.html') return route.fulfill({ contentType: 'text/html', body: DND_PAGE });
     const file = path.resolve(`.${pathname}`);
     const contentType = file.endsWith('.css') ? 'text/css' : 'text/javascript';
-    return route.fulfill({ contentType, body: await readFile(file, 'utf8') });
+    return route.fulfill({ contentType, body: srcBody(file, await readFile(file, 'utf8')) });
   });
 });
 
@@ -172,6 +172,98 @@ test('feedback.anchor: 넓은 화면에서 알림을 무대 아래쪽 가운데�
   expect(toast.y + toast.height).toBeLessThanOrEqual(stage.y + stage.height);
   await btn(page, '← 단계 선택').click();
   await expect(page.locator('.toast-host')).not.toHaveClass(/is-anchored/);
+});
+
+test('플레이 머리 높이는 판을 하는 동안 바뀌지 않는다: 연속 칸은 자리를 미리 잡아 두고 시계는 [시간 재기] 버튼과 같은 자리에 겹쳐 보여, 시간 재기를 켜는 순간·연속이 생기는 순간·두 자리 수가 되는 순간·끊기는 순간 머리와 무대의 화면 자리가 0px 움직인다 (네 크기)', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  /** 머리와 그 안의 것들, 무대의 화면 자리 [왼쪽, 위, 너비, 높이] (문서 기준, 0.01px까지) */
+  const spot = () => page.evaluate(() => {
+    const rect = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el || el.getClientRects().length === 0) return null;
+      const b = el.getBoundingClientRect();
+      return [b.left + window.scrollX, b.top + window.scrollY, b.width, b.height].map((v) => Math.round(v * 100) / 100);
+    };
+    return {
+      header: rect('.play-header'), back: rect('.btn-back'), title: rect('.play-title'), goal: rect('.play-goal'),
+      timer: rect('.timer-toggle'), xp: rect('.meta-xp'), stage: rect('.test-stage'),
+    };
+  });
+  for (const size of sizes) {
+    for (const stage of ['a1', 'ch1']) {
+      const at = `${size.width}×${size.height} ${stage}`;
+      const phone = size.width <= 560;
+      await page.setViewportSize(size);
+      await page.goto(`${URL}?stage=${stage}&sound=off&unlock=all`);
+      await page.evaluate(() => localStorage.clear());
+      await page.goto(`${URL}?stage=${stage}&sound=off&unlock=all`);
+      const streak = page.locator('.meta-streak');
+      // 화면이 들어오는 움직임(아래에서 6px 올라온다)이 끝난 뒤의 자리가 기준이다
+      await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
+      const start = await spot();
+      await expect(streak, at).toBeHidden();
+      // 넓은 화면에서 머리는 한 줄(약 56px, 낮은 화면 52px)
+      if (size.width >= 1366) expect(start.header[3], at).toBeLessThanOrEqual(size.height <= 720 ? 52 : 56);
+      if (!phone) {
+        // 보이지 않을 때도 자리를 차지한다(정보 칸들의 맨 왼쪽): 폭 > 0, 화면 읽기에는 없다
+        const slot = await streak.evaluate((el) => ({ width: el.getBoundingClientRect().width, visibility: getComputedStyle(el).visibility, left: el.getBoundingClientRect().left, xpLeft: document.querySelector('.meta-xp').getBoundingClientRect().left }));
+        expect(slot.width, at).toBeGreaterThan(60);
+        expect(slot.visibility, at).toBe('hidden');
+        expect(slot.left, at).toBeLessThan(slot.xpLeft);
+      }
+      // 엔진은 머리 높이를 CSS 변수로 알린다(화면 높이에 맞춰 무대 높이를 정하는 게임이 쓴다)
+      expect(await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.play-area')).getPropertyValue('--play-header-h'))), at).toBeCloseTo(start.header[3], 1);
+      if (stage === 'ch1') {
+        // 시간 재기를 켠다(첫 답 전에만 켤 수 있다): 시계는 버튼 칸 안에 겹쳐 보이고, 머리의 어떤 것도 — 제목·목표 글의 너비까지 — 달라지지 않는다
+        const box = () => page.evaluate(() => {
+          const r = (sel) => { const b = document.querySelector(sel).getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom]; };
+          return { cell: r('.meta-timer'), clock: r('.timer-clock'), label: r('.timer-label') };
+        });
+        await expect(page.locator('.timer-clock'), at).toBeHidden();
+        await btn(page, '시간 재기').click();
+        await page.mouse.move(0, 0); // 버튼 위에 머문 포인터의 들뜸(1px)을 빼고 잰다
+        await expect(btn(page, '시간 재기'), at).toHaveAttribute('aria-pressed', 'true');
+        await expect(page.locator('.timer-clock'), at).toBeVisible();
+        await expect(page.locator('.timer-clock'), at).toHaveText(/^\d+:\d\d$/);
+        await page.waitForFunction(() => document.querySelector('.timer-label').getAnimations().every((a) => a.playState === 'finished'));
+        expect(await spot(), `${at} 시간 재기를 켬`).toEqual(start);
+        const on = await box();
+        expect(on.clock[0] >= on.cell[0] && on.clock[2] <= on.cell[2] && on.clock[1] >= on.cell[1] && on.clock[3] <= on.cell[3], `${at}: 시계가 버튼 칸 안에 있다 ${JSON.stringify(on)}`).toBe(true);
+        expect(on.label[3], `${at}: 버튼 글자(위)와 시계(아래)가 겹치지 않는다`).toBeLessThanOrEqual(on.clock[1] + 1);
+        // 끄면 시계가 사라지고 그대로, 다시 켠 채로 판을 한다
+        await btn(page, '시간 재기').click();
+        await page.mouse.move(0, 0);
+        await expect(page.locator('.timer-clock'), at).toBeHidden();
+        expect(await spot(), `${at} 시간 재기를 끔`).toEqual(start);
+        await btn(page, '시간 재기').click();
+        await page.mouse.move(0, 0);
+        await expect(page.locator('.timer-clock'), at).toBeVisible();
+      }
+      // 연속 1 → 2(칸이 나타남) → … → 10(두 자리 수) → 틀림(칸이 사라짐) → 다시 2
+      const widths = new Set();
+      for (let n = 1; n <= 10; n += 1) {
+        await btn(page, '맞힘').click();
+        if (n >= 2 && !phone) {
+          await expect(streak, at).toHaveText(`연속 ${n}`);
+          await expect(streak, at).toBeVisible();
+          widths.add(await streak.evaluate((el) => el.offsetWidth)); // 놓인 폭(나타날 때의 움직임과 무관)
+        } else await expect(streak, at).toBeHidden();
+        expect(await spot(), `${at} 연속 ${n}`).toEqual(start);
+      }
+      if (!phone) expect(widths.size, `${at}: 연속 칸의 폭은 한 자리 수와 두 자리 수에서 같다`).toBe(1);
+      await btn(page, '틀림').click();
+      await expect(streak, at).toBeHidden();
+      expect(await spot(), `${at} 연속이 끊김`).toEqual(start);
+      await btn(page, '다음 문제').click();
+      await btn(page, '맞힘').click();
+      await btn(page, '맞힘').click();
+      if (!phone) await expect(streak, at).toHaveText('연속 2');
+      expect(await spot(), `${at} 다시 연속 2`).toEqual(start);
+    }
+  }
 });
 
 test('플레이 머리: 이번 판 솜씨 점수와 연속(2 이상일 때만), 다시 일어서기 점수', async ({ page }, testInfo) => {
@@ -715,13 +807,13 @@ const centerOf = async (locator) => {
 
 test('끌어다 놓기: 끄는 카드가 스크롤 상자 밖에서도 잘리지 않고 놓을 때까지 보인다(복제는 body 아래 맨 위, 모양·크기 같음, 원래 자리는 흐림). 놓으면 들어가고, 놓을 수 없는 곳·받지 않는 상자·Esc·취소에서는 제자리로 돌아가며 남는 것이 없다', async ({ page }, testInfo) => {
   const errors = collectErrors(page);
-  // 창에 남아 있는 리스너 수(움직임·취소·키·가려짐). pointerup은 Playwright도 누를 때마다 붙였다 떼므로 세지 않는다
+  // 창에 남아 있는 리스너 수(움직임·취소·터치 움직임·키·가려짐). pointerup은 Playwright도 누를 때마다 붙였다 떼므로 세지 않는다
   await page.addInitScript(() => {
     const active = new Map();
     const add = window.addEventListener.bind(window);
     const remove = window.removeEventListener.bind(window);
     window.addEventListener = (type, fn, ...rest) => {
-      if (/^(pointermove|pointercancel|keydown|blur)$/.test(type)) active.set(fn, (active.get(fn) ?? new Set()).add(type));
+      if (/^(pointermove|pointercancel|touchmove|keydown|blur)$/.test(type)) active.set(fn, (active.get(fn) ?? new Set()).add(type));
       return add(type, fn, ...rest);
     };
     window.removeEventListener = (type, fn, ...rest) => {
@@ -892,6 +984,43 @@ test('끌어다 놓기: 끄는 카드가 스크롤 상자 밖에서도 잘리지
   expect(await page.evaluate(() => window.listeners_())).toBe(listeners0);
   await pointer.up();
   expect(await drops()).toHaveLength(4);
+  expect(errors).toEqual([]);
+});
+
+test('끌어다 놓기(터치): 손가락으로 휙 끌어 놓아도 브라우저의 관성 스크롤이 생기지 않고(끄는 동안의 touchmove를 쓴 것으로 알린다), 놓은 바로 뒤의 탭 — 떼는 것과 틈 없이 이어진 탭까지 — 이 먹힌다', async ({ page, browser }, testInfo) => {
+  test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.goto(DND_URL);
+  const cdp = await page.context().newCDPSession(page);
+  const card = (v) => page.locator(`#root .card[data-v="${v}"]`);
+  const bin = (name) => page.locator(`.bin[data-bin="${name}"]`);
+  const gestures = await touchGestures(browser, page, async () => {
+    // 1) 카드 '가'를 "넣는 곳"으로 휙 끌어 놓는다 → 들어간다
+    await touchFlick(cdp, await centerOf(card('가')), await centerOf(bin('yes')));
+    await expect(bin('yes').locator('.card[data-v="가"]')).toHaveCount(1);
+    // 2) 바로 카드 '나'를 탭해 고른다. 끌기가 관성을 남겼다면 크롬북·안드로이드·리눅스의 크롬은 이 탭을 "관성 멈추기"로 삼킨다
+    await card('나').tap();
+    await expect(card('나')).toHaveAttribute('aria-pressed', 'true');
+    // 3) 고른 카드를 "넣는 곳"에 탭으로 놓는다 (상자 안의 카드가 없는 오른쪽 아래를 누른다)
+    await bin('yes').tap({ position: { x: 130, y: 130 } });
+    await expect(bin('yes').locator('.card')).toHaveCount(2);
+    // 4) 카드 '다'를 "안 받는 곳"으로 끌고, 손을 떼는 것과 다음 탭(상자 안의 카드 '가' 고르기)을 틈 없이 이어 보낸다 → 그 탭도 먹힌다
+    //    (끌기 뒤 "따라오는 click 한 번 막기"는 새로 누르는 순간 풀린다 — 타이머로만 풀면 이 탭이 막힌다)
+    const release = await touchFlick(cdp, await centerOf(card('다')), await centerOf(bin('no')), { release: false });
+    const [x, y] = await centerOf(card('가'));
+    await Promise.all([
+      release(),
+      cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }),
+      cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+    ]);
+    await expect(card('가')).toHaveAttribute('aria-pressed', 'true');
+  });
+  expect(await page.evaluate(() => window.drops)).toEqual(['가>yes', '나>yes', '다>no']);
+  // 끈 직후의 탭 세 번이 모두 먹혔다(위의 고름·놓임·고름). 그리고 브라우저가 관성 스크롤을 시작하지 않았다
+  // — 제스처의 개수는 플랫폼마다 다를 수 있어 세지 않는다
+  expectNoFling(expect, testInfo, gestures);
+  await page.waitForTimeout(250); // 돌아가는 복제가 사라진 뒤
+  expect(leftOf(await dragState(page))).toEqual({ ...NOTHING_LEFT, selected: 1 }); // 고른 카드 '가'만 남는다
   expect(errors).toEqual([]);
 });
 

@@ -14,6 +14,7 @@
  */
 
 export const RETURN_MS = 150; // 복제가 제자리로 돌아가는 시간
+const TOUCH_MOVE = { passive: false }; // touchmove를 preventDefault 하려면 passive가 아니어야 한다 (끄는 동안에만 듣는다)
 const GHOST_Z = 1000; // 알림(100)·색종이(90)보다 위
 // 복제에 옮겨 적지 않는 속성: 다시 시작되면 안 되는 움직임, 그리고 pointer-events(복제 전체가 none을 물려받아 아래 상자가 잡히게)
 const SKIP_LOOK = /^(transition|animation|pointer-events)/;
@@ -88,7 +89,7 @@ export function enableDragDrop({
 
   function onClick(event) {
     if (suppressClick) {
-      suppressClick = false;
+      releaseSwallow();
       return;
     }
     const item = itemOf(event.target);
@@ -175,8 +176,20 @@ export function enableDragDrop({
     window[act]('pointermove', onPointerMove);
     window[act]('pointerup', onPointerUp);
     window[act]('pointercancel', onPointerCancel);
+    window[act]('touchmove', onTouchMove, TOUCH_MOVE);
     window[act]('keydown', onKeyDown, true);
     window[act]('blur', onBlur);
+  }
+
+  /**
+   * 손가락으로 끄는 동안의 touchmove는 "우리가 썼다"고 알린다(preventDefault).
+   * item은 touch-action: none이라 화면이 스크롤되지는 않지만, 알리지 않으면 브라우저는 이 움직임을 화면 쓸기로도 세어
+   * 손을 떼는 순간 보이지 않는 관성 스크롤(fling)을 시작한다. 크롬(크롬북·안드로이드·리눅스)은 그 관성이 도는 동안(1초 안팎)의
+   * 첫 탭을 "관성 멈추기"로 여겨 click을 만들지 않는다 — 카드를 휙 끌어 놓은 바로 뒤에 누른 버튼이 먹히지 않는다.
+   * (포인터 이벤트는 그대로 온다. 누르기만 한 탭은 touchmove가 없어 달라지지 않는다.)
+   */
+  function onTouchMove(event) {
+    if (drag && event.cancelable) event.preventDefault();
   }
 
   function onPointerDown(event) {
@@ -239,13 +252,22 @@ export function enableDragDrop({
     return true;
   }
 
-  /** 끌기 직후 따라오는 click이 "선택"으로 처리되지 않게 한 번 막는다 */
+  /**
+   * 끌기 직후 따라오는 click이 "선택"으로 처리되지 않게 한 번 막는다.
+   * 그 click은 포인터를 뗀 것과 같은 차례에 온다(마우스). 터치 끌기에는 click이 따라오지 않으므로, 막기는 그 차례가 지나면(타이머)
+   * 풀리고 — 기기가 느려 타이머가 밀려도 — 새로 누르는 순간에는 반드시 풀린다: 끌기 뒤의 첫 누르기를 삼키지 않는다.
+   */
   function swallowNextClick() {
     suppressClick = true;
     clearTimeout(suppressTimer);
-    suppressTimer = setTimeout(() => {
-      suppressClick = false;
-    }, 0);
+    suppressTimer = setTimeout(releaseSwallow, 0);
+    window.addEventListener('pointerdown', releaseSwallow, true);
+  }
+
+  function releaseSwallow() {
+    suppressClick = false;
+    clearTimeout(suppressTimer);
+    window.removeEventListener('pointerdown', releaseSwallow, true);
   }
 
   function onPointerUp(event) {
@@ -279,8 +301,8 @@ export function enableDragDrop({
       swallowNextClick();
       return true;
     }
-    suppressClick = true;
-    clearTimeout(suppressTimer);
+    releaseSwallow();
+    suppressClick = true; // 아직 눌려 있다: 떼어질 때까지 막아 두고, 뗀 뒤에는 위의 규칙대로 푼다
     pendingRelease = () => {
       clearRelease();
       swallowNextClick();
@@ -316,7 +338,7 @@ export function enableDragDrop({
       root.removeEventListener('pointerdown', onPointerDown);
       listen(false);
       clearRelease();
-      clearTimeout(suppressTimer);
+      releaseSwallow();
       if (drag?.active) {
         drag.ghost.ghost.remove();
         drag.el.classList.remove('is-dragging');

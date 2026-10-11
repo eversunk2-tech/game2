@@ -17,7 +17,7 @@ import {
 } from '../../src/games/net-workshop/logic.js';
 import { CUBE_NETS, INVALID_HEXOMINOES } from '../../src/games/net-workshop/nets-data.js';
 import { displayNet, viewDirection } from '../../src/games/net-workshop/view3d.js';
-import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
+import { collectErrors, expectNoFling, fileUrl, hasHorizontalScroll, srcBody, touchFlick, touchGestures } from './helpers.js';
 
 const FILE = 'net-workshop.html';
 
@@ -689,7 +689,7 @@ test.describe('엔진 차시 묶음', () => {
       if (pathname === '/lesson.html') return route.fulfill({ contentType: 'text/html', body: LESSON_PAGE });
       const file = path.resolve(`.${pathname}`);
       const contentType = file.endsWith('.css') ? 'text/css' : 'text/javascript';
-      return route.fulfill({ contentType, body: await readFile(file, 'utf8') });
+      return route.fulfill({ contentType, body: srcBody(file, await readFile(file, 'utf8')) });
     });
   });
 
@@ -2204,12 +2204,13 @@ test('주사위 주문: 눈 카드를 놓고 [접어 보기] → 합이 7이 아
   await expect(page.locator('.free-finish')).toBeFocused();
   await page.locator('.free-finish').click();
 
-  // 결과: 도전 성공. 별은 접은 시도의 정확도(4번 중 2번 = 50% → 별 1개). 시간 재기를 켜지 않아 시간은 어디에도 없다
+  // 결과: 도전 성공. 별은 접어서 틀린 횟수로(spec 16-13) — 두 번 틀려 별 1개. 별 기준 안내도 그 기준의 말이다
+  // ("한 번만 더 맞히면" 같은 정답률 기준의 말은 주사위가 2개뿐인 이 단계에 맞지 않는다). 시간 재기를 켜지 않아 결과에 시간이 없다
   await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
   await expect(page.locator('.cert-eyebrow')).toHaveText('도전 주문서 · 주사위 주문');
   await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 1개');
   await expect(page.getByText('4번 중 2번 맞힘')).toBeVisible();
-  await expect(page.locator('.star-hint')).toHaveCount(0); // 주사위가 2개뿐이라 "한 번만 더 맞히면" 안내는 맞지 않는다
+  await expect(page.locator('.star-hint')).toHaveText('한 번만 틀리면 별 2개, 한 번도 틀리지 않으면 별 3개!');
   await expect(page.locator('.behavior')).toHaveText(['만든 주사위2 / 2', '한 번에 맞힘0개+0', '다시 일어서기2번+2']);
   await expect(page.locator('.xp-line')).toContainText('도전 성공 +10 · 별 1개 +2');
   expect(await resultXpSum(page)).toEqual({ tiles: 2, line: 12, gained: 14 });
@@ -2269,7 +2270,64 @@ test('주사위 주문: 눈 카드를 놓고 [접어 보기] → 합이 7이 아
   expect(errors).toEqual([]);
 });
 
-test('주사위 주문 시간 재기: 켜지 않으면 시간이 어디에도 보이지 않고(플레이·결과·단계 지도), 켠 학생만 걸린 시간과 내 기록이 보인다', async ({ page }) => {
+test('주사위 주문 별(spec 16-13): 한 번 틀리고 고치면 별 2개(18점)와 "한 번도 틀리지 않으면 별 3개!", 다시 해서 한 번도 안 틀리면 별 3개(+6), 그 뒤로는 0점. 화면 = 저장', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors = collectErrors(page);
+  await page.goto(DICE());
+  const xp = page.locator('.meta-xp b');
+  const cross = shiftCells(SHAPES.cross, 1, 1);
+  const perfect = async () => {
+    for (const [i, shape] of [SHAPES.cross, SHAPES.n33].entries()) {
+      if (i > 0) await page.locator('.dice-next').click();
+      await placeShape(page, diceOrder(shiftCells(shape, 1, 1)));
+      await foldIt(page);
+    }
+  };
+  // 첫 번째 주사위를 한 번 틀리고(눈을 놓은 차례대로: 2와 4가 마주 본다) 고친 뒤, 두 번째는 한 번에
+  await placeShape(page, cross);
+  await foldIt(page);
+  await expect(page.locator('.stage-badge')).toHaveText('합이 7이 아닌 짝이 있어요');
+  await page.locator('.free-new').click();
+  await perfect();
+  await expect(xp).toHaveText('+4'); // 고쳐서 맞힘 +1 · 한 번에 맞힘 +2 · 다시 일어서기 +1
+  await page.locator('.free-finish').click();
+  await expect(page.getByRole('heading', { name: '도전 성공!' })).toBeVisible();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  await expect(page.locator('.star-hint')).toHaveText('한 번도 틀리지 않으면 별 3개!');
+  await expect(page.getByText('3번 중 2번 맞힘')).toBeVisible();
+  await expect(page.locator('.xp-line')).toContainText('도전 성공 +10 · 별 2개 +4');
+  expect(await resultXpSum(page)).toEqual({ tiles: 4, line: 14, gained: 18 });
+  expect(await storedXpOf(page)).toBe(18);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:stars'))['cube-dice'])).toBe(2);
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await expect(page.locator('.challenge-card').first().locator('.stars')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  // 다시 해서 한 번도 틀리지 않음: 연습 4 + 늘어난 별 1개 2 = +6 → 별 3개. 그 뒤로는 다시 해도 0점 (합 24)
+  await page.locator('.challenge-card').first().click();
+  await perfect();
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.star-hint')).toHaveText('별 3개를 모두 받았어요!');
+  await expect(page.locator('.xp-line')).toContainText('별 1개 +2');
+  await expect(page.locator('.xp-line')).not.toContainText('도전 성공');
+  expect(await resultXpSum(page)).toEqual({ tiles: 4, line: 2, gained: 6 });
+  expect(await storedXpOf(page)).toBe(24);
+  // 별 3개 뒤: 한 번 틀려도 별은 줄지 않고(3개 그대로) 점수는 0
+  await page.getByRole('button', { name: '다시 하기' }).click();
+  await placeShape(page, cross);
+  await foldIt(page);
+  await page.locator('.free-new').click();
+  await perfect();
+  await expect(xp).toHaveText('+0');
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개'); // 이번 판의 별
+  await expect(page.locator('.star-hint')).toHaveText('한 번도 틀리지 않으면 별 3개!');
+  expect(await resultXpSum(page)).toEqual({ tiles: 0, line: 0, gained: 0 });
+  expect(await storedXpOf(page)).toBe(24);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:stars'))['cube-dice'])).toBe(3); // 가장 좋은 별
+  expect(errors).toEqual([]);
+});
+
+test('주사위 주문 시간 재기: 켜지 않으면 학생이 하는 화면(플레이·결과·단계 지도)에 시간이 보이지 않고, 켠 학생만 걸린 시간과 내 기록이 보인다. 학습 기록에는 다른 단계처럼 걸린 시간이 남는다(spec 16-13)', async ({ page }) => {
   test.setTimeout(60_000);
   const errors = collectErrors(page);
   await page.goto(DICE());
@@ -2305,6 +2363,8 @@ test('주사위 주문 시간 재기: 켜지 않으면 시간이 어디에도 �
   await expect(page.locator('.challenge-card').first()).not.toContainText('내 기록');
   expect(await page.locator('.challenge-card').first().innerText()).not.toMatch(TIME_TEXT);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards')).best)).toEqual({});
+  // 학습 기록(선생님이 보는 기록)에는 다른 단계처럼 걸린 시간이 남는다 — 켜지 않은 판에서 숨기는 것은 학생이 하는 화면뿐이다
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:log')).at(-1).durationMs)).toBeGreaterThan(0);
   // (나) 켬: 머리에 걸린 시간, 결과에 "내 기록 … (첫 기록이에요)"와 걸린 시간, 단계 카드에 내 기록
   await page.locator('.challenge-card').first().click();
   await toggle.click();
@@ -2510,6 +2570,56 @@ test('주사위 주문 터치(태블릿): 눈 카드를 칸으로 끌어 놓고,
   expect(errors).toEqual([]);
 });
 
+test('터치로 카드를 휙 끌어 놓거나 접은 입체를 휙 돌린 바로 뒤의 첫 탭이 먹힌다: 끄는(돌리는) 동안의 touchmove를 쓴 것으로 알려 브라우저의 관성 스크롤이 생기지 않는다 — 크롬북·안드로이드의 크롬은 관성이 도는 동안의 첫 탭을 삼킨다', async ({ page, browser }, testInfo) => {
+  test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.goto(FREE());
+  const cdp = await page.context().newCDPSession(page);
+  const mid = async (locator) => {
+    const b = await locator.boundingBox();
+    return [b.x + b.width / 2, b.y + b.height / 2];
+  };
+  const cross = shiftCells(SHAPES.cross, 1, 1);
+  let poses = [];
+  const gestures = await touchGestures(browser, page, async () => {
+    // 1) 카드 5장은 탭으로 놓고, 여섯째 카드는 손가락으로 휙 끌어 놓은 뒤 → 바로 [접어 보기]를 탭
+    for (const c of cross.slice(0, 5)) await cellOf(page, c).tap();
+    await expect(page.locator('.free-board .tile-face')).toHaveCount(5);
+    await touchFlick(cdp, await mid(page.locator('.tray-card[data-label="바"]')), await mid(cellOf(page, cross[5])));
+    await page.locator('.free-fold').tap();
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
+    // 2) 접은 입체를 세 방향으로 휙 돌리고 → 바로 [펴서 고치기]를 탭
+    const stage = await foldStage(page).boundingBox();
+    const [sx, sy] = [stage.x + stage.width * 0.35, stage.y + stage.height * 0.6];
+    poses = [(await viewOf(page)).pose];
+    for (const [dx, dy] of [[160, 0], [-120, 50], [0, -110]]) {
+      await touchFlick(cdp, [sx - dx / 2, sy - dy / 2], [sx + dx / 2, sy + dy / 2]);
+      poses.push((await viewOf(page)).pose);
+    }
+    await page.locator('.free-fix').tap();
+    await expect(foldStage(page)).toBeHidden();
+    await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
+    // 3) 놓인 면을 카드 칸으로 휙 끌어 빼면서, 손을 떼는 것과 다음 탭(빈 칸 누르기)을 틈 없이 이어 보낸다 → 그 탭으로 뺀 카드가 놓인다
+    //    (끌기 뒤 "따라오는 click 건너뛰기"는 새로 누르는 순간 풀린다)
+    const release = await touchFlick(cdp, await mid(cellOf(page, cross[5]).locator('.tile-face')), await mid(page.locator('.tray-card[data-label="가"]')), { release: false });
+    const [x, y] = await mid(cellOf(page, [6, 4]));
+    await Promise.all([
+      release(),
+      cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] }),
+      cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }),
+    ]);
+    await expect(cellOf(page, [6, 4]).locator('.tile-face')).toHaveAttribute('data-label', '바');
+    await expect(page.locator('.free-board .tile-face')).toHaveCount(6);
+  });
+  // 세 번 모두 돌았다(자세가 달라졌다)
+  for (let i = 1; i < poses.length; i += 1) expect(poses[i].map((v) => v.toFixed(3)).join(' '), `돌리기 ${i}`).not.toBe(poses[i - 1].map((v) => v.toFixed(3)).join(' '));
+  // 끈(돌린) 직후의 탭이 모두 먹혔다(위의 접힘·펴짐·놓임). 그리고 브라우저가 관성 스크롤을 시작하지 않았다
+  // — 제스처의 개수는 플랫폼마다 다를 수 있어 세지 않는다
+  expectNoFling(expect, testInfo, gestures);
+  expect(errors).toEqual([]);
+});
+
 test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 스크롤과 판 안쪽 넘침이 없고 버튼이 잘리지 않으며, 알림이 조작을 가리지 않고, 판 → 무대 어긋남 0px', async ({ page }, testInfo) => {
   test.setTimeout(150_000);
   const errors = collectErrors(page);
@@ -2618,6 +2728,226 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     await page.waitForTimeout(2300); // 결과 연출이 끝난 뒤
     if (!phone) await noScroll(page);
     expect(await hasHorizontalScroll(page), `${at} 결과`).toBe(false);
+  }
+  expect(errors).toEqual([]);
+});
+
+// ── 플레이 머리 높이 고정 (N2 검토 N2-1): 연속 칸이 생기거나 사라져도 매트가 움직이지 않는다 ─────────────────
+test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × 여섯 단계): 시간 재기를 켜는 순간, 연달아 두 번 맞혀 "연속 2"가 생기는 순간, 틀려서 사라지는 순간에 머리·제목·목표·매트의 화면 자리가 0px 움직이고, 직접 만드는 단계는 그 순간의 판 → 무대 어긋남도 0px이다', async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
+  const errors = collectErrors(page);
+  const sizes = testInfo.project.name === 'chromebook'
+    ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
+    : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
+  /** 머리와 그 안의 것들, 매트의 자리 [왼쪽, 위, 너비, 높이] (문서 기준, 0.01px까지) */
+  const spot = () => page.evaluate(() => {
+    const rect = (sel) => {
+      const el = document.querySelector(sel);
+      if (!el || el.getClientRects().length === 0) return null;
+      const b = el.getBoundingClientRect();
+      return [b.left + window.scrollX, b.top + window.scrollY, b.width, b.height].map((v) => Math.round(v * 100) / 100);
+    };
+    return { header: rect('.play-header'), back: rect('.btn-back'), title: rect('.play-title'), goal: rect('.play-goal'), mat: rect('.mat') };
+  });
+  /**
+   * [접어 보기]를 누른 같은 차례에: 누르기 전·후의 머리 높이와 매트 자리, 판의 칸 가운데 ↔ 무대의 면 가운데의 가장 큰 어긋남(px).
+   * 연속 칸은 이 누르기에서 바뀐다(둘째를 연달아 맞히면 나타나고, 틀리면 사라진다)
+   */
+  const foldNow = () => page.evaluate(() => {
+    const round = (v) => Math.round(v * 100) / 100;
+    const center = (el) => {
+      const b = el.getBoundingClientRect();
+      return [b.left + b.width / 2 + window.scrollX, b.top + b.height / 2 + window.scrollY];
+    };
+    const look = () => {
+      const m = document.querySelector('.mat').getBoundingClientRect();
+      const streak = document.querySelector('.meta-streak');
+      return {
+        header: round(document.querySelector('.play-header').getBoundingClientRect().height),
+        mat: [m.left + window.scrollX, m.top + window.scrollY, m.width, m.height].map(round),
+        streak: Boolean(streak) && !streak.hidden,
+      };
+    };
+    const cells = [...document.querySelectorAll('.free-board .cell.is-filled')].map((c) => ({ label: c.querySelector('.tile-face').dataset.label, at: center(c) }));
+    const before = look();
+    document.querySelector('.free-fold').click();
+    const faces = [...document.querySelectorAll('.fold-stage .net-face')].map((f) => ({ label: f.dataset.label, at: center(f) }));
+    const drift = Math.max(...cells.map((c) => {
+      const f = faces.find((x) => x.label === c.label);
+      return f ? Math.hypot(f.at[0] - c.at[0], f.at[1] - c.at[1]) : 999;
+    }));
+    return { drift: round(drift), count: cells.length, before, after: look() };
+  });
+  const streak = page.locator('.meta-streak');
+  for (const size of sizes) {
+    const phone = size.width <= 560;
+    const board = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
+    const put = (shape) => centerOnBoard(shape, board);
+    for (const stage of STAGES) {
+      const at = `${size.width}×${size.height} ${stage.id}`;
+      await page.setViewportSize(size);
+      await page.goto(STAGE_URL(stage.id));
+      await page.evaluate(() => localStorage.clear());
+      await page.goto(STAGE_URL(stage.id));
+      // 화면이 들어오는 움직임(아래에서 6px 올라온다)이 끝난 뒤의 자리가 기준이다
+      await page.waitForFunction(() => document.querySelector('.screen-play').getAnimations().every((a) => a.playState === 'finished'));
+      const start = await spot();
+      await expect(streak, at).toBeHidden();
+      const same = async (label) => expect(await spot(), `${at} ${label}`).toEqual(start);
+      /** 연속 칸: 휴대폰은 숨긴다(엔진). 그 밖에는 보이거나(연속 n) 안 보이거나 */
+      const streakIs = async (n, label) => {
+        if (n >= 2 && !phone) await expect(streak, `${at} ${label}`).toHaveText(`연속 ${n}`);
+        else await expect(streak, `${at} ${label}`).toBeHidden();
+      };
+
+      if (['judge', 'opposite', 'complete'].includes(stage.kind)) {
+        const questions = questionsFor(stage.id);
+        const right = {
+          judge: (q) => answerJudge(page, q),
+          opposite: async (q) => {
+            await page.locator(`.net-face[data-face="${q.answer}"]`).click();
+            await expect(page.locator(`.net-face[data-face="${q.answer}"]`)).toHaveClass(/is-correct/);
+          },
+          complete: async (q) => {
+            await page.locator('.face-card').click();
+            await page.locator(`.net-slot[data-cell="${q.slots.find((slot) => slot.ok).key}"]`).click();
+            await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
+          },
+        }[stage.kind];
+        const wrong = {
+          judge: (q) => page.locator(`.answer-btn:not([data-answer="${q.expected}"])`).click(),
+          opposite: (q) => page.locator(`.net-face[data-face="${q.net.faces.find((f) => f.id !== q.star && f.id !== q.answer).id}"]`).click(),
+          complete: async (q) => {
+            await page.locator('.face-card').click();
+            await page.locator(`.net-slot[data-cell="${q.slots.find((slot) => !slot.ok).key}"]`).click();
+          },
+        }[stage.kind];
+        await right(questions[0]);
+        await streakIs(1, '첫 문제를 맞힘');
+        await same('첫 문제를 맞힘');
+        await page.locator('.next-btn').click();
+        await same('둘째 문제');
+        await right(questions[1]);
+        await streakIs(2, '둘째 문제를 맞힘');
+        await same('연속 칸이 생김');
+        await page.locator('.next-btn').click();
+        await wrong(questions[2]);
+        await streakIs(0, '셋째 문제를 틀림');
+        await same('연속 칸이 사라짐');
+        continue;
+      }
+
+      // 직접 만드는 단계: 접는 순간마다 누르기 전·후의 머리 높이·매트 자리가 같고 판 → 무대 어긋남 0px
+      const fold = async (cells, label, streakAfter) => {
+        await placeShape(page, cells);
+        await same(`${label}: 6장을 놓음`);
+        const m = await foldNow();
+        expect({ drift: m.drift, count: m.count, moved: m.after.header !== m.before.header || String(m.after.mat) !== String(m.before.mat) }, `${at} ${label}`)
+          .toEqual({ drift: 0, count: 6, moved: false });
+        if (!phone) expect(m.after.streak, `${at} ${label}: 연속 칸`).toBe(streakAfter >= 2);
+        await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+        await streakIs(streakAfter, label);
+        await same(`${label}: 접힘`);
+      };
+      if (stage.kind === 'dice') {
+        // 시간 재기를 켜는 순간(첫 접기 전에만 켤 수 있다)에도 아무것도 움직이지 않는다 — 시계가 버튼과 같은 자리에 겹쳐 보여
+        // 제목·목표 글의 자리(너비)까지 그대로다
+        await page.getByRole('button', { name: '시간 재기' }).click();
+        await expect(page.locator('.timer-clock')).toBeVisible();
+        await same('시간 재기를 켬');
+        await fold(diceOrder(put(SHAPES.cross)), '첫 번째 주사위', 1);
+        await page.locator('.dice-next').click();
+        await same('두 번째 주사위를 놓는 판');
+        await fold(diceOrder(put(SHAPES.n33)), '두 번째 주사위(연속 칸이 생김)', 2);
+        continue;
+      }
+      await fold(put(SHAPES.cross), '첫 전개도', 1);
+      await fresh(page);
+      await fold(put(SHAPES.n33), '둘째 전개도(연속 칸이 생김)', 2);
+      await fresh(page);
+      await fold(put(SHAPES.line5), '안 되는 모양(연속 칸이 사라짐)', 0);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test('머리가 두 줄이 되어도(글자가 넓은 기기) 크롬북 화면이 넘치지 않는다: 작업대 높이가 머리 높이를 따른다 — 1366×768·1366×680 × 여섯 단계에서 목표 글이 한 줄 더 늘면 매트가 그만큼 낮아지고 아래 끝은 그대로이며, 세로 스크롤과 판 안쪽 넘침이 없다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '작업대가 화면 높이에 맞춰지는 넓은 화면에서 확인');
+  test.setTimeout(180_000);
+  const errors = collectErrors(page);
+  const look = () => page.evaluate(() => {
+    const header = document.querySelector('.play-header').getBoundingClientRect();
+    const mat = document.querySelector('.mat').getBoundingClientRect();
+    const goal = document.querySelector('.play-goal');
+    return {
+      header: header.height,
+      told: parseFloat(getComputedStyle(document.querySelector('.play-area')).getPropertyValue('--play-header-h')),
+      matTop: mat.top,
+      matHeight: mat.height,
+      matBottom: mat.bottom,
+      panelBottom: document.querySelector('.net-panel').getBoundingClientRect().bottom,
+      goalLines: Math.round(goal.getBoundingClientRect().height / parseFloat(getComputedStyle(goal).lineHeight)),
+    };
+  });
+  for (const size of [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]) {
+    for (const stage of STAGES) {
+      const at = `${size.width}×${size.height} ${stage.id}`;
+      await page.setViewportSize(size);
+      await page.goto(STAGE_URL(stage.id));
+      await page.evaluate(() => localStorage.clear());
+      await page.goto(STAGE_URL(stage.id));
+      await page.waitForFunction(() => document.querySelector('.screen-play').getAnimations().every((a) => a.playState === 'finished'));
+      const one = await look();
+      // 엔진이 머리 높이를 알린다. 처음 화면은 넘치지 않는다(이 기기의 글꼴에서 목표 글이 몇 줄이든)
+      expect(Math.round(one.told * 10) / 10, `${at}: --play-header-h`).toBe(Math.round(one.header * 10) / 10);
+      await noScroll(page);
+      // 목표 글을 한 줄 더 늘린다: 가장 긴 줄의 60%로 좁힌다 — 글자가 넓은 글꼴에서 줄이 넘어갈 때와 같은 모습이다
+      await page.evaluate(() => {
+        const goal = document.querySelector('.play-goal');
+        const range = document.createRange();
+        range.selectNodeContents(goal);
+        const width = Math.max(...[...range.getClientRects()].map((r) => r.right)) - goal.getBoundingClientRect().left;
+        goal.style.maxWidth = `${Math.ceil(width * 0.6)}px`;
+      });
+      await page.waitForFunction(() => {
+        const header = document.querySelector('.play-header').getBoundingClientRect().height;
+        const told = parseFloat(getComputedStyle(document.querySelector('.play-area')).getPropertyValue('--play-header-h'));
+        return Math.abs(told - header) < 0.1;
+      });
+      const two = await look();
+      const grown = two.header - one.header;
+      expect(two.goalLines, at).toBeGreaterThan(one.goalLines);
+      expect(grown, `${at}: 머리가 한 줄만큼 높아졌다`).toBeGreaterThan(15);
+      // 머리가 높아진 만큼 매트·작업 지시서가 낮아지고, 아래 끝은 그대로다 → 화면이 넘치지 않는다
+      expect(Math.abs(two.matTop - (one.matTop + grown)), `${at}: 매트 위`).toBeLessThan(0.5);
+      expect(Math.abs(two.matHeight - (one.matHeight - grown)), `${at}: 매트 높이 ${one.matHeight} → ${two.matHeight}`).toBeLessThan(0.5);
+      expect(Math.abs(two.matBottom - one.matBottom), `${at}: 매트 아래 끝`).toBeLessThan(0.5);
+      expect(Math.abs(two.panelBottom - one.panelBottom), `${at}: 작업 지시서 아래 끝`).toBeLessThan(0.5);
+      await noScroll(page);
+      // 그 높이로 한 번 해 본다: 접은(답한) 장면도 넘치지 않고, 직접 만드는 단계는 판 안쪽도 넘치지 않는다
+      if (stage.kind === 'judge') await answerJudge(page, questionsFor(stage.id)[0]);
+      else if (stage.kind === 'opposite') await page.locator(`.net-face[data-face="${questionsFor(stage.id)[0].answer}"]`).click();
+      else if (stage.kind === 'complete') {
+        await page.locator('.face-card').click();
+        await page.locator(`.net-slot[data-cell="${questionsFor(stage.id)[0].slots.find((slot) => slot.ok).key}"]`).click();
+        await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
+      } else {
+        const board = BOARD_SIZES.wide;
+        if (stage.kind === 'dice') await page.getByRole('button', { name: '시간 재기' }).click();
+        await expectPanelFits(page, `${at} 놓는 판`);
+        // 글이 가장 긴 장면: 정육면체가 안 되는 모양(주사위는 까닭 문장, 나머지는 까닭 고르기 → 틀린 까닭)
+        await placeShape(page, centerOnBoard(SHAPES.block, board));
+        await foldIt(page, stage.kind === 'dice' ? null : 'overlap');
+        await expectPanelFits(page, `${at} 정육면체가 안 됨`);
+        await noScroll(page);
+        await fresh(page);
+        await placeShape(page, stage.kind === 'dice' ? diceOrder(centerOnBoard(SHAPES.cross, board)) : centerOnBoard(SHAPES.cross, board));
+        await foldIt(page);
+        await expectPanelFits(page, `${at} 접힘`);
+      }
+      await noScroll(page);
+      expect((await look()).header, `${at}: 판 도중에도 머리 높이는 그대로`).toBeCloseTo(two.header, 1);
+    }
   }
   expect(errors).toEqual([]);
 });
@@ -4356,29 +4686,43 @@ test('접는 도중 터치로도 같은 정도로 돈다(spec 17-18): 접는 정
 const FRAME_RECORDER = () => {
   const raf = window.requestAnimationFrame.bind(window);
   window.gameFrames_ = 0;
-  window.requestAnimationFrame = (fn) => {
-    window.gameFrames_ += 1;
-    return raf(fn);
-  };
   let on = false;
   let frames = [];
+  let sample = () => {};
+  window.requestAnimationFrame = (fn) => {
+    window.gameFrames_ += 1;
+    // 게임의 프레임 콜백이 끝난 바로 뒤에 그 프레임의 모습을 적는다 (아래 sample: 같은 프레임의 기록을 고쳐 쓴다)
+    return raf((frameTime) => {
+      fn(frameTime);
+      if (on) sample(frameTime);
+    });
+  };
   window.rec_ = {
     start() {
       const stage = document.querySelector('.fold-stage');
       const scene = stage.querySelector('.net-scene');
       on = true;
       frames = [];
-      const loop = () => {
+      // 프레임마다 기록 하나: 그 프레임에 게임이 그린 뒤의 모습과, 브라우저가 그 프레임에 준 시각(requestAnimationFrame 콜백의 인자 —
+      // 게임의 움직임도 이 시각으로 나아간다). 콜백이 불린 때(performance.now())로 재거나 게임이 그리기 전의 모습을 적으면, 기기가 바빠
+      // 콜백이 밀리거나 프레임이 빠질 때 한 프레임의 움직임이 옆 프레임의 것으로 적혀("3ms 프레임에 14°") 한 프레임의 몫 검사가 헛돈다
+      sample = (frameTime) => {
         const text = scene.style.transform;
         const d = new DOMMatrix(text.replace(/^scale3d\([^)]*\) /, ''));
-        frames.push({
-          at: performance.now(),
+        const frame = {
+          at: frameTime,
           text,
           fold: stage.dataset.fold,
           easing: stage.classList.contains('is-easing'),
           scale: Number(text.match(/^scale3d\(([\d.]+)/)[1]) * Number(scene.style.getPropertyValue('--k') || 1),
           pose: [d.m11, d.m21, d.m31, d.m12, d.m22, d.m32, d.m13, d.m23, d.m33],
-        });
+        };
+        if (frames.length > 0 && frames.at(-1).at === frameTime) frames[frames.length - 1] = frame;
+        else frames.push(frame);
+      };
+      // 게임이 그리지 않는 프레임도 적는다(멈춘 뒤에 움직이지 않는지 보려고)
+      const loop = (frameTime) => {
+        sample(frameTime);
         if (on) raf(loop);
       };
       raf(loop);

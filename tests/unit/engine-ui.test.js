@@ -64,6 +64,16 @@ test('별 기준 안내: 몇 번 더 맞히면 별이 늘어나는지 (90% ★3,
   // 게임이 별을 직접 준 경우·답 기록이 없는 경우는 정답률 안내를 하지 않는다
   assert.equal(starHint({ stars: 2, attempts: 6, correct: 5, fromAccuracy: false }), null);
   assert.equal(starHint({ stars: 1, attempts: 0, correct: 0 }), null);
+  // 게임이 별을 직접 정하고 그 기준 한 문장을 준 판(finish({ stars, starNote })): 별이 3개가 안 되면 그 문장을 보인다
+  const note = '한 번도 틀리지 않으면 별 3개!';
+  assert.equal(starHint({ stars: 2, attempts: 3, correct: 2, fromAccuracy: false, note }), note);
+  assert.equal(starHint({ stars: 1, attempts: 5, correct: 2, fromAccuracy: false, note: `  ${note} ` }), note);
+  assert.equal(starHint({ stars: 3, attempts: 2, correct: 2, fromAccuracy: false, note }), '별 3개를 모두 받았어요!'); // 별 3개는 엔진의 말
+  assert.equal(starHint({ stars: 0, attempts: 2, correct: 0, cleared: false, fromAccuracy: false, note }), '까닭을 다시 살펴보고 한 번 더 해 봐요.');
+  assert.equal(starHint({ stars: 2, attempts: 3, correct: 2, fromAccuracy: false, note: '   ' }), null);
+  assert.equal(starHint({ stars: 2, attempts: 3, correct: 2, fromAccuracy: false, note: 7 }), null);
+  // 정답률로 별을 정한 판에는 게임의 문장을 쓰지 않는다(엔진의 "더 맞히면" 안내가 기준과 맞다)
+  assert.equal(starHint({ stars: 2, attempts: 6, correct: 5, note }), '한 번만 더 맞히면 별 3개!');
 });
 
 test('토스트 기준 자리: 요소 아래쪽 가운데, 화면 안으로', () => {

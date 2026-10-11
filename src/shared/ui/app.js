@@ -229,11 +229,13 @@ export function stageStates(ids, { isUnlocked, getStars }) {
 /**
  * 결과 화면의 별 기준 안내. 정답률로 별을 정했을 때만(fromAccuracy) 몇 번 더 맞히면 별이 늘어나는지 알려 준다.
  * 별 기준은 starsFromAccuracy의 기본값과 같다: 90% 이상 ★3, 70% 이상 ★2 (core/progress.js)
+ * note: 게임이 별을 직접 정한 판(finish({ stars, starNote }))에서 별이 3개가 안 될 때 보일 그 게임의 별 기준 한 문장
  */
-export function starHint({ stars, attempts, correct, cleared = true, fromAccuracy = true }) {
+export function starHint({ stars, attempts, correct, cleared = true, fromAccuracy = true, note = null }) {
   if (!cleared) return '까닭을 다시 살펴보고 한 번 더 해 봐요.';
   if (stars >= MAX_STARS) return '별 3개를 모두 받았어요!';
-  if (!fromAccuracy || !attempts) return null;
+  if (!fromAccuracy) return typeof note === 'string' && note.trim() ? note.trim() : null;
+  if (!attempts) return null;
   const next = stars + 1;
   const need = next >= 3 ? 0.9 : 0.7;
   const more = Math.max(1, Math.ceil(need * attempts - correct - 1e-9));
@@ -700,6 +702,18 @@ export function createGameApp({
       area,
     ));
 
+    // 머리 높이를 CSS 변수(--play-header-h)로 알린다: 화면 높이에 맞춰 무대 높이를 정하는 게임이 "100dvh − 머리 − 나머지"로 쓴다.
+    // 글자가 넓은 기기에서 목표 글이 두 줄이 되어 머리가 높아져도 그만큼 무대가 낮아져 화면이 넘치지 않는다 (머리 높이는 판 도중에는 바뀌지 않는다)
+    const playScreen = area.closest('.screen-play');
+    const playHeader = playScreen?.querySelector('.play-header');
+    if (playHeader && typeof ResizeObserver === 'function') {
+      const tellHeight = () => playScreen.style.setProperty('--play-header-h', `${playHeader.getBoundingClientRect().height}px`);
+      const headerWatch = new ResizeObserver(tellHeight);
+      headerWatch.observe(playHeader);
+      tellHeight();
+      screenCleanups.push(() => headerWatch.disconnect());
+    }
+
     log.startStage(stage);
     const startedAt = Date.now();
     // 다시 하기 점수 규칙: 판을 시작할 때 이미 별 3개인 단계는 연습 점수가 없다 (새로 찾음은 그대로)
@@ -736,7 +750,8 @@ export function createGameApp({
       );
     }
 
-    // 시간 재기 (점수 없음): 첫 답 전에만 켤 수 있고, 켜면 머리에 걸린 시간이 보인다
+    // 시간 재기 (점수 없음): 첫 답 전에만 켤 수 있고, 켜면 머리에 걸린 시간이 보인다.
+    // 시계는 버튼과 같은 자리에 겹쳐 보인다(버튼 글자는 작게 위로, 시계는 그 아래) — 켜도 정보 칸의 폭이 달라지지 않아 머리가 움직이지 않는다
     let timerOn = false;
     let timerToggle = null;
     if (stage.timer === 'optional') {
@@ -753,7 +768,7 @@ export function createGameApp({
           clock.textContent = clockText(Date.now() - startedAt);
           sfx.play('click');
         },
-      }, icon('clock'), '시간 재기');
+      }, h('span', { class: 'timer-label' }, icon('clock'), '시간 재기'));
       timers.push(setInterval(() => {
         if (timerOn && !finished) clock.textContent = clockText(Date.now() - startedAt);
       }, 1000));
@@ -761,8 +776,8 @@ export function createGameApp({
       meta.append(h('span', { class: 'meta-box meta-timer' }, timerToggle, clock));
     }
 
-    const streakText = h('b', null, '');
-    const streakBox = h('span', { class: 'meta-box meta-streak', hidden: true }, icon('spark'), streakText);
+    const streakText = h('span', { class: 'streak-n' }, '');
+    const streakBox = h('span', { class: 'meta-box meta-streak', hidden: true }, icon('spark'), h('b', null, streakText));
     const xpText = h('b', null, '+0');
     if (rewardsOn) meta.append(streakBox, h('span', { class: 'meta-box meta-xp' }, h('small', null, '솜씨 점수'), xpText));
     function updateMeta() {
@@ -872,6 +887,8 @@ export function createGameApp({
       /**
        * 단계를 끝낸다. stars를 생략하면 정답률로 정한다. 실패면 { cleared: false }.
        * highlights: [{ icon, label, value, xp }]로 결과의 "오늘의 솜씨" 칸을 게임이 채울 수 있다(보여 주기만).
+       * starNote: 별을 직접 정했고(stars) 3개가 안 될 때, 별 아래에 보일 그 게임의 별 기준 한 문장(예: '한 번도 틀리지 않으면 별 3개!').
+       *   stars를 생략한 판(정답률 기준)은 엔진의 안내("한 번만 더 맞히면 별 2개!")가 그대로 나온다.
        * practiceNote: 별 3개 단계를 다시 한 판의 안내 문장을 게임의 말로 바꾼다(그런 판에서만 보인다).
        * stats: [{ label, value }](3개까지)로 결과의 기록 칸(정답률 · 맞힘/시도)을 게임의 말로 바꾼다 — 맞힘·틀림으로 보이지 않는 단계.
        *   그런 판은 "다시 살펴볼 점"(틀린 개념 수)도 보이지 않는다. 학습 기록에는 답이 그대로 남는다.
@@ -894,7 +911,7 @@ export function createGameApp({
         // 시간 재기를 고를 수 있는 단계에서 켜지 않았으면 결과에도 걸린 시간을 보이지 않는다 (켠 학생만 시간이 보인다)
         const showTime = !(stage.timer === 'optional' && !timerOn);
         showResult(stage, record, {
-          fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, stats: result.stats, showTime, opened, time,
+          fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, stats: result.stats, starNote: result.starNote, showTime, opened, time,
         });
       },
     };
@@ -966,7 +983,7 @@ export function createGameApp({
   }
 
   function showResult(stage, record, {
-    fromAccuracy = true, reward = null, highlights = null, practiceNote = null, stats = null, showTime = true, opened = [], time = null,
+    fromAccuracy = true, reward = null, highlights = null, practiceNote = null, stats = null, starNote = null, showTime = true, opened = [], time = null,
   } = {}) {
     let nextStage = null;
     if (!stage.challenge) {
@@ -986,7 +1003,7 @@ export function createGameApp({
     const number = stageNumber(stage);
     const label = stage.challenge ? '도전' : `${number}단계`;
     const eyebrow = stage.challenge ? `도전 주문서 · ${stage.title}` : label === stage.title ? label : `${label} · ${stage.title}`;
-    const hint = starHint({ ...record, fromAccuracy });
+    const hint = starHint({ ...record, fromAccuracy, note: starNote });
     const practiceOff = reward ? practiceNoteText(reward.summary, practiceNote) : null;
 
     const stat = (name, value) => h('div', { class: 'stat' }, h('dt', null, name), h('dd', null, value));

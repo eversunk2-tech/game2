@@ -920,7 +920,7 @@ export function diceHintNet(madeNames = new Set()) {
   return CUBE_NETS.find((n) => !madeNames.has(n.name)) ?? null;
 }
 
-/** 결과 "오늘의 솜씨"에 쓸 숫자: 접은 횟수, 만든 주사위, 한 번에 맞힌 주사위, 다시 일어서기(고쳐서 맞힘 + 틀린 다음 주사위를 한 번에 맞힘) */
+/** 결과 "오늘의 솜씨"·별에 쓸 숫자: 접은 횟수, 만든 주사위, 틀린 접기, 한 번에 맞힌 주사위, 다시 일어서기(고쳐서 맞힘 + 틀린 다음 주사위를 한 번에 맞힘) */
 export function diceSummary(history) {
   const done = history.filter((s) => s.correct);
   const fixes = done.filter((s) => !s.firstTry).length;
@@ -934,7 +934,23 @@ export function diceSummary(history) {
       bounces += 1;
     }
   }
-  return { folds: history.length, made: done.length, firstTry: done.length - fixes, fixes, bounces };
+  return { folds: history.length, made: done.length, wrong: history.length - done.length, firstTry: done.length - fixes, fixes, bounces };
+}
+
+/**
+ * 주사위 주문의 별 (spec 16-13): 접어서 틀린 횟수(합이 7이 아님 · 정육면체가 안 됨)로 정한다 —
+ * 한 번도 틀리지 않으면 ★3, 한 번 틀리면 ★2, 두 번 이상 틀리면 ★1.
+ * 주사위가 2개뿐이라 엔진의 정답률 기준(90%·70%)으로는 ★2가 나올 수 없다(3번 중 2번 = 67% = ★1).
+ */
+export function diceStars(wrong) {
+  const n = Math.max(0, Math.floor(Number(wrong) || 0));
+  return n === 0 ? 3 : n === 1 ? 2 : 1;
+}
+
+/** 결과 화면의 별 기준 안내 (별 3개가 안 될 때. 별 3개면 엔진의 "별 3개를 모두 받았어요!") */
+export function diceStarNote(stars) {
+  if (stars >= 3) return null;
+  return stars === 2 ? '한 번도 틀리지 않으면 별 3개!' : '한 번만 틀리면 별 2개, 한 번도 틀리지 않으면 별 3개!';
 }
 
 /**
