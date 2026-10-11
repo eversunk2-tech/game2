@@ -84,7 +84,7 @@ const STAGE_THUMBS = {
     svgEl('circle', { cx: 66, cy: 44, r: 10, style: paint('var(--paper)') }),
     svgEl('path', { d: 'M61 44l4 4 7-8', style: 'fill:none;stroke:var(--correct);stroke-width:3;stroke-linecap:round;stroke-linejoin:round' }),
   ],
-  /** 내 맘대로 전개도(직육면체): 재단 매트 위에 놓는 중인 직사각형 조각 */
+  /** 내 맘대로 직육면체 전개도: 재단 매트 위에 놓는 중인 직사각형 조각 */
   cfree: () => [
     svgEl('rect', { x: 2, y: 4, width: 76, height: 52, rx: 6, style: paint('var(--mat)') }),
     svgEl('path', { d: 'M12 4v52M22 4v52M32 4v52M42 4v52M52 4v52M62 4v52M72 4v52M2 14h76M2 24h76M2 34h76M2 44h76', style: 'fill:none;stroke:rgb(255 255 255 / 28%);stroke-width:1' }),
@@ -174,7 +174,7 @@ export function heroArt(h) {
   );
 }
 
-// ── 직육면체 전개도의 작은 그림 ("내 맘대로 전개도(직육면체)"의 찾은 전개도 칸) ─────────────
+// ── 직육면체 전개도의 작은 그림 ("내 맘대로 직육면체 전개도"의 찾은 전개도 칸) ─────────────
 /** 직사각형 면들 [{ x, y, w, h }]을 정사각형 그림에 가운데 맞춰 그린다. 크기가 같은 면(짝)은 같은 색 */
 export function miniRects(rects, { cls = 'mini-net' } = {}) {
   const minX = Math.min(...rects.map((r) => r.x));

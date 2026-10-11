@@ -34,7 +34,9 @@ export function playEdge(stage, ctx, questions) {
   const view = createNetView({ h, sfx: ctx.sfx, skin: { mark: () => null } });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
   const options = h('div', { class: 'edge-options', role: 'group', 'aria-label': '만나는 선분 보기' });
-  bench.answerBox.append(options, h('p', { class: 'answer-tip' }, '띠로 표시한 선분과 접었을 때 만나는 선분을 골라요.'));
+  // 안내 글은 답하기 전에만 보인다: 답한 뒤에는 까닭 쪽지·힌트 버튼이 그 자리를 쓴다(낮은 화면에서 판 안쪽이 넘치지 않게)
+  const tip = h('p', { class: 'answer-tip' }, '띠로 표시한 선분과 접었을 때 만나는 선분을 골라요.');
+  bench.answerBox.append(options, tip);
 
   let index = 0;
   let solved = false;
@@ -51,6 +53,7 @@ export function playEdge(stage, ctx, questions) {
     view.setNet(q.net, { fitBox: NET_FIT, pad: NAME_PAD, names: q.vertices, show: [q.segments[q.target].face, q.segments[q.answer].face] });
     view.setEdgeMarks([markOf(q, q.target, 'q', false)]);
     bench.setQuestion(index + 1, `접었을 때 선분 ${q.segments[q.target].name}과 만나는 선분은 어느 것일까요?`);
+    tip.hidden = false;
     buttons = new Map(q.options.map((o) => [o.index, h('button', {
       type: 'button',
       class: 'btn edge-opt',
@@ -71,6 +74,7 @@ export function playEdge(stage, ctx, questions) {
     }
     const result = judgeEdge(q, seg);
     ctx.log.answer({ itemId: q.itemId, correct: result.correct, tag: result.tag, given: `선분 ${q.segments[seg].name}`, expected: result.expected });
+    tip.hidden = true;
     bench.showReason(result.message, result.correct);
     if (!result.correct) {
       tried.add(seg);
@@ -128,7 +132,9 @@ export function playFaceCard(stage, ctx, questions) {
   const view = createNetView({ h, sfx: ctx.sfx });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
   const cardRow = h('div', { class: 'size-cards', role: 'group', 'aria-label': '면 카드' });
-  bench.answerBox.append(cardRow, h('p', { class: 'answer-tip' }, '카드를 빈 자리(+)로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요.'));
+  // 안내 글은 첫 카드를 붙이기 전에만 보인다(다시 할 때는 까닭 쪽지·힌트 버튼이 그 자리를 쓴다)
+  const tip = h('p', { class: 'answer-tip' }, '카드를 빈 자리(+)로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요.');
+  bench.answerBox.append(cardRow, tip);
 
   let index = 0;
   let state = 'ready'; // ready(놓기 기다림) · trial(틀린 카드를 접어 보는 중) · solved
@@ -145,6 +151,7 @@ export function playFaceCard(stage, ctx, questions) {
       fitBox: NET_FIT,
     });
     bench.answerBox.hidden = false;
+    tip.hidden = tried.size > 0;
     for (const [id, card] of cards) {
       card.disabled = false;
       card.classList.toggle('is-tried', tried.has(id));

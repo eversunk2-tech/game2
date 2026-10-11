@@ -24,6 +24,8 @@ const FILE = 'net-workshop.html';
 /** 게임과 같은 시드 문자열(<seed>:<단계 id>)로 같은 문항을 만들어 정답을 안다 */
 const questionsFor = (stageId, seed = '1') => makeQuestions(STAGES.find((s) => s.id === stageId), createRng(`${seed}:${stageId}`));
 const foldStage = (page) => page.locator('.fold-stage');
+/** 정육면체 차시의 단계(일반 4 + 도전 2). "모든 단계"를 도는 검사는 차시별로 돈다 — 다른 차시가 더해져도 이 파일의 검사가 달라지지 않게(그 차시는 그 차시의 spec이 본다) */
+const CUBE_STAGES = STAGES.filter((s) => s.lesson === 'cube');
 
 /**
  * 화면의 펼친 전개도가 문항과 같은지: 면마다 이름(data-label)과, matrix3d()의 평행이동으로 읽은 칸 위치를 비교한다.
@@ -2783,7 +2785,7 @@ test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × �
     const phone = size.width <= 560;
     const board = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
     const put = (shape) => centerOnBoard(shape, board);
-    for (const stage of STAGES) {
+    for (const stage of CUBE_STAGES) {
       const at = `${size.width}×${size.height} ${stage.id}`;
       await page.setViewportSize(size);
       await page.goto(STAGE_URL(stage.id));
@@ -2890,7 +2892,7 @@ test('머리가 두 줄이 되어도(글자가 넓은 기기) 크롬북 화면�
     };
   });
   for (const size of [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]) {
-    for (const stage of STAGES) {
+    for (const stage of CUBE_STAGES) {
       const at = `${size.width}×${size.height} ${stage.id}`;
       await page.setViewportSize(size);
       await page.goto(STAGE_URL(stage.id));

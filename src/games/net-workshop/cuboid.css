@@ -113,8 +113,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  min-height: 108px;
-  padding: 8px 4px 6px;
+  min-height: 100px;
+  padding: 6px 4px 5px;
   border: 2px solid var(--ink);
   border-radius: var(--radius-sm);
   background: var(--paper);
@@ -134,7 +134,7 @@
 .size-card.is-tried { border-style: dashed; border-color: var(--wrong); background: var(--wrong-bg); box-shadow: none; }
 .size-card.dnd-item.is-selected { outline: 3px solid var(--butter); outline-offset: 2px; transform: translateY(-3px); box-shadow: 0 6px 0 var(--ink); }
 
-/* ── 내 맘대로 전개도(직육면체): 1 cm 칸 판에 직사각형 면 카드를 놓는다 ── */
+/* ── 내 맘대로 직육면체 전개도: 1 cm 칸 판에 직사각형 면 카드를 놓는다 ── */
 /* 칸은 자리를 가리키는 곳(누르기 · 놓기 · 키보드 커서)이고, 놓인 면은 칸 위의 층에 여러 칸 크기로 놓인다 */
 .rect-board .cell { border-radius: 2px; }
 .rect-layer { position: absolute; inset: 0; pointer-events: none; }
@@ -213,8 +213,9 @@
 .found-nets.is-folded { gap: 0; }
 
 @media (max-height: 720px) and (min-width: 901px) {
-  .edge-opt { min-height: 52px; }
-  .size-card { min-height: 96px; }
+  .edge-options { gap: 8px; }
+  .edge-opt { min-height: var(--tap); }
+  .size-card { min-height: 92px; }
   .found-slot { height: 56px; }
   .rect-card { min-height: 58px; }
 }

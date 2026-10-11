@@ -535,11 +535,14 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
   function place(label, at, verb = '놓았어요') {
     if (!enabled || !label) return false;
     const size = sizeOf(label);
-    let rect = clamp({ x: at[0], y: at[1], w: size.w, h: size.h });
-    // 새로 놓는 카드가 그대로는 들어가지 않고 돌리면 들어가는 자리면 돌려서 놓는다(좁은 틈에 끼워 넣을 때)
-    if (!free(label, rect) && !placed.has(label)) {
-      const turned = clamp({ x: at[0], y: at[1], w: size.h, h: size.w });
+    const asIs = { x: at[0], y: at[1], w: size.w, h: size.h };
+    let rect = clamp(asIs);
+    // 새로 놓는 카드: 누른 칸을 왼쪽 위로 그대로 놓을 수 없고(다른 면에 걸리거나 판 밖으로 나감) 돌리면 놓을 수 있으면 돌려서 놓는다
+    // — 좁은 틈에 끼워 넣을 때. 그래도 안 되면 판 안으로 당겨 놓는다
+    if (!placed.has(label) && !free(label, asIs)) {
+      const turned = { x: at[0], y: at[1], w: size.h, h: size.w };
       if (free(label, turned)) rect = turned;
+      else if (!free(label, rect) && free(label, clamp(turned))) rect = clamp(turned);
     }
     if (!free(label, rect)) {
       ctx.feedback.announce('그 자리에는 다른 면이 있어요. 빈 곳에 놓아요.');
@@ -895,8 +898,15 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
     canRotate: () => Boolean(pointed()),
     canUndo: () => history.length > 0,
     fit,
-    /** 판에서 무대로 이어 접을 때: 1 cm 칸의 크기(px)와 판 (0, 0) 칸의 왼쪽 위 자리(판을 품은 요소 기준) */
-    layout: () => ({ unit: cellPx, origin: [boardEl.offsetLeft, boardEl.offsetTop] }),
+    /**
+     * 판에서 무대로 이어 접을 때: 1 cm 칸의 크기(px)와 판 (0, 0) 칸의 왼쪽 위 자리(판을 품은 요소 기준).
+     * 판이 가운데 놓여 자리가 0.5px 단위일 수 있어(offsetLeft는 정수로 반올림된다) 화면에 놓인 자리 그대로 잰다 — 어긋남 0px
+     */
+    layout() {
+      const box = boardEl.getBoundingClientRect();
+      const host = boardEl.offsetParent?.getBoundingClientRect() ?? { left: box.left, top: box.top };
+      return { unit: cellPx, origin: [box.left - host.left, box.top - host.top] };
+    },
     cellEl: (cell) => cellEls.get(adapter.key(cell)),
     focus() {
       cellEls.get(adapter.key(cursor)).focus({ preventScroll: true });

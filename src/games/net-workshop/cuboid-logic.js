@@ -480,6 +480,15 @@ function mutations(net, kind) {
   return out;
 }
 
+/** 그 직육면체의 되는 전개도(가로로 길게 놓은 것)에서 나오는 테두리 크기 '가로×세로' */
+const usualSizes = new Map();
+function isUsualSize(dims, net) {
+  const name = dims.join('');
+  if (!usualSizes.has(name)) usualSizes.set(name, new Set(cuboidNets(dims).filter((n) => fits(n.size)).map((n) => n.size.join('×'))));
+  const [w, h] = netSize(net);
+  return w >= h && usualSizes.get(name).has(`${w}×${h}`);
+}
+
 function makeCJudgeQuestions(stage, rng) {
   const used = new Set();
   // 유효 2 · 무효 3(겹침 · 붙은 변의 길이 · 마주 보는 면의 크기)
@@ -489,7 +498,8 @@ function makeCJudgeQuestions(stage, rng) {
       const { id, dims, net } = pickNet(rng, new Set(used));
       let item = { net, problems: [], opposite: null };
       if (intended) {
-        let options = mutations(net, intended);
+        // 고친 전개도의 테두리 크기가 되는 전개도에서도 나오는 크기인 것만 쓴다 — 전개도의 가로·세로 크기로 답을 짐작하기 어렵게
+        let options = mutations(net, intended).filter((o) => isUsualSize(dims, o.net));
         // 돌려 붙인 면: 두 변의 길이가 1 cm만 다른 것을 먼저 쓴다("크기가 비슷하면 붙는다"는 생각을 만나게)
         if (intended === 'length') options = options.filter((o) => o.gap === Math.min(...options.map((x) => x.gap)));
         if (options.length === 0) continue;
@@ -544,7 +554,7 @@ export const CUBOID_MAKERS = {
   cfree: () => [], // 직접 만드는 단계는 문항이 없다
 };
 
-// ── 4단계: 내 맘대로 전개도(직육면체) (cuboid-free, spec 16-2 · 예상 없이 접는다 16-12) ──────────
+// ── 4단계: 내 맘대로 직육면체 전개도 (cuboid-free, spec 16-2 · 예상 없이 접는다 16-12) ──────────
 /** 만드는 직육면체(cm)와 면 카드 여섯 장: 크기가 같은 면이 두 장씩. 1 cm 격자 판에 54가지가 모두 들어가는 크기 */
 export const FREE_BOX = Object.freeze([1, 2, 3]);
 export const FREE_CARDS = Object.freeze([
@@ -571,7 +581,7 @@ export const CUBOID_FOLD_NOTES = Object.freeze({
   ready: '놓은 그대로 접혀요. 서로 다른 전개도를 찾아봐요.',
 });
 
-/** 내 맘대로 전개도(직육면체)에서 찾을 수 있는 전개도 54가지 (모음의 칸) */
+/** 내 맘대로 직육면체 전개도에서 찾을 수 있는 전개도 54가지 (모음의 칸) */
 export const freeNets = () => cuboidNets(FREE_BOX);
 /**
  * 모음의 칸 수와 칸 id. 게임을 열 때마다 54가지를 펼쳐 보지 않고도 모음을 만들 수 있게 따로 적는다
