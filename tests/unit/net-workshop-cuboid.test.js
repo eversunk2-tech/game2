@@ -456,8 +456,9 @@ test('같은 시드면 같은 문항, 다른 시드면 대체로 다른 문항 (
 
 const noBadWords = (text, label) => assert.doesNotMatch(text, /undefined|NaN|null|\?/, `${label}: ${text}`);
 
-test('만나는 선분 5문항: 짝이 바로 옆 선분이 아니고, 보기 4개에 정답 하나와 바로 옆 선분이 꼭 있다. 채점·까닭 문장·tag', () => {
+test('만나는 선분 5문항: 짝이 바로 옆 선분이 아니고, 보기 4개에 정답 하나 · 바로 옆 선분 · 길이가 같은 선분이 꼭 있다. 채점·까닭 문장·tag', () => {
   const kinds = new Map();
+  const answerAt = [0, 0, 0, 0];
   for (const seed of SEEDS) {
     const qs = makeQuestions(stage('cuboid-edge'), createRng(seed));
     assert.equal(qs.length, 5);
@@ -476,6 +477,9 @@ test('만나는 선분 5문항: 짝이 바로 옆 선분이 아니고, 보기 4�
       assert.deepEqual(q.options.map((o) => o.index), q.options.map((o) => o.index).slice().sort((a, b) => a - b)); // 테두리 순서
       assert.equal(q.options.filter((o) => o.kind === 'answer').length, 1);
       assert.ok(q.options.some((o) => o.kind === 'near'), q.itemId);
+      // 길이가 같은 오답 보기가 늘 있다: "길이가 같은 선분"만 찾아서는 맞힐 수 없다
+      assert.ok(q.options.some((o) => o.kind === 'same'), q.itemId);
+      answerAt[q.options.findIndex((o) => o.kind === 'answer')] += 1;
       assert.ok(!q.options.some((o) => o.index === q.target));
       const T = q.segments[q.target].name;
       for (const o of q.options) {
@@ -498,10 +502,14 @@ test('만나는 선분 5문항: 짝이 바로 옆 선분이 아니고, 보기 4�
       assert.throws(() => judgeEdge(q, q.target), /없는 보기/);
     }
   }
-  assert.ok(kinds.get('same') > 300 && kinds.get('other') > 300, JSON.stringify([...kinds]));
+  assert.ok(kinds.get('same') >= 1000 && kinds.get('other') > 300, JSON.stringify([...kinds]));
+  // 정답 보기의 자리(보기는 테두리 순서로 늘어놓는다)가 한쪽으로 쏠리지 않는다: 어느 자리도 35%를 넘지 않는다
+  for (const count of answerAt) assert.ok(count / 1000 > 0.15 && count / 1000 < 0.35, JSON.stringify(answerAt));
 });
 
-test('알맞은 면 4문항: 카드 3장(알맞은 면 · 길이 하나만 다른 면 · 크기가 다른 면)은 크기가 모두 다르고, 빈 자리 표시는 빠진 면의 크기와 무관하게 같은 깊이', () => {
+test('알맞은 면 4문항: 카드 3장(알맞은 면 · 길이 하나만 다른 면 · 크기가 다른 면)은 크기가 모두 다르고, 빈 자리 표시는 빠진 면의 크기와 무관하게 같은 깊이. 알맞은 카드의 자리·크기 순서가 쏠리지 않는다', () => {
+  const at = [0, 0, 0]; // 알맞은 카드의 자리
+  const rank = [0, 0, 0]; // 알맞은 카드가 넓이 순서로 몇 번째인가(큰 것부터)
   for (const seed of SEEDS) {
     const qs = makeQuestions(stage('cuboid-face'), createRng(seed));
     assert.equal(qs.length, 4);
@@ -526,6 +534,8 @@ test('알맞은 면 4문항: 카드 3장(알맞은 면 · 길이 하나만 다�
       for (const c of q.cards) assert.ok(c.w >= c.h && c.h >= 1);
       const right = q.cards.find((c) => c.kind === 'answer');
       assert.deepEqual([right.w, right.h], [Math.max(mine.w, mine.h), Math.min(mine.w, mine.h)]);
+      at[q.cards.indexOf(right)] += 1;
+      rank[q.cards.slice().sort((a, b) => b.w * b.h - a.w * a.h).indexOf(right)] += 1;
       const faces = [[q.dims[0], q.dims[1]], [q.dims[1], q.dims[2]], [q.dims[0], q.dims[2]]].map(([a, b]) => `${Math.max(a, b)}×${Math.min(a, b)}`);
       const lengthCard = q.cards.find((c) => c.kind === 'length');
       const pairCard = q.cards.find((c) => c.kind === 'pair');
@@ -554,6 +564,8 @@ test('알맞은 면 4문항: 카드 3장(알맞은 면 · 길이 하나만 다�
       assert.throws(() => judgeCard(q, 'c9'), /없는 카드/);
     }
   }
+  // 찍어서 맞히기 어렵게: 알맞은 카드의 자리도, "가장 큰 · 가운데 · 가장 작은 카드"도 한쪽으로 쏠리지 않는다(어느 쪽도 45%를 넘지 않는다)
+  for (const count of [...at, ...rank]) assert.ok(count / 800 > 0.15 && count / 800 < 0.45, JSON.stringify({ at, rank }));
 });
 
 test('길이까지 살펴요 5문항: 유효 2 · 무효 3(겹침 · 붙은 변의 길이 · 마주 보는 면의 크기), 무효마다 참인 까닭 칩이 의도한 하나뿐이고 독립 계산과 같은 판정', () => {

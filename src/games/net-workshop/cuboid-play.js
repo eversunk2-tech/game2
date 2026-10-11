@@ -23,6 +23,9 @@ import { createNetView, createWorkbench, faceColor } from './view3d.js';
 const NAME_PAD = 64; // 꼭짓점 이름을 테두리 밖에 적을 자리(px, 양쪽 합)
 const cm = (value) => `${Math.round(value * 100) / 100} cm`;
 
+/** 이 차시의 작업대 표시(.cuboid-bench): 태블릿 세로에서 매트를 조금 낮춰 글이 긴 장면도 한 화면에 들어오게 한다(cuboid.css) */
+const markBench = (bench) => bench.mat.parentElement.classList.add('cuboid-bench');
+
 /** 길이가 다른 두 변(problem.edges)에 같은 무늬 띠와 길이 이름표 */
 const lengthMarks = (problem, tone = 'a') => (problem?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone, text: cm(problem.lengths[i]) }));
 
@@ -33,6 +36,7 @@ export function playEdge(stage, ctx, questions) {
   // 면 이름(가~바)은 쓰지 않는 단계라 면에 글자를 적지 않는다(꼭짓점 이름과 헷갈리지 않게)
   const view = createNetView({ h, sfx: ctx.sfx, skin: { mark: () => null } });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
+  markBench(bench);
   const options = h('div', { class: 'edge-options', role: 'group', 'aria-label': '만나는 선분 보기' });
   // 안내 글은 답하기 전에만 보인다: 답한 뒤에는 까닭 쪽지·힌트 버튼이 그 자리를 쓴다(낮은 화면에서 판 안쪽이 넘치지 않게)
   const tip = h('p', { class: 'answer-tip' }, '띠로 표시한 선분과 접었을 때 만나는 선분을 골라요.');
@@ -131,6 +135,7 @@ export function playFaceCard(stage, ctx, questions) {
   const { h } = ctx;
   const view = createNetView({ h, sfx: ctx.sfx });
   const bench = createWorkbench({ ctx, view, total: questions.length, hint: true });
+  markBench(bench);
   const cardRow = h('div', { class: 'size-cards', role: 'group', 'aria-label': '면 카드' });
   // 안내 글은 첫 카드를 붙이기 전에만 보인다(다시 할 때는 까닭 쪽지·힌트 버튼이 그 자리를 쓴다)
   const tip = h('p', { class: 'answer-tip' }, '카드를 빈 자리(+)로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요.');
@@ -282,6 +287,7 @@ export function playCuboidJudge(stage, ctx, questions) {
   const { h } = ctx;
   const view = createNetView({ h, sfx: ctx.sfx });
   const bench = createWorkbench({ ctx, view, total: questions.length });
+  markBench(bench);
 
   const answerButton = (value, iconName, text) => h('button', {
     type: 'button',
@@ -298,10 +304,19 @@ export function playCuboidJudge(stage, ctx, questions) {
   let index = 0;
   let answered = false;
 
+  /** 길이가 다른 두 변: 붙은 두 변(길이형) 또는 접어서 만나는 두 선분(크기형). 겹침형·되는 전개도는 없다 */
+  function mismatchOf(q) {
+    if (q.valid) return null;
+    const primary = primaryCuboidProblem(q.problems);
+    if (primary?.type === 'edge-length') return primary;
+    return q.intended === 'pair' ? q.problems.find((p) => p.type === 'edge-length') ?? null : null;
+  }
+
   function showQuestion() {
     const q = questions[index];
     answered = false;
-    view.setNet(q.net, { lengths: true, fitBox: NET_FIT });
+    // show: 다 접었을 때 길이가 다른 두 변이 놓인 면이 보이는 쪽에 오게 한다 — 펼친 모습(답하기 전 화면)은 달라지지 않는다
+    view.setNet(q.net, { lengths: true, fitBox: NET_FIT, show: mismatchOf(q)?.faces ?? [] });
     bench.setQuestion(index + 1, '접으면 직육면체가 될까요?');
     pickSlot.replaceChildren();
     for (const btn of [yes, no]) {
@@ -315,12 +330,8 @@ export function playCuboidJudge(stage, ctx, questions) {
   function reveal(result) {
     const q = questions[index];
     bench.showReason(result.message, result.correct, { tip: result.correct ? '' : cuboidJudgeTip(q) });
-    if (!q.valid) {
-      // 붙은 두 변(길이형) 또는 접어서 만나는 두 선분(크기형)의 길이가 다르면 같은 무늬 띠와 길이 이름표로 짚는다
-      const primary = primaryCuboidProblem(q.problems);
-      const mismatch = primary?.type === 'edge-length' ? primary : q.intended === 'pair' ? q.problems.find((p) => p.type === 'edge-length') : null;
-      view.setEdgeMarks(lengthMarks(mismatch));
-    }
+    // 길이가 다른 두 변을 같은 무늬 띠와 길이 이름표로 짚는다
+    view.setEdgeMarks(lengthMarks(mismatchOf(q)));
     view.reveal();
     bench.lockFold(false);
     view.animateTo(1);

@@ -700,6 +700,65 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   expect(errors).toEqual([]);
 });
 
+test('내 맘대로 직육면체 전개도 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘 한 탭의 점수와 찾은 전개도 한 쌍이라, 한 전개도의 점수를 두 번 받지 못한다', async ({ page, context }) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  const storedNets = (p) => p.evaluate(() => Object.keys((JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {})['cuboid-nets'] ?? {}).sort());
+  /** [접어 보기]를 누른다. 점수·등록·저장은 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않는다(뒤에 있는 탭은 장면 그리기를 멈춘다) */
+  const foldNow = async (p) => {
+    await p.bringToFront();
+    await p.locator('.free-fold').click();
+    await expect(p.locator('.free-result')).toBeVisible();
+  };
+  const again = async (p) => {
+    await p.locator('.free-new').click();
+    await expect(p.locator('.rect-tile')).toHaveCount(0);
+  };
+  const board = boardOf(page);
+  const [X, Y, Z] = ['123-10', '123-25', '123-40'].map((id) => netRects(id, board));
+  const tabA = page;
+  const tabB = await context.newPage();
+  await tabA.goto(STAGE_URL('cuboid-free'));
+  await tabB.goto(STAGE_URL('cuboid-free')); // 두 탭 모두 빈 기록에서 시작
+  // 같은 전개도를 두 탭에서: 둘 다 +7로 보이지만 저장은 7점
+  await tabA.bringToFront();
+  await buildNet(tabA, X);
+  await foldNow(tabA);
+  await tabB.bringToFront();
+  await buildNet(tabB, X);
+  await foldNow(tabB);
+  await expect(tabB.locator('.meta-xp b')).toHaveText('+7');
+  expect(await storedXpOf(tabA)).toBe(7);
+  expect(await storedNets(tabA)).toEqual(['123-10']);
+  // A가 둘째 전개도를 찾고(14점), 이어서 B가 다른 전개도를 찾는다: 저장값은 B의 한 쌍(14점, B가 찾은 두 가지)
+  await tabA.bringToFront();
+  await again(tabA);
+  await buildNet(tabA, Y);
+  await foldNow(tabA);
+  expect(await storedXpOf(tabA)).toBe(14);
+  expect(await storedNets(tabA)).toEqual(['123-10', '123-25']);
+  await tabB.bringToFront();
+  await again(tabB);
+  await buildNet(tabB, Z);
+  await foldNow(tabB);
+  expect(await storedXpOf(tabB)).toBe(14);
+  expect(await storedNets(tabB)).toEqual(['123-10', '123-40']); // 점수만 A, 찾은 전개도만 B로 엇갈리지 않는다
+  // 새 탭: 저장된 전개도는 0점, 빠진 전개도(Y)만 점수 → 세 전개도 모두 한 번씩만 받는다
+  const tabC = await context.newPage();
+  await tabC.goto(STAGE_URL('cuboid-free'));
+  await expect(tabC.locator('.rank-chip small')).toHaveText('14점');
+  await expect(tabC.locator('.found-count')).toHaveText('지금까지 2가지');
+  for (const [rects, gain] of [[X, '+0'], [Z, '+0'], [Y, '+7']]) {
+    if (await tabC.locator('.free-new').isVisible()) await again(tabC);
+    await buildNet(tabC, rects);
+    await foldNow(tabC);
+    await expect(tabC.locator('.meta-xp b')).toHaveText(gain);
+  }
+  expect(await storedXpOf(tabC)).toBe(21);
+  expect(await storedNets(tabC)).toEqual(['123-10', '123-25', '123-40']);
+  expect(errors).toEqual([]);
+});
+
 /** 까닭을 고르는 동안 정답 까닭이 화면·DOM 어디에도 없다 (까닭 칩 자신은 빼고) */
 async function expectNoReasonShown(page) {
   await expect(page.locator('.reason-pick')).toBeVisible();

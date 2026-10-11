@@ -284,11 +284,16 @@ function makeEdgeQuestions(stage, rng) {
     // 바로 옆(꼭짓점을 함께 쓰는) 선분과 만나는 선분은 묻지 않는다: "가까이 있는 선분끼리 만난다"로는 맞힐 수 없게
     const far = segments.map((_, i) => i).filter((i) => pairs[i] >= 0 && !cyclicNear(i, pairs[i], n));
     if (far.length === 0) continue;
-    const target = rng.pick(far);
+    const othersOf = (t) => segments.map((_, i) => i).filter((i) => i !== t && i !== pairs[t]);
+    const nearOf = (t) => othersOf(t).filter((i) => cyclicNear(i, t, n));
+    const sameOf = (t) => othersOf(t).filter((i) => !cyclicNear(i, t, n) && Math.abs(segments[i].length - segments[t].length) < 1e-9);
+    // 길이가 같은 다른 선분(바로 옆이 아닌 것)이 있는 물음을 먼저 고른다: "길이가 같은 선분"만 찾아서는 맞힐 수 없게
+    const tricky = far.filter((t) => sameOf(t).length > 0);
+    const target = rng.pick(tricky.length > 0 ? tricky : far);
     const answer = pairs[target];
-    const others = segments.map((_, i) => i).filter((i) => i !== target && i !== answer);
-    const near = others.filter((i) => cyclicNear(i, target, n));
-    const same = others.filter((i) => !near.includes(i) && Math.abs(segments[i].length - segments[target].length) < 1e-9);
+    const others = othersOf(target);
+    const near = nearOf(target);
+    const same = sameOf(target);
     // 오답 보기 3개: 바로 옆 선분 하나는 꼭 넣고(오개념 "가까이 있는 선분끼리 만난다"), 길이가 같은 선분, 나머지는 아무 선분
     const picked = [rng.pick(near)];
     if (same.length > 0) picked.push(rng.pick(same));
@@ -348,37 +353,45 @@ function placeCard(parentRect, side, card) {
 function makeFaceQuestions(stage, rng) {
   const used = new Set();
   const questions = [];
-  for (let guard = 0; questions.length < stage.count && guard < 400; guard += 1) {
+  for (let guard = 0; questions.length < stage.count && guard < 600; guard += 1) {
     const tried = new Set(used);
     const { id, dims, net } = pickNet(rng, tried);
     const rects = net.faces.map(faceRect);
     const classes = [[dims[0], dims[1]], [dims[1], dims[2]], [dims[0], dims[2]]];
     const isClass = (w, h) => classes.some(([p, q]) => (p === w && q === h) || (p === h && q === w));
+    // 알맞은 카드가 세 장 가운데 몇 번째로 큰 카드일지 먼저 정한다(0 가장 큼 · 1 가운데 · 2 가장 작음):
+    // 고르게 나와야 "가운데 크기 카드"처럼 크기 순서로 찍어서 맞힐 수 없다
+    const rank = rng.int(0, 2);
     let made = null;
     for (const leaf of rng.shuffle(leavesOf(net))) {
       const L = leaf.along;
       const M = leaf.out;
       // 길이 하나만 다른 카드: 맞닿는 변은 같고 나머지 변이 1 cm 다르다(그 직육면체의 어떤 면과도 크기가 다르게)
-      const offs = rng.shuffle([M - 1, M + 1]).filter((v) => v >= 1 && v !== L && !isClass(L, v));
-      // 크기가 다른 면: 그 직육면체의 다른 면(이웃한 면과 같은 크기). 빈 자리의 변과 같은 변이 있는 것을 먼저
-      const otherClass = classes.filter(([p, q]) => !((p === L && q === M) || (p === M && q === L)))
-        .sort((p, q) => Number(q.includes(L)) - Number(p.includes(L)));
-      if (offs.length === 0 || otherClass.length === 0) continue;
+      const offs = [M - 1, M + 1].filter((v) => v >= 1 && v !== L && !isClass(L, v));
+      // 크기가 다른 면: 그 직육면체의 다른 면(이웃한 면과 같은 크기)
+      const otherClass = classes.filter(([p, q]) => !((p === L && q === M) || (p === M && q === L)));
       const parentRect = rects[leaf.parent];
-      const cards = [
-        { kind: 'answer', w: L, h: M },
-        { kind: 'length', w: L, h: offs[0] },
-        { kind: 'pair', w: otherClass[0][0], h: otherClass[0][1] },
-      ].map((card) => {
-        const rect = placeCard(parentRect, leaf.side, card);
-        const placed = replaceFace(net, leaf.index, rect, leaf.parent);
-        return { ...card, rect, placed };
-      });
-      if (cards.some((card) => !card.placed || !fits(netSize(card.placed)))) continue;
-      const [right, ...wrong] = cards.map((card) => checkNet(card.placed));
-      if (!right.ok || wrong.some((r) => r.ok)) continue;
-      made = { leaf, cards };
-      break;
+      const combos = [];
+      for (const off of offs) for (const other of otherClass) combos.push([off, other]);
+      for (const [off, other] of rng.shuffle(combos)) {
+        const bigger = Number(L * off > L * M) + Number(other[0] * other[1] > L * M);
+        if (guard < 400 && bigger !== rank) continue; // 오래 못 찾으면 순서를 따지지 않는다
+        const cards = [
+          { kind: 'answer', w: L, h: M },
+          { kind: 'length', w: L, h: off },
+          { kind: 'pair', w: other[0], h: other[1] },
+        ].map((card) => {
+          const rect = placeCard(parentRect, leaf.side, card);
+          const placed = replaceFace(net, leaf.index, rect, leaf.parent);
+          return { ...card, rect, placed };
+        });
+        if (cards.some((card) => !card.placed || !fits(netSize(card.placed)))) continue;
+        const [right, ...wrong] = cards.map((card) => checkNet(card.placed));
+        if (!right.ok || wrong.some((r) => r.ok)) continue;
+        made = { leaf, cards };
+        break;
+      }
+      if (made) break;
     }
     if (!made) continue;
     used.add(id);

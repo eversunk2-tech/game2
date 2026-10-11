@@ -4,6 +4,7 @@
  *
  * kind: edge(만나는 선분 고르기) · face(알맞은 면 카드 붙이기) · cjudge(길이가 적힌 전개도 판별) · cfree(직육면체 전개도 직접 만들기)
  * 차시 시간: 만나는 선분 5 · 알맞은 면 4 · 판별 5 · 직접 만들기(서로 다른 전개도 2가지부터 끝낼 수 있다) ≈ 10분
+ * 목표 문장(goal)은 짧게 쓴다: 태블릿 세로에서 글자가 넓은 기기에도 한 줄에 들어가야 머리가 높아지지 않는다
  */
 export const CUBOID_LESSON = { id: 'cuboid', title: '직육면체의 전개도' };
 
@@ -15,7 +16,7 @@ export const CUBOID_STAGES = [
     count: 5,
     order: '짝 찾기 주문',
     title: '만나는 선분',
-    goal: '전개도를 접었을 때 표시한 선분과 만나는 선분을 골라요.',
+    goal: '접었을 때 표시한 선분과 만나는 선분을 골라요.',
   },
   {
     id: 'cuboid-face',
@@ -24,7 +25,7 @@ export const CUBOID_STAGES = [
     count: 4,
     order: '수선 주문',
     title: '알맞은 면 고르기',
-    goal: '빈 자리에 크기가 알맞은 면 카드를 붙여 전개도를 완성해요.',
+    goal: '빈 자리에 알맞은 크기의 면 카드를 붙여요.',
   },
   {
     id: 'cuboid-judge',
@@ -33,7 +34,7 @@ export const CUBOID_STAGES = [
     count: 5,
     order: '검사 주문',
     title: '길이까지 살펴요',
-    goal: '길이를 살펴보고, 접으면 직육면체가 될지 골라요.',
+    goal: '길이를 보고 직육면체가 될지 골라요.',
   },
   {
     id: 'cuboid-free',

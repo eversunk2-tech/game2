@@ -220,8 +220,19 @@
   .rect-card { min-height: 58px; }
 }
 
+/* 태블릿 세로: 이 차시의 전개도는 가로로 길어(14 × 10 cm) 매트를 조금 낮춰도 크기가 거의 같다 — 그만큼 아래 판에 자리를 준다
+   (글자가 넓은 기기에서 까닭 쪽지가 한 줄 더 늘어도 한 화면에 들어오게. 정육면체 차시의 매트 높이는 그대로) */
+@media (min-width: 561px) and (max-width: 900px) {
+  .cuboid-bench .mat { height: clamp(380px, 60vw, 500px); }
+}
+
 @media (max-width: 900px) {
-  .size-cards { --card-cm: 16px; }
+  /* 태블릿 세로: 판이 넓어 보기 4개를 한 줄에 — 틀린 장면(힌트 버튼 + 까닭 + 보너스 쪽지)도 글자가 넓은 기기에서 한 화면에 들어오게 */
+  .edge-options { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  /* 크기 카드: 그림 옆에 글자(카드가 넓다) — 카드 줄이 낮아져 다시 하는 장면(카드 + 힌트 버튼 + 까닭 + 보너스 쪽지)도 한 화면에 들어온다 */
+  .size-card { flex-direction: row; justify-content: center; gap: 12px; min-height: 68px; padding: 6px 8px; }
+  .size-rect { margin: 0; }
+  .size-text { align-items: flex-start; }
   .rect-tray { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .found-nets { flex-direction: row; align-items: center; gap: 12px; }
   .found-head { flex: none; flex-direction: column; align-items: flex-start; gap: 0; }
@@ -230,8 +241,12 @@
 }
 
 @media (max-width: 560px) {
+  .edge-options { grid-template-columns: 1fr 1fr; }
   .edge-opt { font-size: 1.1rem; }
   .size-cards { --card-cm: 12px; }
+  .size-card { flex-direction: column; justify-content: space-between; gap: 6px; min-height: 100px; padding: 6px 4px 5px; }
+  .size-rect { margin: auto 0; }
+  .size-text { align-items: center; }
   .rect-tray { --card-cm: 11px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .found-nets { flex-direction: column; align-items: stretch; gap: 8px; }
   .found-head { flex-direction: row; align-items: baseline; }
