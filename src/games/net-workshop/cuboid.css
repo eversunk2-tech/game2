@@ -236,4 +236,9 @@
   .found-nets { flex-direction: column; align-items: stretch; gap: 8px; }
   .found-head { flex-direction: row; align-items: baseline; }
   .net-vname span { width: 20px; height: 20px; font-size: 0.85rem; --name-gap: 14px; }
+  /* 휴대폰: 도구 띠에 버튼이 하나 더 있어([돌리기]) 모두 빼기·되돌리기는 그림만 보인다(이름은 aria-label) */
+  .cuboid-free .edit-tools .tool-clear,
+  .cuboid-free .edit-tools .tool-undo { width: var(--tap); padding: 0; }
+  .cuboid-free .edit-tools .tool-clear span,
+  .cuboid-free .edit-tools .tool-undo span { display: none; }
 }

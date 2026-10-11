@@ -35,6 +35,7 @@ import {
   cuboidFreeStats,
   cuboidFreeSummary,
   cuboidHintNet,
+  freeNets,
   judgeCuboidReason,
   primaryCuboidProblem,
   rectReadiness,
@@ -57,6 +58,7 @@ export function playCuboidFree(stage, ctx) {
   const goal = stage.count ?? CUBOID_FREE_GOAL;
   const deviceFound = () => ctx.collection(CUBOID_NETS_ID).found;
   const session = createCuboidFreeSession({ stageId: stage.id, goal, found: [...deviceFound()] });
+  freeNets(); // 전개도 54가지를 미리 펼쳐 둔다(처음 접는 순간이 늦어지지 않게)
   const foundRects = []; // 이번 판에 찾은 전개도의 그림(놓은 모습) { id, rects, isNew }
   const earned = { answer: 0, nets: 0 };
   const playXp = () => ctx.reward.peek?.().xp ?? 0;
@@ -70,7 +72,8 @@ export function playCuboidFree(stage, ctx) {
   const legend = h('p', { class: 'board-legend' }, icon('hand'), '칸 누르기: 놓기 · 면 끌기: 옮기기 · 면 두 번 누르기: 돌리기');
   const sticky = h('p', { class: 'hint-sticky', hidden: true }, icon('bulb'), h('span', null, CUBOID_HINT_TEXT));
   const stamp = h('div', { class: 'stamp found-stamp', hidden: true, 'aria-hidden': 'true' });
-  const tool = (cls, iconName, text, onclick) => h('button', { type: 'button', class: `btn ${cls}`, onclick }, icon(iconName), h('span', null, text));
+  // 이름은 aria-label로도 준다: 휴대폰에서는 자리가 좁아 [모두 빼기]·[되돌리기]의 글자를 숨기고 그림만 보인다
+  const tool = (cls, iconName, text, onclick) => h('button', { type: 'button', class: `btn ${cls}`, 'aria-label': text, title: text, onclick }, icon(iconName), h('span', null, text));
   const clearBtn = tool('tool-clear', 'trash', '모두 빼기', () => board.clearAll());
   const undoBtn = tool('tool-undo', 'undo', '되돌리기', () => board.undo());
   const turnBtn = tool('tool-turn', 'rotr', '돌리기', () => board.rotate());
