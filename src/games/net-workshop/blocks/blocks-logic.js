@@ -518,7 +518,7 @@ export function judgeBuild(q, mine) {
   const topOk = sameMap(toCorner(topView(mine)), toCorner(q.top));
   if (fitsGiven(q, mine)) return { correct: true, tag: null, topOk, message: `맞아요! 그림과 위에서 본 모양에 맞아요. 쌓기나무 ${countWord(count(mine))}로 만들었어요.` };
   return topOk
-    ? { correct: false, tag: BLOCK_TAGS.tallest, topOk, message: '위에서 본 모양은 맞아요. 그림과 같은 쪽에서 보면 높이가 다른 자리가 있어요.' }
+    ? { correct: false, tag: BLOCK_TAGS.tallest, topOk, message: '그림과 같은 쪽에서 보면 높이가 다른 자리가 있어요. 위에서 본 모양은 맞아요.' }
     : { correct: false, tag: BLOCK_TAGS.floor, topOk, message: '위에서 본 모양이 달라요. 위에서 본 모양은 바닥에 닿은 면의 모양이에요. 쌓인 자리부터 맞춰 봐요.' };
 }
 
