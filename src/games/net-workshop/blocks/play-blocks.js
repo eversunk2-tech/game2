@@ -44,6 +44,17 @@ const LOOK_PAUSE = 900;
 /** 같은 문항을 이만큼 틀리면 [힌트]가 열린다 */
 const HINT_AFTER_WRONG = 2;
 
+/**
+ * 알림(토스트)에 띄울 짧은 글: 까닭의 첫 문장만("맞아요!" 같은 한 마디뿐이면 다음 문장까지).
+ * 긴 까닭은 작업 지시서의 쪽지에 그대로 있다 — 알림이 세 줄이 되면 좁은 화면에서 답 버튼을 가린다.
+ */
+export function toastOf(message) {
+  const parts = String(message).split(/(?<=[.!?])\s+/);
+  let out = parts[0] ?? '';
+  for (let i = 1; i < parts.length && out.length < 8; i += 1) out += ` ${parts[i]}`;
+  return out;
+}
+
 const lookOf = (id) => {
   const s = sculptureOf(id);
   return { token: `--face-${s.face}`, mark: s.mark };
@@ -141,6 +152,11 @@ function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DE
       // 앞 문항이 걸어 둔 움직임(틀린 쪽 → 바른 쪽으로 돌기 등)은 버린다
       for (const id of timers) clearTimeout(id);
       timers.clear();
+      // 앞 문항의 알림도 지운다(다음 문항 위에 앞 문항의 개수·까닭이 떠 있지 않게). 화면 읽기에는 새 문항을 알린다
+      if (number > 1) {
+        ctx.feedback.clear();
+        ctx.feedback.announce(`${label} ${number}번이에요.`);
+      }
       order.setCounter(`${label} ${number} / ${total}`);
       ctx.setProgress?.(number, total, { label });
       prompt.textContent = text;
@@ -307,7 +323,8 @@ function markChoice(buttons, value, expected, correct) {
 function resetChoices(buttons) {
   for (const b of buttons) {
     b.disabled = false;
-    b.classList.remove('is-chosen', 'is-dim', 'is-answer');
+    // 앞 문항에서 튀거나 흔들린 표시(fx-*)도 지운다: 새 문항의 답 버튼은 넷 모두 같은 모습이어야 한다
+    b.classList.remove('is-chosen', 'is-dim', 'is-answer', 'fx-correct', 'fx-wrong');
     b.setAttribute('aria-pressed', 'false');
   }
 }
@@ -316,9 +333,9 @@ function resetChoices(buttons) {
 function settle(ctx, bench, { q, result, given, chosen, last, next }) {
   ctx.log.answer({ itemId: q.itemId, correct: result.correct, tag: result.tag, given, expected: result.expected });
   ctx.sfx.play(result.correct ? 'correct' : 'wrong');
-  if (result.correct) ctx.feedback.correct(result.message, chosen);
+  if (result.correct) ctx.feedback.correct(toastOf(result.message), chosen);
   else {
-    ctx.feedback.wrong(result.message, chosen);
+    ctx.feedback.wrong(toastOf(result.message), chosen);
     bench.showBounce();
   }
   bench.showNote(result.message, result.correct, { title: result.correct ? '맞아요' : '까닭' });
@@ -659,14 +676,14 @@ function playCopy(stage, ctx, questions) {
       ctx.sfx.play('wrong');
       const diff = showDiff(view, mine, q.target);
       drawPicture(q, diff.missing);
-      ctx.feedback.wrong(result.message);
+      ctx.feedback.wrong(toastOf(result.message));
       bench.showNote(result.message, false, { tip: '✗ 표시한 곳이 그림과 달라요. 고친 다음 다시 [확인하기]를 눌러요.' });
       if (checker.wrong()) bench.showBounce({ retry: true });
       return;
     }
     solved = true;
     ctx.sfx.play('correct');
-    ctx.feedback.correct(result.message);
+    ctx.feedback.correct(toastOf(result.message));
     tools.lock(true);
     checker.hide();
     bench.clearBonus();
@@ -840,9 +857,10 @@ function playHidden(stage, ctx, questions) {
       drawGiven(q, { diff: diff.missing, hint: hinted });
     } else {
       view.setMarks({});
+      view.snapTo('home', { force: true, quiet: true });
       drawGiven(q, { cells: topDiff(q, mine), hint: hinted });
     }
-    ctx.feedback.wrong(result.message);
+    ctx.feedback.wrong(toastOf(result.message));
     bench.showNote(result.message, false, { tip: '✗ 표시한 곳을 살펴보고, 고친 다음 다시 [확인하기]를 눌러요.' });
     if (checker.wrong()) bench.showBounce({ retry: true });
   }
@@ -862,7 +880,7 @@ function playHidden(stage, ctx, questions) {
       }
       ctx.log.answer({ itemId: `${q.itemId}:build`, correct: true, tag: null, given: mapKey(mine), expected: mapKey(q.target) });
       ctx.sfx.play('correct');
-      ctx.feedback.correct(result.message);
+      ctx.feedback.correct(toastOf(result.message));
       first = mine;
       phase = 'guess';
       hinted = null;
@@ -891,7 +909,7 @@ function playHidden(stage, ctx, questions) {
     }
     ctx.log.answer({ itemId: `${q.itemId}:other`, correct: true, tag: null, given: mapKey(mine), expected: 'other-count' });
     ctx.sfx.play('correct');
-    ctx.feedback.correct(result.message);
+    ctx.feedback.correct(toastOf(result.message));
     bench.clearBonus();
     // 달라진 자리의 쌓기나무를 표시하고, 가려져 있던 쪽에서 보여 준다
     const [x, y] = q.spot;
@@ -914,9 +932,9 @@ function playHidden(stage, ctx, questions) {
     ctx.log.answer({ itemId: `${q.itemId}:guess`, correct: result.correct, tag: result.tag, given: value, expected: result.expected });
     markChoice([yes, no], value, q.expected, result.correct);
     ctx.sfx.play(result.correct ? 'correct' : 'wrong');
-    if (result.correct) ctx.feedback.correct(result.message, value === 'yes' ? yes : no);
+    if (result.correct) ctx.feedback.correct(toastOf(result.message), value === 'yes' ? yes : no);
     else {
-      ctx.feedback.wrong(result.message, value === 'yes' ? yes : no);
+      ctx.feedback.wrong(toastOf(result.message), value === 'yes' ? yes : no);
       bench.showBounce();
     }
     if (!q.many) {
@@ -925,7 +943,7 @@ function playHidden(stage, ctx, questions) {
     }
     // 여러 가지: 다른 개수로 한 번 더 쌓아 확인한다
     phase = 'other';
-    bench.showNote(result.message, result.correct, { title: result.correct ? '맞아요' : '까닭', tip: '가려진 자리의 높이를 바꿔서 한 번 더 쌓고 [확인하기]를 눌러요.' });
+    bench.showNote(result.message, result.correct, { title: result.correct ? '맞아요' : '까닭' });
     bench.setPrompt(PROMPTS.other);
     guessRow.hidden = true;
     checker.reset();

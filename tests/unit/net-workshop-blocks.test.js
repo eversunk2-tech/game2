@@ -587,11 +587,13 @@ test('그릴 면: 보는 쪽을 향하고 이웃에 맞닿지 않은 면만, 눈
 });
 
 test('쌓기나무의 화면 크기와 보는 방향 말', () => {
-  // 한 변: 무대 높이 ÷ 5.6, 넓은 무대는 양옆 조작 칸(196px씩)을 뺀 폭 ÷ 5.3 가운데 작은 쪽
-  assert.equal(unitFor(808, 382, 196), 68); // 1366×680
-  assert.equal(unitFor(808, 444, 196), 78); // 1366×768
-  assert.equal(unitFor(776, 439, 196), 72); // 태블릿 820×1180
+  // 한 변: 무대 높이 ÷ 5.6, 넓은 무대는 양옆 조작 칸(210px씩)을 뺀 폭 ÷ 5.2 가운데 작은 쪽
+  assert.equal(unitFor(808, 382, 210), 68); // 1366×680
+  assert.equal(unitFor(808, 444, 210), 74); // 1366×768
+  assert.equal(unitFor(776, 406, 210), 68); // 태블릿 820×1180
   assert.equal(unitFor(334, 260, 0), 46); // 휴대폰
+  // 꽉 찬 3×3×3의 가장 먼 꼭짓점(가운데에서 한 변의 2.6배)도 양옆 조작 칸 밖으로 나가지 않는다
+  for (const [w, h] of [[808, 382], [808, 444], [776, 406]]) assert.ok(unitFor(w, h, 210) * Math.sqrt(27) / 2 <= w / 2 - 210, `${w}×${h}`);
   assert.equal(poseWord(POSES.top), '위에서 본 모습이에요.');
   assert.equal(poseWord(POSES.home), '비스듬히 위에서 본 모습이에요.');
   assert.equal(poseWord(POSES.front), '앞에서 본 모습이에요.');

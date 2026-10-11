@@ -163,13 +163,13 @@ export const projectPoint = (pose, k, cx, cy, p) => {
 export const depthOf = (pose, p) => pose[6] * (p[0] - CENTER[0]) + pose[7] * (p[1] - CENTER[1]) + pose[8] * (p[2] - CENTER[2]);
 
 /**
- * 쌓기나무 한 변의 화면 길이(px): 어느 방향으로 돌려도 잘리지 않게, 판 전체(대각선 = 한 변의 5.2배)를 감싸는 공이
- * 무대 높이에 들어오고(여유를 넣어 5.6), 가로로는 양옆의 조작 칸(side px씩)을 뺀 자리에 들어오는 크기
+ * 쌓기나무 한 변의 화면 길이(px): 어느 방향으로 돌려도 잘리지 않게, 판 전체(3×3×3, 대각선 = 한 변의 5.2배)를 감싸는 공이
+ * 무대 높이에 들어오고(글자 자리까지 넣어 5.6), 가로로는 양옆의 조작 칸(side px씩)을 뺀 자리에 들어오는 크기
  */
-export const unitFor = (width, height, side = 0) => Math.max(18, Math.floor(Math.min(height / 5.6, (width - 2 * side) / 5.3)));
-/** 무대가 이 폭보다 넓으면 양옆에 조작 칸(방향 버튼·위에서 본 판 / 조작판)이 겹쳐 놓인다 */
+export const unitFor = (width, height, side = 0) => Math.max(18, Math.floor(Math.min(height / 5.6, (width - 2 * side) / 5.2)));
+/** 무대가 이 폭보다 넓으면 양옆에 조작 칸(방향 버튼·위에서 본 판 / 조작판·그림)이 겹쳐 놓인다: 여백 14px + 칸 너비 190px 안팎 */
 const SIDE_FROM = 600;
-const SIDE_ROOM = 196;
+const SIDE_ROOM = 210;
 
 // ── 색 ───────────────────────────────────
 /** 면의 방향에 따른 그늘(0 = 그대로): 윗면 밝게 · 앞면 가운데 · 옆면 어둡게. 방향마다 한 가지라 [앞]에서 보면 모든 면이 같은 색이다 */
