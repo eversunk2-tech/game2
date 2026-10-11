@@ -33,7 +33,7 @@ import {
 export const LABELS = ['가', '나', '다', '라', '마', '바', '사', '아'];
 
 /** 입체마다 있어야 할 면의 수 */
-export const FACE_COUNT = { cube: 6 };
+export const FACE_COUNT = { cube: 6, cuboid: 6 };
 
 // ── 격자 칸 (정육면체 전개도) ────────────────
 export const cellKey = ([x, y]) => `${x},${y}`;
@@ -161,8 +161,39 @@ export function findHinges(net) {
   return hinges;
 }
 
+const edgeLength = (face, i) => length(sub(to3(face.poly[(i + 1) % face.poly.length]), to3(face.poly[i])));
+
+/** 경첩이 두 변에 꼭 맞나 (두 변의 길이가 같고 끝과 끝이 맞음). 아니면 일부만 맞닿은 경첩 */
+export function isFullHinge(net, hinge) {
+  const a = net.faces.find((f) => f.id === hinge.a);
+  const b = net.faces.find((f) => f.id === hinge.b);
+  return Math.abs(edgeLength(a, hinge.ea) - hinge.length) < 1e-6 && Math.abs(edgeLength(b, hinge.eb) - hinge.length) < 1e-6;
+}
+
+/**
+ * 맞닿은 곳이 고리를 이룰 때(면 수 − 1보다 경첩이 많을 때) 접는 경첩을 바닥 면(root)과 무관하게 고른다:
+ * 꼭 맞는 경첩 먼저, 길게 맞닿은 것 먼저. 정육면체(격자 칸)는 지금까지처럼 root에서 너비 우선으로 고른다 — 판정이 달라지지 않게.
+ */
+function pickHinges(net, hinges) {
+  if (net.kind === 'cube' || hinges.length < net.faces.length) return hinges;
+  const group = new Map(net.faces.map((f) => [f.id, f.id]));
+  const find = (id) => (group.get(id) === id ? id : find(group.get(id)));
+  const ranked = hinges
+    .map((hinge, i) => ({ hinge, i, full: isFullHinge(net, hinge) }))
+    .sort((p, q) => Number(q.full) - Number(p.full) || q.hinge.length - p.hinge.length || p.i - q.i);
+  const kept = new Set();
+  for (const { hinge } of ranked) {
+    const [ga, gb] = [find(hinge.a), find(hinge.b)];
+    if (ga === gb) continue;
+    group.set(ga, gb);
+    kept.add(hinge);
+  }
+  return hinges.filter((hinge) => kept.has(hinge));
+}
+
 /** root에서 너비 우선으로 신장 트리를 고른다. 고리의 남는 경첩은 접을 때 떨어진다. */
-export function spanningTree(net, hinges = findHinges(net)) {
+export function spanningTree(net, allHinges = findHinges(net)) {
+  const hinges = net.tree ? allHinges.filter((hg) => net.tree.some(([a, b]) => (hg.a === a && hg.b === b) || (hg.a === b && hg.b === a))) : pickHinges(net, allHinges);
   const parent = new Map();
   const order = net.root ? [net.root] : [];
   const seen = new Set(order);
@@ -237,6 +268,22 @@ export function fullVertices(net) {
       entry.faces.push(f.id);
       byKey.set(key, entry);
     });
+  }
+  // 다른 면의 변 한가운데에 놓인 꼭짓점: 그 면이 반 바퀴(180°)를 막는다. 한 변이 1인 격자 칸(정육면체)에서는 생기지 않는다
+  for (const entry of byKey.values()) {
+    for (const f of net.faces) {
+      if (entry.faces.includes(f.id)) continue;
+      const onEdge = edgesOf(f.poly).some(([p, q]) => {
+        const d = sub(to3(q), to3(p));
+        const len = length(d);
+        const w = sub(to3(entry.point), to3(p));
+        const along = dot(w, d) / len;
+        return along > 1e-6 && along < len - 1e-6 && length(cross(w, d)) / len < 1e-6;
+      });
+      if (!onEdge) continue;
+      entry.angle += Math.PI;
+      entry.faces.push(f.id);
+    }
   }
   return [...byKey.values()].filter((v) => v.angle >= 2 * Math.PI - 1e-6);
 }
@@ -337,10 +384,49 @@ export function isConnected(net) {
   return structureOf(net).tree.order.length === net.faces.length;
 }
 
+/** 면의 크기 [짧은 변, 긴 변] (직사각형 면) */
+export function faceSize(face) {
+  const { min, max } = bounds(face.poly);
+  const w = Math.round((max[0] - min[0]) * 1e6) / 1e6;
+  const h = Math.round((max[1] - min[1]) * 1e6) / 1e6;
+  return w <= h ? [w, h] : [h, w];
+}
+
+/**
+ * 직육면체: 크기가 같은 면이 두 장씩 세 쌍이어야 한다(마주 보는 면은 합동). 짝이 없는 면의 id를 돌려준다.
+ * dims(세 모서리의 길이)를 알면 그 직육면체의 면(a×b · b×c · a×c 두 장씩)과 견주고, 모르면 같은 크기끼리 둘씩 짝만 짓는다.
+ */
+export function unpairedFaces(net) {
+  if (net.kind !== 'cuboid') return [];
+  const keyOf = (size) => size.join('x');
+  const left = new Map();
+  if (net.dims) {
+    const [a, b, c] = net.dims;
+    for (const size of [[a, b], [b, c], [a, c]]) {
+      const key = keyOf(size[0] <= size[1] ? size : [size[1], size[0]]);
+      left.set(key, (left.get(key) ?? 0) + 2);
+    }
+  }
+  const out = [];
+  const waiting = new Map(); // dims를 모를 때: 짝을 기다리는 면
+  for (const f of net.faces) {
+    const key = keyOf(faceSize(f));
+    if (net.dims) {
+      if ((left.get(key) ?? 0) > 0) left.set(key, left.get(key) - 1);
+      else out.push(f.id);
+    } else if (waiting.has(key)) waiting.delete(key);
+    else waiting.set(key, f.id);
+  }
+  return [...out, ...waiting.values()];
+}
+
 /**
  * 전개도가 입체로 접히는지 검사한다.
  * 돌려주는 값: { ok, problems: [{ type, faces?, edges?, lengths?, vertex?, count? }] }
- * type: 'face-count' | 'disconnected' | 'vertex-full' | 'overlap' | 'gap' | 'edge-length'
+ * type: 'face-count' | 'disconnected' | 'vertex-full' | 'overlap' | 'face-pair' | 'gap' | 'edge-length'
+ *   edge-length: 맞닿는 두 변의 길이가 다르다 — edges: [{ face, edge }, { face, edge }] 그 두 변, lengths: 두 변의 길이,
+ *     hinge: 펼친 전개도에서 이어 붙인 두 변(경첩)이면 true, shifted: 길이는 같은데 어긋나게 붙었으면 true
+ *   face-pair: 직육면체인데 크기가 같은 면이 두 장씩이 아니다 — faces: 짝이 없는 면
  */
 export function checkNet(net) {
   const problems = [];
@@ -360,10 +446,23 @@ export function checkNet(net) {
   const pairs = overlappingPairs(folded);
   for (const faces of pairs) problems.push({ type: 'overlap', faces });
 
+  const unpaired = unpairedFaces(net);
+  if (unpaired.length > 0) problems.push({ type: 'face-pair', faces: unpaired });
+
   const all = boundaryEdges(net, folded);
   const hinges = hingeSegments(net, folded);
   const gaps = [];
   const seenLength = new Set();
+  // 이어 붙인 두 변(경첩)이 꼭 맞지 않는다: 길이가 다르거나(lengths가 다름) 어긋나게 붙었다(shifted). 한 변이 1인 격자 칸에서는 생기지 않는다
+  for (const hg of tree.treeHinges) {
+    if (isFullHinge(net, hg)) continue;
+    const lengths = [edgeLength(net.faces.find((f) => f.id === hg.a), hg.ea), edgeLength(net.faces.find((f) => f.id === hg.b), hg.eb)];
+    seenLength.add([hg.a, hg.b].sort().join('|'));
+    problems.push({
+      type: 'edge-length', faces: [hg.a, hg.b], lengths, hinge: true, shifted: Math.abs(lengths[0] - lengths[1]) < 1e-6,
+      edges: [{ face: hg.a, edge: hg.ea }, { face: hg.b, edge: hg.eb }],
+    });
+  }
   let edgeOverlap = null;
   for (const e of all) {
     const { exact, partial } = edgeContacts(e, all, hinges);
@@ -372,7 +471,10 @@ export function checkNet(net) {
       const key = [e.face, g.face].sort().join('|');
       if (seenLength.has(key)) continue;
       seenLength.add(key);
-      problems.push({ type: 'edge-length', faces: [e.face, g.face], lengths: [length(sub(e.to, e.from)), length(sub(g.to, g.from))] });
+      problems.push({
+        type: 'edge-length', faces: [e.face, g.face], lengths: [length(sub(e.to, e.from)), length(sub(g.to, g.from))],
+        edges: [{ face: e.face, edge: e.edge }, { face: g.face, edge: g.edge }],
+      });
     }
     if (exact.length >= 2 && !edgeOverlap) edgeOverlap = [...new Set([e.face, ...exact.flatMap((g) => g.faces ?? [g.face])])];
   }
@@ -428,8 +530,50 @@ export function cubeSlots(net) {
   ];
 }
 
-/** 다 접었을 때 아무 면도 오지 않은 자리 (정육면체만) */
+/**
+ * 직육면체가 될 6자리. root 면이 윗면이고 입체는 그 아래(-z)에 있다. 자리마다 cubeSlots와 같은 값 + size: [u 쪽 길이, v 쪽 길이].
+ * root 면의 두 변이 세 모서리 길이(net.dims) 가운데 둘이 아니면(크기를 바꾼 면) 자리를 정할 수 없어 빈 목록.
+ */
+export function cuboidSlots(net) {
+  const root = net.faces.find((f) => f.id === net.root);
+  if (!root || !Array.isArray(net.dims)) return [];
+  const { min, max } = bounds(root.poly);
+  const [x, y] = min;
+  const w = max[0] - min[0];
+  const h = max[1] - min[1];
+  const rest = [...net.dims];
+  for (const side of [w, h]) {
+    const i = rest.findIndex((v) => Math.abs(v - side) < 1e-6);
+    if (i < 0) return [];
+    rest.splice(i, 1);
+  }
+  const d = rest[0];
+  const slot = (name, center, normal, v, size) => ({ name, center, normal, u: cross(v, normal), v, size });
+  const down = [0, 0, -1];
+  return [
+    slot('top', [x + w / 2, y + h / 2, 0], [0, 0, 1], [0, 1, 0], [w, h]),
+    slot('bottom', [x + w / 2, y + h / 2, -d], [0, 0, -1], [0, 1, 0], [w, h]),
+    slot('left', [x, y + h / 2, -d / 2], [-1, 0, 0], down, [h, d]),
+    slot('right', [x + w, y + h / 2, -d / 2], [1, 0, 0], down, [h, d]),
+    slot('back', [x + w / 2, y, -d / 2], [0, -1, 0], down, [w, d]),
+    slot('front', [x + w / 2, y + h, -d / 2], [0, 1, 0], down, [w, d]),
+  ];
+}
+
+/** 다 접었을 때 아무 면도 오지 않은 자리 (정육면체 · 직육면체) */
 export function missingSlots(net, folded = foldNet(net, 1)) {
+  if (net.kind === 'cuboid') {
+    // 그 자리의 평면에 놓여 자리의 4분의 1 넘게 덮은 면이 있으면 찬 자리 (크기가 조금 다른 면이 와도 찬 것으로 본다 — 길이는 따로 짚는다)
+    return cuboidSlots(net).filter((s) => {
+      const corner = sub(sub(s.center, scale(s.u, s.size[0] / 2)), scale(s.v, s.size[1] / 2));
+      const area = [[0, 0], [s.size[0], 0], [s.size[0], s.size[1]], [0, s.size[1]]];
+      return !folded.faces.some((f) => {
+        if (Math.abs(Math.abs(dot(f.normal, s.normal)) - 1) > 1e-6 || Math.abs(dot(s.normal, sub(f.points[0], s.center))) > 1e-6) return false;
+        const poly = f.points.map((p) => [dot(sub(p, corner), s.u), dot(sub(p, corner), s.v)]);
+        return convexIntersectionArea(area, poly) > 0.25 * s.size[0] * s.size[1];
+      });
+    });
+  }
   if (net.kind !== 'cube') return [];
   return cubeSlots(net).filter((s) => !folded.faces.some((f) => samePoint(f.center, s.center, 1e-4)));
 }
@@ -443,4 +587,273 @@ export function completionSlots(cells, options = {}) {
     const result = checkNet(fromCells([...cells, cell], options));
     return { cell, key: cellKey(cell), ...result };
   });
+}
+
+// ── 입체를 펼쳐 전개도 만들기 (직육면체. 각기둥도 같은 함수로 펼친다) ─────────────────
+/**
+ * 직육면체 [0, a] × [0, b] × [0, c]. 입체: { kind, dims, faces: [{ id, role, points: [[x, y, z], ...] }] }
+ * 면의 꼭짓점은 바깥에서 볼 때 반시계 방향이다(바깥 법선 = (p1 − p0) × (p2 − p0)).
+ */
+export function cuboid(a, b, c) {
+  const faces = [
+    ['top', [[0, 0, c], [a, 0, c], [a, b, c], [0, b, c]]],
+    ['bottom', [[0, 0, 0], [0, b, 0], [a, b, 0], [a, 0, 0]]],
+    ['front', [[0, 0, 0], [a, 0, 0], [a, 0, c], [0, 0, c]]],
+    ['back', [[a, b, 0], [0, b, 0], [0, b, c], [a, b, c]]],
+    ['left', [[0, b, 0], [0, 0, 0], [0, 0, c], [0, b, c]]],
+    ['right', [[a, 0, 0], [a, b, 0], [a, b, c], [a, 0, c]]],
+  ];
+  return { kind: 'cuboid', dims: [a, b, c], faces: faces.map(([id, points]) => ({ id, role: 'face', points })) };
+}
+
+/** 입체의 모서리: 두 면이 함께 쓰는 변 [{ a, b(면 id), ea, eb(그 면에서 몇 번째 변) }] */
+export function solidEdges(solid) {
+  const out = [];
+  const { faces } = solid;
+  for (let i = 0; i < faces.length; i += 1) {
+    for (let j = i + 1; j < faces.length; j += 1) {
+      faces[i].points.forEach((p, ea) => {
+        const q = faces[i].points[(ea + 1) % faces[i].points.length];
+        faces[j].points.forEach((r, eb) => {
+          const t = faces[j].points[(eb + 1) % faces[j].points.length];
+          if ((samePoint(p, t) && samePoint(q, r)) || (samePoint(p, r) && samePoint(q, t))) out.push({ a: faces[i].id, b: faces[j].id, ea, eb });
+        });
+      });
+    }
+  }
+  return out;
+}
+
+/** 입체의 면을 잇는 신장 트리를 모두 나열한다(모서리 묶음의 배열). 직육면체는 384가지 */
+export function spanningTrees(solid, edges = solidEdges(solid)) {
+  const ids = solid.faces.map((f) => f.id);
+  const need = ids.length - 1;
+  const out = [];
+  const walk = (start, picked, group) => {
+    if (picked.length === need) {
+      out.push(picked.slice());
+      return;
+    }
+    for (let i = start; i <= edges.length - (need - picked.length); i += 1) {
+      const ga = group.get(edges[i].a);
+      const gb = group.get(edges[i].b);
+      if (ga === gb) continue;
+      const next = new Map(group);
+      for (const [id, g] of group) if (g === gb) next.set(id, ga);
+      picked.push(edges[i]);
+      walk(i + 1, picked, next);
+      picked.pop();
+    }
+  };
+  walk(0, [], new Map(ids.map((id) => [id, id])));
+  return out;
+}
+
+const tidy = (v) => {
+  const r = Math.round(v * 1e9) / 1e9;
+  return Object.is(r, -0) ? 0 : r;
+};
+
+/** 전개도를 왼쪽 위가 (0, 0)이 되게 옮긴다 (면의 순서·이름은 그대로) */
+function settleNet(net) {
+  const { min } = bounds(net.faces.flatMap((f) => f.poly));
+  return { ...net, faces: net.faces.map((f) => ({ ...f, poly: f.poly.map(([x, y]) => [tidy(x - min[0]), tidy(y - min[1])]) })) };
+}
+
+/** 이웃이 가장 많은 면(같으면 가운데에 가까운 면)을 바닥 면으로 */
+function centralFace(net) {
+  const hinges = findHinges(net);
+  const { min, max } = bounds(net.faces.flatMap((f) => f.poly));
+  const mid = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, 0];
+  const score = (f) => hinges.filter((hg) => hg.a === f.id || hg.b === f.id).length * 1000 - length(sub(centroid(f.poly), mid));
+  let best = net.faces[0] ?? null;
+  for (const f of net.faces) if (score(f) > score(best) + EPS) best = f;
+  return best?.id ?? null;
+}
+
+/**
+ * 입체를 신장 트리(tree: solidEdges의 모서리 묶음)를 따라 펼친 전개도. 트리에 없는 모서리는 잘라 편다.
+ * 면 id는 입체의 면 순서대로 f0, f1, …(면마다 solid: 입체의 면 id), 이름은 labels 순서. 바깥쪽이 앞면(+z)이라 다시 접으면 입체가 된다.
+ */
+export function unfold(solid, tree, { labels = LABELS } = {}) {
+  const frames = new Map(solid.faces.map((f) => {
+    const o = f.points[0];
+    const u = normalize(sub(f.points[1], o));
+    const n = normalize(cross(sub(f.points[1], o), sub(f.points[2], o)));
+    const v = cross(n, u);
+    return [f.id, (p) => [dot(sub(p, o), u), dot(sub(p, o), v)]];
+  }));
+  const byId = new Map(solid.faces.map((f) => [f.id, f]));
+  const degree = (id) => tree.filter((e) => e.a === id || e.b === id).length;
+  const start = solid.faces.reduce((best, f) => (degree(f.id) > degree(best.id) ? f : best), solid.faces[0]);
+  const placed = new Map([[start.id, start.points.map(frames.get(start.id))]]);
+  const queue = [start.id];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    for (const e of tree) {
+      const other = e.a === id ? e.b : e.b === id ? e.a : null;
+      if (other == null || placed.has(other)) continue;
+      const at = e.a === id ? e.ea : e.eb; // 놓인 면에서 함께 쓰는 변
+      const face = byId.get(id);
+      const P = face.points[at];
+      const Q = face.points[(at + 1) % face.points.length];
+      const [p, q] = [placed.get(id)[at], placed.get(id)[(at + 1) % face.points.length]];
+      // 새 면을 제 평면의 2D 좌표로 놓고, 함께 쓰는 변이 놓인 면의 그 변에 오게 돌려 옮긴다(뒤집지 않는다 — 바깥쪽이 그대로 앞면)
+      const local = frames.get(other);
+      const [lp, lq] = [local(P), local(Q)];
+      const turn = Math.atan2(q[1] - p[1], q[0] - p[0]) - Math.atan2(lq[1] - lp[1], lq[0] - lp[0]);
+      const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+      placed.set(other, byId.get(other).points.map((point) => {
+        const [x, y] = local(point);
+        return [p[0] + (x - lp[0]) * cos - (y - lp[1]) * sin, p[1] + (x - lp[0]) * sin + (y - lp[1]) * cos];
+      }));
+      queue.push(other);
+    }
+  }
+  const net = settleNet({
+    kind: solid.kind,
+    ...(solid.dims ? { dims: [...solid.dims] } : {}),
+    faces: solid.faces.map((f, i) => ({ id: `f${i}`, role: f.role, label: labels[i] ?? String(i + 1), solid: f.id, poly: placed.get(f.id) ?? [] })),
+    root: null,
+  });
+  return { ...net, root: centralFace(net) };
+}
+
+/**
+ * 직사각형 묶음 [{ x, y, w, h, label? }](cm, 1 cm 격자에 놓은 면 카드)으로 전개도를 만든다. 놓은 자리 그대로다(옮기지 않는다).
+ * dims: 만들려는 직육면체의 세 모서리 길이(알면 면의 크기를 그것과 견준다 — checkNet의 'face-pair')
+ */
+export function fromRects(rects, { labels = LABELS, kind = 'cuboid', dims = null } = {}) {
+  const faces = rects.map(({ x, y, w, h, label }, i) => ({
+    id: `f${i}`,
+    role: 'face',
+    label: label ?? labels[i] ?? String(i + 1),
+    poly: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
+  }));
+  const net = { kind, ...(dims ? { dims: [...dims] } : {}), faces, root: null };
+  return { ...net, root: centralFace(net) };
+}
+
+/** 면이 차지한 직사각형 { x, y, w, h } (직사각형 면) */
+export function faceRect(face) {
+  const { min, max } = bounds(face.poly);
+  return { x: tidy(min[0]), y: tidy(min[1]), w: tidy(max[0] - min[0]), h: tidy(max[1] - min[1]) };
+}
+
+/** k번째 돌리기·뒤집기를 한 전개도 (0 ≤ k < 8). 면의 순서·id·이름은 그대로, 왼쪽 위가 (0, 0) */
+export function transformNet(net, k) {
+  const moved = settleNet({ ...net, faces: net.faces.map((f) => ({ ...f, poly: f.poly.map(SYMMETRIES[k]) })) });
+  return { ...moved, root: net.root };
+}
+
+/** 전개도의 가로·세로 크기 [w, h] */
+export function netSize(net) {
+  const { min, max } = bounds(net.faces.flatMap((f) => f.poly));
+  return [tidy(max[0] - min[0]), tidy(max[1] - min[1])];
+}
+
+/**
+ * 전개도 모양의 열쇠: 돌리거나 뒤집어 겹치면 같은 열쇠. 면마다 차지한 직사각형(자리와 크기)을 적어 8가지 가운데 가장 작은 글자열을 고른다.
+ * 면의 이름은 넣지 않는다(크기가 같은 면은 서로 바꿔도 같은 모양). 직사각형 면 전개도(정육면체·직육면체)에 쓴다.
+ */
+export function netKey(net) {
+  let best = null;
+  for (let k = 0; k < SYMMETRIES.length; k += 1) {
+    const key = transformNet(net, k).faces.map(faceRect)
+      .sort((p, q) => p.y - q.y || p.x - q.x || p.w - q.w || p.h - q.h)
+      .map((r) => `${r.x},${r.y},${r.w},${r.h}`)
+      .join(';');
+    if (best == null || key < best) best = key;
+  }
+  return best;
+}
+
+// ── 전개도의 테두리: 꼭짓점 이름(ㄱㄴㄷ…)과 선분 ─────────────────
+/** 꼭짓점 이름: 직육면체 전개도의 테두리에는 꼭짓점이 14개 있다 */
+export const VERTEX_NAMES = ['ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+const inFace = (face, point) => {
+  // 볼록 다각형 안(변 위는 밖으로 본다)
+  let sign = 0;
+  return edgesOf(face.poly).every(([p, q]) => {
+    const side = (q[0] - p[0]) * (point[1] - p[1]) - (q[1] - p[1]) * (point[0] - p[0]);
+    if (Math.abs(side) < 1e-9) return false;
+    if (sign === 0) sign = Math.sign(side);
+    return Math.sign(side) === sign;
+  });
+};
+
+/**
+ * 한 장으로 이어진 전개도의 테두리를 한 바퀴 돈다. 맨 위 줄의 가장 왼쪽 꼭짓점에서 시작해 화면에서 시계 반대 방향
+ * (왼쪽 변을 따라 아래로)으로 돌며 ㄱ, ㄴ, ㄷ … 이름을 붙인다. 면의 꼭짓점이 놓인 곳은 곧게 이어진 곳도 꼭짓점이다.
+ * → { vertices: [{ name, point: [x, y], out: [dx, dy](전개도 바깥쪽을 향하는 방향) }],
+ *     segments: [{ name('ㄱㄴ'), from, to(꼭짓점 번호), face, edge(그 면의 몇 번째 변), length }] }
+ * 테두리가 한 줄이 아니거나(구멍, 꼭짓점만 닿은 면) 꼭짓점이 이름보다 많으면 null
+ */
+export function outline(net, names = VERTEX_NAMES) {
+  const points = new Map();
+  for (const f of net.faces) for (const p of f.poly) points.set(pointKey(p), [p[0], p[1]]);
+  // 면의 변을 그 위에 놓인 다른 꼭짓점에서 나눈다 → 한 번만 나오는 조각이 테두리
+  const pieces = new Map();
+  net.faces.forEach((f) => {
+    edgesOf(f.poly).forEach(([p, q], edge) => {
+      const d = sub(to3(q), to3(p));
+      const len = length(d);
+      const cuts = [...points.values()]
+        .map((point) => ({ point, w: sub(to3(point), to3(p)) }))
+        .filter(({ w }) => length(cross(w, d)) / len < 1e-6 && dot(w, d) / len > -1e-6 && dot(w, d) / len < len + 1e-6)
+        .sort((m, n) => dot(m.w, d) - dot(n.w, d))
+        .map((m) => m.point);
+      for (let i = 0; i + 1 < cuts.length; i += 1) {
+        const key = [pointKey(cuts[i]), pointKey(cuts[i + 1])].sort().join('|');
+        const entry = pieces.get(key) ?? { count: 0 };
+        pieces.set(key, { count: entry.count + 1, from: cuts[i], to: cuts[i + 1], face: f.id, edge, whole: cuts.length === 2 });
+      }
+    });
+  });
+  const border = [...pieces.values()].filter((piece) => piece.count === 1);
+  if (border.length < 3 || border.length > names.length) return null;
+  const next = new Map();
+  for (const piece of border) {
+    for (const [a, b] of [[piece.from, piece.to], [piece.to, piece.from]]) {
+      const list = next.get(pointKey(a)) ?? [];
+      list.push({ to: b, piece });
+      next.set(pointKey(a), list);
+    }
+  }
+  if ([...next.values()].some((list) => list.length !== 2)) return null; // 꼭짓점만 닿은 면·구멍이 있으면 한 줄로 돌 수 없다
+  const start = border.flatMap((piece) => [piece.from, piece.to]).reduce((best, p) => (p[1] < best[1] - 1e-9 || (Math.abs(p[1] - best[1]) < 1e-9 && p[0] < best[0]) ? p : best));
+  // 시작 꼭짓점에서 아래쪽(y가 커지는 쪽)으로 먼저 간다: 화면에서 시계 반대 방향
+  const firstStep = next.get(pointKey(start)).slice().sort((m, n) => n.to[1] - m.to[1])[0];
+  const loop = [];
+  let at = start;
+  let step = firstStep;
+  for (let guard = 0; guard <= border.length; guard += 1) {
+    loop.push({ point: at, piece: step.piece });
+    const cameBy = step.piece;
+    at = step.to;
+    if (pointKey(at) === pointKey(start)) break;
+    step = next.get(pointKey(at)).find((option) => option.piece !== cameBy);
+  }
+  if (loop.length !== border.length) return null;
+  const vertices = loop.map(({ point }, i) => {
+    const prev = loop[(i + loop.length - 1) % loop.length].point;
+    const after = loop[(i + 1) % loop.length].point;
+    const u = normalize(sub(to3(prev), to3(point)));
+    const v = normalize(sub(to3(after), to3(point)));
+    let out = normalize([u[0] + v[0], u[1] + v[1], 0]);
+    if (length(out) < 1e-6) out = [-v[1], v[0], 0]; // 곧게 이어진 곳: 변에 수직인 쪽
+    const probe = [point[0] + out[0] * 1e-3, point[1] + out[1] * 1e-3];
+    if (net.faces.some((f) => inFace(f, probe))) out = scale(out, -1);
+    return { name: names[i], point: [point[0], point[1]], out: [tidy(out[0]), tidy(out[1])] };
+  });
+  const segments = loop.map(({ piece }, i) => {
+    const to = (i + 1) % loop.length;
+    return {
+      // 선분의 이름은 앞선 글자부터: 마지막 선분은 ㅎㄱ이 아니라 ㄱㅎ
+      name: `${names[Math.min(i, to)]}${names[Math.max(i, to)]}`, from: i, to, face: piece.face, edge: piece.whole ? piece.edge : null,
+      length: tidy(length(sub(to3(piece.to), to3(piece.from)))),
+    };
+  });
+  return { vertices, segments };
 }

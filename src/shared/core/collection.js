@@ -7,6 +7,9 @@
  *   xp: 처음 등록할 때 주는 솜씨 점수 (0~5 정수, 기본 5)
  *   label: 짧은 이름(예: '노트'). 있으면 "도감 n / m" 칩에 합치지 않고 따로 "노트 n / m"으로 보인다
  *   icon: label 칩에 쓸 아이콘 이름(없으면 책)
+ *   quiet: true면 화면에 보이지 않는 모음 — 칩·도감 화면·결과 복사에 나오지 않고 "새로 찾았어요" 안내도 없다.
+ *     저장과 점수는 다른 도감과 같다(ctx.collect · ctx.collection, 도장 판정의 collections). 칸이 너무 많아 도감으로 보여 주지 않지만
+ *     "이 기기에서 한 번만 점수"를 지키려고 찾은 것을 적어 둬야 할 때 쓴다(예: 직육면체 전개도 54가지) — 가지 수는 게임이 보여 준다
  */
 import { XP } from './rewards.js';
 
@@ -27,6 +30,7 @@ export function normalizeCollections(defs) {
     if (def.label != null && !(typeof def.label === 'string' && def.label.trim())) {
       throw new Error(`collections(${def.id}): label은 짧은 이름 글자예요 (예: '노트').`);
     }
+    if (def.quiet != null && typeof def.quiet !== 'boolean') throw new Error(`collections(${def.id}): quiet는 true나 false예요.`);
     const itemIds = new Set();
     const items = def.items.map((item) => {
       if (item?.id == null || !item?.name) throw new Error(`collections(${def.id}): 칸마다 id와 name이 필요해요.`);
@@ -71,9 +75,11 @@ export function collectionTotals(state, defs) {
 
 /**
  * 도감 칩에 보일 숫자. label이 없는 도감은 합쳐 "도감 n / m"(main), label이 있는 도감은 하나씩 따로(side).
+ * 화면에 보이지 않는 모음(quiet)은 어느 쪽에도 넣지 않는다.
  * → { main: { count, total } | null, mainDefs, side: [{ id, label, icon, count, total }] }
  */
-export function collectionChips(state, defs) {
+export function collectionChips(state, allDefs) {
+  const defs = allDefs.filter((def) => !def.quiet);
   const mainDefs = defs.filter((def) => !def.label);
   return {
     main: mainDefs.length > 0 ? collectionTotals(state, mainDefs) : null,

@@ -818,7 +818,8 @@ export function createGameApp({
             updateMeta();
           }
           sfx.play('discover');
-          feedback.announce(`새로 찾았어요: ${r.item.name} (${r.count} / ${r.total})`);
+          // 화면에 보이지 않는 모음(quiet)은 안내하지 않는다 — 무엇을 찾았는지는 게임이 제 말로 알린다
+          if (!collections.find((c) => c.id === id)?.quiet) feedback.announce(`새로 찾았어요: ${r.item.name} (${r.count} / ${r.total})`);
         }
         return { isNew: r.isNew, count: r.count, total: r.total };
       },
@@ -1076,7 +1077,7 @@ export function createGameApp({
         ),
       ),
       h('p', { class: 'muted collection-note' }, '여러 가지를 새로 찾으면 칸이 채워져요. 아직 못 찾은 칸은 ?로 보여요.'),
-      collections.map((def) => collectionSection(def, collectionStatus(collectionState, def), (itemId) => foundThisVisit.has(`${def.id}:${itemId}`))),
+      collections.filter((def) => !def.quiet).map((def) => collectionSection(def, collectionStatus(collectionState, def), (itemId) => foundThisVisit.has(`${def.id}:${itemId}`))),
     );
   }
 

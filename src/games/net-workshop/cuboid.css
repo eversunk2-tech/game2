@@ -1,0 +1,238 @@
+/*
+ * 직육면체의 전개도 차시(cuboid)만의 스타일. 틀(매트·작업 지시서·놓는 판)은 style.css 그대로 쓰고, 여기에는 더한 것만 둔다:
+ * 길이 이름표, 꼭짓점 이름, 변의 띠 무늬, 보기 버튼, 크기 카드, 직사각형 면 카드를 놓는 판.
+ * 색·간격·글꼴은 base.css 토큰만 쓴다. 무대 안의 px 값은 style.css처럼 var(--k, 1)을 곱한다(크게 볼 때 굵기가 그대로).
+ */
+
+/* ── 길이 이름표: 면마다 위쪽 변에 가로, 왼쪽 변에 세로 (어떤 전개도든 같은 규칙) ── */
+.face-len {
+  position: absolute;
+  z-index: 1;
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: clamp(calc(11px * var(--k, 1)), calc(var(--unit, 40px) * 0.3), calc(15px * var(--k, 1)));
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink);
+  pointer-events: none;
+}
+.face-len.is-w { left: 50%; top: calc(4px * var(--k, 1)); transform: translateX(-50%); }
+.face-len.is-h { left: calc(4px * var(--k, 1)); top: 50%; transform: translateY(-50%); }
+/* 길이 이름표가 있는 면: 면 이름(가~바)을 가운데에서 오른쪽 아래로 조금 옮겨, 좁은 면에서도 세로 길이와 겹치지 않게 */
+.net-face.has-len .face-label { transform: translate(calc(var(--unit, 40px) * 0.34), calc(var(--unit, 40px) * 0.14)); }
+/* 종이 안쪽이 보이는 면: 글자가 거울상이 되지 않게 제자리에서 뒤집는다 */
+.net-face.is-back .face-len.is-w { transform: translateX(-50%) scaleX(-1); }
+.net-face.is-back .face-len.is-h { transform: translateY(-50%) scaleX(-1); }
+
+/* ── 꼭짓점 이름(ㄱㄴㄷ…): 펼친 전개도의 테두리 밖 동그란 쪽지. 접히기 시작하면 숨는다 ── */
+.net-vname {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+  pointer-events: none;
+  transition: opacity var(--dur-1) linear;
+}
+.net-vname span {
+  --name-gap: 17px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1rem;
+  line-height: 1;
+  transform: translate(-50%, -50%) translate(calc(var(--ox) * var(--name-gap)), calc(var(--oy) * var(--name-gap))) rotate(var(--name-turn, 0deg));
+}
+.fold-stage:not(.is-flat) .net-vname { opacity: 0; }
+
+/* ── 변의 띠 무늬: 만나는 두 선분 · 길이가 다른 두 변을 같은 무늬로 (색만으로 알리지 않는다: 무늬 + 이름표) ── */
+.edge-band {
+  position: absolute;
+  z-index: 1;
+  height: max(calc(10px * var(--k, 1)), calc(var(--unit, 40px) * 0.24));
+  transform-origin: 0 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 calc(1.5px * var(--k, 1)) var(--ink);
+}
+/* 물음의 선분: 노랑 바탕 + 잉크 세로 줄 */
+.edge-band.is-q {
+  background-color: var(--butter);
+  background-image: repeating-linear-gradient(90deg, var(--ink) 0 calc(2px * var(--k, 1)), transparent calc(2px * var(--k, 1)) calc(8px * var(--k, 1)));
+}
+/* 짝이 된 두 선분: 파랑 바탕 + 흰 빗금 */
+.edge-band.is-a {
+  background-color: var(--primary);
+  background-image: repeating-linear-gradient(45deg, var(--paper) 0 calc(3px * var(--k, 1)), transparent calc(3px * var(--k, 1)) calc(8px * var(--k, 1)));
+}
+.edge-tag {
+  --tag-in: max(calc(17px * var(--k, 1)), calc(var(--unit, 40px) * 0.42));
+  position: absolute;
+  z-index: 2;
+  transform: translate(-50%, -50%) translate(calc(var(--ix) * var(--tag-in)), calc(var(--iy) * var(--tag-in)));
+  padding: calc(1px * var(--k, 1)) calc(5px * var(--k, 1));
+  border-radius: calc(6px * var(--k, 1));
+  border: calc(1.5px * var(--k, 1)) solid var(--ink);
+  background: var(--paper);
+  color: var(--primary-edge);
+  font-family: var(--font);
+  font-weight: 800;
+  font-size: clamp(calc(11px * var(--k, 1)), calc(var(--unit, 40px) * 0.3), calc(15px * var(--k, 1)));
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.edge-tag > span { display: inline-block; }
+.net-face.is-back .edge-tag > span { transform: scaleX(-1); }
+
+/* ── 만나는 선분: 보기 4개 (2 × 2) ── */
+.edge-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.edge-opt { min-height: 58px; gap: 6px; font-size: 1.25rem; }
+.edge-opt-mark { display: inline-flex; }
+.edge-opt-mark:empty { display: none; }
+.edge-opt-mark .icon { width: 1.1em; height: 1.1em; stroke-width: 3; }
+.edge-opt.is-wrong { border-style: dashed; border-color: var(--wrong); color: var(--wrong); background: var(--wrong-bg); }
+.edge-opt.is-right,
+.edge-opt.is-right[disabled] { border-style: solid; border-color: var(--correct); color: var(--correct); background: var(--correct-bg); box-shadow: 0 4px 0 var(--correct); }
+
+/* ── 알맞은 면 고르기: 크기 카드 3장 (같은 색 · 같은 축척, 크기만 다르다) ── */
+.size-cards { --card-cm: 13px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+.size-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 108px;
+  padding: 8px 4px 6px;
+  border: 2px solid var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  box-shadow: var(--edge-sm);
+  color: var(--ink);
+  cursor: grab;
+}
+.size-rect {
+  flex: none;
+  margin: auto 0;
+  border: 2px solid var(--ink);
+  border-radius: 2px;
+  background-color: var(--face-color, var(--face-1));
+  background-image: linear-gradient(135deg, rgb(255 255 255 / 35%), transparent 45%);
+}
+.size-text { display: flex; flex-direction: column; font-family: var(--font); font-size: 0.82rem; font-weight: 800; line-height: 1.25; white-space: nowrap; }
+.size-card.is-tried { border-style: dashed; border-color: var(--wrong); background: var(--wrong-bg); box-shadow: none; }
+.size-card.dnd-item.is-selected { outline: 3px solid var(--butter); outline-offset: 2px; transform: translateY(-3px); box-shadow: 0 6px 0 var(--ink); }
+
+/* ── 내 맘대로 전개도(직육면체): 1 cm 칸 판에 직사각형 면 카드를 놓는다 ── */
+/* 칸은 자리를 가리키는 곳(누르기 · 놓기 · 키보드 커서)이고, 놓인 면은 칸 위의 층에 여러 칸 크기로 놓인다 */
+.rect-board .cell { border-radius: 2px; }
+.rect-layer { position: absolute; inset: 0; pointer-events: none; }
+.rect-tile {
+  position: absolute;
+  left: calc(var(--cell) * var(--x) + 2px);
+  top: calc(var(--cell) * var(--y) + 2px);
+  width: calc(var(--cell) * var(--w) - 4px);
+  height: calc(var(--cell) * var(--h) - 4px);
+  font-size: min(calc(var(--cell) * 0.42), 1.5rem);
+  pointer-events: auto;
+  z-index: 1;
+}
+.rect-tile.is-dragging, .rect-tile.is-returning { pointer-events: none; }
+/* 끄는 동안·키보드로 든 동안 놓일 자리: 놓을 수 있으면 노랑 점선, 없으면 벽돌색 점선 + ✗ */
+.rect-preview {
+  position: absolute;
+  left: calc(var(--cell) * var(--x));
+  top: calc(var(--cell) * var(--y));
+  width: calc(var(--cell) * var(--w));
+  height: calc(var(--cell) * var(--h));
+  display: grid;
+  place-items: center;
+  border: 3px dashed var(--butter);
+  border-radius: 4px;
+  background: rgb(255 213 79 / 18%);
+  color: var(--paper);
+  pointer-events: none;
+  z-index: 2;
+}
+.rect-preview.is-blocked { border-color: var(--wrong); background: rgb(253 233 222 / 55%); color: var(--wrong); }
+.rect-preview .icon { width: 1.4em; height: 1.4em; stroke-width: 3; }
+.rect-preview:not(.is-blocked) .icon { display: none; }
+.rect-shadow {
+  position: absolute;
+  left: calc(var(--cell) * var(--x));
+  top: calc(var(--cell) * var(--y));
+  width: calc(var(--cell) * var(--w));
+  height: calc(var(--cell) * var(--h));
+  border: 3px dashed var(--butter);
+  border-radius: 4px;
+  background: rgb(255 213 79 / 16%);
+}
+/* 면 카드 칸: 카드마다 작은 직사각형(같은 축척)과 크기 글자 */
+.rect-tray { --card-cm: 15px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rect-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 64px; padding: 5px 2px 4px; background: var(--paper); font-size: 1rem; }
+.rect-card .size-rect { display: grid; place-items: center; margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; line-height: 1; }
+.rect-card .size-text { flex-direction: row; gap: 4px; font-size: 0.76rem; color: var(--ink-2); }
+.rect-card.is-used { background-image: none; background-color: var(--paper-2); font-size: 1rem; }
+.rect-card.is-used .size-rect { opacity: 0.45; }
+
+/* 찾은 전개도 띠: 이번 판에 찾은 것(3칸) + 이 기기에서 찾은 가지 수 */
+.found-nets { display: flex; flex-direction: column; gap: 8px; }
+.found-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.found-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.12rem; }
+.found-count { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+.found-grid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.found-slot {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 66px;
+  border-radius: 10px;
+  border: 2px solid var(--ink);
+  background: var(--paper-2);
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.found-slot.is-empty { border: 2px dashed var(--star-line); }
+.found-slot.is-new { background: var(--butter-soft); box-shadow: 0 0 0 3px var(--butter); }
+.found-slot .mini-net { width: 86%; height: 86%; }
+.found-slot small { position: absolute; left: 0; right: 0; bottom: 2px; font-family: var(--font); font-size: 0.68rem; font-weight: 800; text-align: center; }
+.free-panel.is-picking .found-nets { display: none; }
+/* 낮은 화면의 접은 장면: 칸을 접고 머리 한 줄만 (도감 칸과 같은 규칙 — 넘칠 때만) */
+.found-nets.is-folded { gap: 0; }
+
+@media (max-height: 720px) and (min-width: 901px) {
+  .edge-opt { min-height: 52px; }
+  .size-card { min-height: 96px; }
+  .found-slot { height: 56px; }
+  .rect-card { min-height: 58px; }
+}
+
+@media (max-width: 900px) {
+  .size-cards { --card-cm: 16px; }
+  .rect-tray { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .found-nets { flex-direction: row; align-items: center; gap: 12px; }
+  .found-head { flex: none; flex-direction: column; align-items: flex-start; gap: 0; }
+  .found-grid { flex: 1; }
+  .found-slot { height: 56px; }
+}
+
+@media (max-width: 560px) {
+  .edge-opt { font-size: 1.1rem; }
+  .size-cards { --card-cm: 12px; }
+  .rect-tray { --card-cm: 11px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .found-nets { flex-direction: column; align-items: stretch; gap: 8px; }
+  .found-head { flex-direction: row; align-items: baseline; }
+  .net-vname span { width: 20px; height: 20px; font-size: 0.85rem; --name-gap: 14px; }
+}

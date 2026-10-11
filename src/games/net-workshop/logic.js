@@ -18,10 +18,13 @@ import {
   transformCells,
 } from './fold.js';
 import { CUBE_NETS, FACE_COUNT_NETS, INVALID_HEXOMINOES } from './nets-data.js';
+import { CUBOID_MAKERS } from './cuboid-logic.js';
+import { CUBOID_LESSON, CUBOID_STAGES } from './cuboid-stages.js';
 
 /** 차시 묶음. 아직 만들지 않은 차시(직육면체·각기둥·원기둥)는 넣지 않는다. */
 export const LESSONS = [
   { id: 'cube', title: '정육면체의 전개도' },
+  CUBOID_LESSON, // 직육면체의 전개도 (cuboid-stages.js)
 ];
 
 /**
@@ -89,6 +92,7 @@ export const STAGES = [
     title: '도감 주문',
     goal: '전개도 11가지를 찾아 도감을 채워요. 6칸 별 1개, 9칸 별 2개, 11칸 별 3개.',
   },
+  ...CUBOID_STAGES, // 직육면체의 전개도 차시 (cuboid-stages.js · 규칙은 cuboid-logic.js)
 ];
 
 /** 오개념 tag (기획서 3절 표와 글자까지 같게) */
@@ -284,6 +288,7 @@ const MAKERS = {
   free: () => [], // 자유 배치는 문항이 없다 (학생이 직접 만든다)
   dice: () => [], // 도전 주문서도 학생이 직접 만든다
   dex: () => [],
+  ...CUBOID_MAKERS, // edge · face · cjudge · cfree (cuboid-logic.js)
 };
 
 /** 단계의 문항 목록. playStage에서 ctx.rng로 가장 먼저 부른다(같은 시드 = 같은 문항). */

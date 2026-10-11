@@ -85,3 +85,24 @@ test('도감 칩 숫자: label이 없는 도감은 합쳐 "도감 n / m", label�
   assert.equal(collectionChips(state, [defs[1]]).main, null);
   assert.deepEqual(collectionChips(state, []), { main: null, mainDefs: [], side: [] });
 });
+
+test('화면에 보이지 않는 모음(quiet): 칩 숫자에 넣지 않고, 등록·읽기·세기는 다른 도감과 같다', () => {
+  const items = (n) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, name: `칸 ${i}` }));
+  const defs = normalizeCollections([
+    { id: 'nets', title: '전개도 도감', items: items(11) },
+    { id: 'notes', title: '안 되는 모양 노트', label: '노트', items: items(24) },
+    { id: 'many', title: '직육면체 전개도', quiet: true, items: items(54) },
+  ]);
+  let state = normalizeCollectionState(null, defs);
+  const first = collectItem(state, defs, 'many', 'i7');
+  assert.deepEqual([first.isNew, first.known, first.count, first.total], [true, true, 1, 54]);
+  state = first.state;
+  assert.equal(collectItem(state, defs, 'many', 'i7').isNew, false); // 한 칸은 한 번만
+  assert.deepEqual([...collectionStatus(state, defs[2]).found], ['i7']);
+  // 칩: quiet 모음이 있어도 없을 때와 같다 ("도감 0 / 11" + "노트 0 / 24")
+  assert.deepEqual(collectionChips(state, defs), collectionChips(state, defs.slice(0, 2)));
+  assert.deepEqual(collectionChips(state, [defs[2]]), { main: null, mainDefs: [], side: [] });
+  // 저장된 값 읽기도 같다
+  assert.deepEqual(normalizeCollectionState(JSON.parse(JSON.stringify(state)), defs).many, { i7: { at: state.many.i7.at, stage: null } });
+  for (const quiet of ['yes', 1]) assert.throws(() => normalizeCollections([{ id: 'a', title: 'A', quiet, items: items(1) }]), /quiet/);
+});
