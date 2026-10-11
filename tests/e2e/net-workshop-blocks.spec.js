@@ -517,6 +517,16 @@ test('버튼만: "위에서 본 판"·[쌓기][빼기]·[되돌리기]·[모두 
     await press(testInfo, page.locator(name));
     await expect.poll(() => shapePoints(page), name).not.toBe(before);
   }
+  // 2배로 키워도(쌓기나무가 조작 칸 밑으로 들어간다) 매트의 버튼은 하나도 가려지지 않는다
+  while (await page.locator('.view-in').isEnabled()) await press(testInfo, page.locator('.view-in'));
+  await expect(page.locator('.view-out')).toBeEnabled();
+  await expect(stageEl(page)).not.toHaveClass(/is-easing/);
+  const covered = await page.evaluate(() => [...document.querySelectorAll('.blk-mat button')].filter((b) => b.getClientRects().length > 0).filter((b) => {
+    const r = b.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return !(top === b || b.contains(top));
+  }).map((b) => (b.getAttribute('aria-label') || b.textContent).trim()));
+  expect(covered).toEqual([]);
   await press(testInfo, page.locator('.view-home'));
   await expect.poll(() => shapePoints(page)).toBe(start);
   for (const dir of ['top', 'front', 'side']) {
@@ -940,6 +950,15 @@ test('틀리면 고른 쪽으로 먼저 돌아간 뒤 바른 쪽으로 돌고, �
   await page.waitForTimeout(1100);
   expect(await shapePoints(page)).toBe(frozen);
   await expect(stageEl(page)).toHaveClass(/is-frozen/);
+  // 멈춘 판은 손가락으로 끌어도 돌지 않고, 눌러도 아무것도 놓이지 않는다
+  if (isTouch(testInfo)) {
+    const cdp = await page.context().newCDPSession(page);
+    const box = await stageEl(page).boundingBox();
+    await touchFlick(cdp, [box.x + box.width / 2, box.y + box.height / 2], [box.x + box.width / 2 + 140, box.y + box.height / 2 + 30]);
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    expect(await shapePoints(page)).toBe(frozen);
+    await expect(page.locator('.blk-ghost-face')).toHaveCount(0);
+  }
   // 이번에는 틀리고 기다린다: 고른 쪽 → 바른 쪽
   const wrong2 = OPPOSITE[q2.dir];
   await press(testInfo, page.locator(`.blk-choice[data-answer="${wrong2}"]`));

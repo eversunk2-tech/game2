@@ -74,11 +74,6 @@ for (let n = 0; n < 4 ** 9; n += 1) {
   }
   ALL.push(h);
 }
-const indexOf = (h) => {
-  let n = 0;
-  for (let i = 8; i >= 0; i -= 1) n = (n << 2) | h[Math.floor(i / 3)][i % 3];
-  return n;
-};
 
 // ── 독립 계산: 칸의 집합에서 ──────────────────
 /** 높이 지도 → 칸의 집합(쌓기나무가 있는 [x][y][z]) */
