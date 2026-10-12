@@ -13,6 +13,7 @@ import { playJudge } from './play-judge.js';
 import { playPick } from './play-pick.js';
 import { playPlace } from './play-place.js';
 import { heroArt, miniNet, stageThumb } from './thumbs.js';
+import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, playBlockStage } from './blocks/index.js'; // 쌓기나무 영역(6학년)
 
 const SCREENS = { judge: playJudge, opposite: playPick, complete: playPlace, free: playFree, dex: playFree, dice: playDice };
 
@@ -112,16 +113,18 @@ createGameApp({
     '면 카드는 빈 자리로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요. 키보드는 Tab과 Enter, 방향키를 써요.',
     '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 새로 찾은 전개도는 도감에 모여요.',
     '네 단계를 모두 마치면 도전 주문서(주사위 주문, 도감 주문)가 열려요. 하고 싶은 사람만 해요. 시간은 [시간 재기]를 켠 사람에게만 보여요.',
+    ...BLOCK_HOW_TO, // 쌓기나무 차시의 조작
   ],
   heroArt,
-  lessons: LESSONS,
+  lessons: [...LESSONS, ...BLOCK_LESSONS],
   rewards: {
     ranks: ['견습생', '솜씨꾼', '접기 장인', '설계 장인', '공방 명장'],
     badges: BADGES,
   },
   collections: COLLECTIONS,
-  stages: STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })),
+  stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES],
   playStage(stage, ctx) {
+    if (stage.area === 'blocks') return playBlockStage(stage, ctx); // 쌓기나무 단계는 blocks/가 문항도 화면도 만든다
     // 문항을 가장 먼저 만든다: 같은 ?seed=면 같은 문항 (e2e 테스트도 이것으로 정답을 안다)
     const questions = makeQuestions(stage, ctx.rng);
     return SCREENS[stage.kind](stage, ctx, questions);

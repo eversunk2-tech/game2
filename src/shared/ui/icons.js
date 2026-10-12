@@ -53,6 +53,13 @@ export const ICONS = {
   down: [['path', { d: 'M5.5 9l6.5 6.5L18.5 9' }]],
   zoomin: [['circle', { cx: 10.5, cy: 10.5, r: 6 }], ['path', { d: 'M15 15l5 5M10.5 8v5M8 10.5h5' }]],
   zoomout: [['circle', { cx: 10.5, cy: 10.5, r: 6 }], ['path', { d: 'M15 15l5 5M8 10.5h5' }]],
+  // 쌓기나무: 쌓기(상자 +) · 빼기(상자 −) · 위·앞·옆에서 보기(그 면을 칠한 상자) · 층
+  blockadd: [['path', { d: 'M9.5 8.5l6 3.4v6.8l-6 3.4-6-3.4v-6.8z' }], ['path', { d: 'M3.5 11.9l6 3.4 6-3.4M9.5 15.3v6.8' }], ['path', { d: 'M18.5 2.5v6M15.5 5.5h6' }]],
+  blockremove: [['path', { d: 'M9.5 8.5l6 3.4v6.8l-6 3.4-6-3.4v-6.8z' }], ['path', { d: 'M3.5 11.9l6 3.4 6-3.4M9.5 15.3v6.8' }], ['path', { d: 'M15.5 5.5h6' }]],
+  viewtop: [['path', { d: 'M12 3l8 4.5-8 4.5-8-4.5z', fill: 'currentColor' }], ['path', { d: 'M4 7.5v9l8 4.5 8-4.5v-9M12 12v9' }]],
+  viewfront: [['path', { d: 'M4 7.5l8 4.5v9l-8-4.5z', fill: 'currentColor' }], ['path', { d: 'M4 7.5L12 3l8 4.5v9L12 21M12 12l8-4.5' }]],
+  viewside: [['path', { d: 'M20 7.5l-8 4.5v9l8-4.5z', fill: 'currentColor' }], ['path', { d: 'M20 7.5L12 3 4 7.5v9l8 4.5M12 12L4 7.5' }]],
+  layers: [['path', { d: 'M12 4l8 4-8 4-8-4z' }], ['path', { d: 'M4 12l8 4 8-4' }], ['path', { d: 'M4 16l8 4 8-4' }]],
 };
 
 export const STAR_PATH = 'M12 2.6l2.85 5.9 6.45.85-4.75 4.45 1.2 6.4L12 17.1l-5.75 3.1 1.2-6.4L2.7 9.35l6.45-.85z';

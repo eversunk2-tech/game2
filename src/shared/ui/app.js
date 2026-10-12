@@ -115,6 +115,22 @@ function badgeLessons(stages, lessons) {
 }
 
 /**
+ * 단계 지도의 차시 칩 글자. 차시 정의에 chip(글자)이 있으면 그것, 없으면 차시 순서대로 "n차시".
+ * (한 게임에 영역이 다른 차시가 섞일 때: 예) 전개도 차시 뒤의 쌓기나무 차시에 chip: '쌓기나무 1차시')
+ */
+export const lessonChipText = (lesson, number) => (typeof lesson?.chip === 'string' && lesson.chip.trim() ? lesson.chip.trim() : `${number}차시`);
+
+/** 차시의 시간 칩에 쓸 분: 차시 정의의 minutes(양수)가 있으면 그것, 없으면 게임의 playMinutes. 둘 다 없으면 null */
+export function lessonMinutes(lesson, game) {
+  const own = Number(lesson?.minutes);
+  if (Number.isFinite(own) && own > 0) return own;
+  return game?.playMinutes || null;
+}
+
+/** 차시 제목 옆의 짧은 말(단원 등): 차시 정의의 note(글자). 없으면 null */
+export const lessonNoteText = (lesson) => (typeof lesson?.note === 'string' && lesson.note.trim() ? lesson.note.trim() : null);
+
+/**
  * 결과 화면 "오늘의 솜씨" 기본 칸: 답 기록에서 만든다(맞힘, 다시 일어서기, 연속) + 새로 찾음·설명
  * 연습 점수가 없는 판(별 3개 단계를 다시 함, summary.practice === false)이면 연습 칸의 점수는 0.
  * 그 판에 '한 번만' 답(scored: 'once')이 있으면 그 답으로 받은 점수만 적는다(summary.paid) → 칸 점수의 합 = 이번 판 점수
@@ -621,6 +637,7 @@ export function createGameApp({
   }
 
   function stageSelectScreen() {
+    const minutesChip = (n) => (n ? h('span', { class: 'chip' }, icon('clock'), `약 ${n}분`) : null);
     const minutes = game.playMinutes ? h('span', { class: 'chip' }, icon('clock'), `약 ${game.playMinutes}분`) : null;
     return h('section', { class: 'screen screen-stages' },
       h('div', { class: 'screen-head' },
@@ -633,9 +650,10 @@ export function createGameApp({
       plan.groups
         ? plan.groups.map((g) => h('section', { class: 'sheet lesson-group', dataset: { lesson: g.lesson.id } },
           h('div', { class: 'lesson-head' },
-            h('span', { class: 'lesson-no' }, `${g.number}차시`),
+            h('span', { class: 'lesson-no' }, lessonChipText(g.lesson, g.number)),
             h('h3', { class: 'lesson-title' }, g.lesson.title),
-            h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), minutes && minutes.cloneNode(true)),
+            lessonNoteText(g.lesson) && h('span', { class: 'lesson-note' }, lessonNoteText(g.lesson)),
+            h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), g.lesson.minutes == null ? minutes && minutes.cloneNode(true) : minutesChip(lessonMinutes(g.lesson, game))),
           ),
           stagePath(regularOf(g.stages)),
           challengeRow(challengesOf(g.stages)),
