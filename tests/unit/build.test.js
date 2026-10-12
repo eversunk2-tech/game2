@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import subsetFont from 'subset-font';
-import { MAX_FILE_BYTES, build, findExternalRefs } from '../../scripts/build.mjs';
+import { build, findExternalRefs } from '../../scripts/build.mjs';
 import { DISPLAY_FONT, collectFontText, isHangulSyllable, missingSymbols, readCmap } from '../../scripts/lib/font.mjs';
 import { loadGames } from '../../scripts/lib/games.mjs';
 import { FILTER_MIN_GAMES, renderHub } from '../../scripts/lib/hub.mjs';
@@ -46,13 +46,11 @@ const embeddedFont = (html) => {
   return m ? Buffer.from(m[1], 'base64') : null;
 };
 
-test('제목 글꼴: 파일마다 쓰인 글자만 잘라 넣고, 쓰인 한글이 모두 글꼴 안에 있으며, 파일은 400 KB 이하', async () => {
+test('제목 글꼴: 파일마다 쓰인 글자만 잘라 넣고, 쓰인 한글이 모두 글꼴 안에 있으며, 알려 주는 파일 크기는 실제 크기와 같다', async () => {
   const outDir = await tempDir();
   const { files } = await build({ outDir, quiet: true });
-  assert.equal(MAX_FILE_BYTES, 400 * 1024);
   for (const info of files) {
     const html = await readFile(path.join(outDir, info.name), 'utf8');
-    assert.ok(Buffer.byteLength(html) <= MAX_FILE_BYTES, `${info.name}: ${info.bytes} bytes`);
     assert.equal(info.bytes, Buffer.byteLength(html));
     assert.deepEqual(info.missing, [], `${info.name}: Do Hyeon에 없는 한글`);
 
@@ -158,8 +156,20 @@ test('템플릿으로 만든 새 게임은 바로 빌드된다', async () => {
   await assert.rejects(createGame({ rootDir, id: 'test-game' }), /이미 있는/);
   await assert.rejects(createGame({ rootDir, id: 'Bad_Id' }), /소문자/);
 
-  // 게임 파일이 400 KB를 넘으면 빌드가 멈춘다
-  await writeFile(path.join(gameDir, 'img/big.png'), Buffer.alloc(320 * 1024, 7));
+  // 게임 파일이 400 KB를 넘어도 빌드가 되고(크기 상한 없음 — 2026-10-09 사용자 결정), 그 파일이 열리는 내용 그대로 나온다
+  const big = Buffer.alloc(320 * 1024, 7); // data: 주소로 들어가면 약 427 KB
+  await writeFile(path.join(gameDir, 'img/big.png'), big);
   await appendFile(path.join(gameDir, 'style.css'), "\n.big { background: url('./img/big.png'); }\n");
-  await assert.rejects(build({ rootDir, outDir: path.join(rootDir, 'dist'), quiet: true }), /test-game: 파일이 .*400\.0 KB를 넘어요/);
+  const large = await build({ rootDir, outDir: path.join(rootDir, 'dist'), quiet: true });
+  assert.deepEqual(large.games, games);
+  const info = large.files.find((file) => file.name === 'test-game.html');
+  const largeHtml = await readFile(path.join(rootDir, 'dist/test-game.html'), 'utf8');
+  assert.ok(info.bytes > 400 * 1024, `${info.bytes} bytes`);
+  assert.equal(info.bytes, Buffer.byteLength(largeHtml));
+  assert.deepEqual(findExternalRefs(largeHtml), []);
+  // 큰 그림은 잘리지 않고 통째로 들어가고, 그 규칙 하나 말고는 작은 파일일 때와 한 글자도 다르지 않다
+  const rule = largeHtml.match(/\.big\{background:url\(["']?data:image\/png;base64,([A-Za-z0-9+/=]+)["']?\)\}/);
+  assert.ok(rule, '.big 규칙에 data: 주소로 넣은 그림이 없음');
+  assert.ok(Buffer.from(rule[1], 'base64').equals(big), '넣은 그림이 원본과 다름');
+  assert.ok(largeHtml.replace(rule[0], () => '') === html, '큰 그림 규칙 말고 다른 곳이 달라짐');
 });
