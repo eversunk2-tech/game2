@@ -1,6 +1,6 @@
 # 지금 상태 (STATUS)
 
-> 마지막으로 고친 날: **2026-10-12** (일시정지 상태에서 정리함). 일이 한 고비 넘을 때마다 이 문서를 고친다.
+> 마지막으로 고친 날: **2026-10-12 낮 1시쯤** (이날 두 번째 일시정지 상태에서 정리함). 일이 한 고비 넘을 때마다 이 문서를 고친다.
 > 규칙은 [CLAUDE.md](../CLAUDE.md)와 [common-rules.md](games/net-workshop/common-rules.md), 예전 경위는 [HANDOFF.md](HANDOFF.md)에 있다.
 
 ## 1. 한눈에
@@ -8,40 +8,48 @@
 | 구분 | 상태 |
 | --- | --- |
 | 앱 | "전개도 접기 공방"(`net-workshop`) — 초등 5~6학년 수학. 5학년 전개도(정육면체·직육면체) + 6학년 전개도(각기둥·원기둥) + 6학년 쌓기나무를 한 앱에 넣는다. 이름은 "입체도형 공방"으로 바꿀 예정(B0) |
-| 사이트 | `https://eversunk2-tech.github.io/game2/` — `main`의 내용이 자동 배포된다 |
-| `main` | **`3b48260`**(2026-10-11). 배포 성공 · GitHub CI **통과**. 이 문서를 올린 커밋은 문서만 바뀐 것이다 |
+| 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`의 내용이 자동 배포된다 |
+| `origin/main`(사이트) | **`cd6a39c`**(2026-10-12, 문서만 바뀐 커밋 — 코드는 `3b48260`과 같다). 배포 성공. **GitHub CI는 실패**: 검사 1건이 느린 컴퓨터에서 흔들린다(앱 문제 아님 — 2절 트랙 `c1`이 고치는 중) |
+| 이 컴퓨터의 `main` | 쌓기나무 트랙을 합친 커밋 **`6457d8d`**와 그 뒤의 문서 커밋이 있지만 **올리지 않았다**(`origin/main`보다 앞서 있다). 합친 뒤 브라우저 검사가 실패해서다(2절). **쌓기나무의 추가 수정(S1c)이 Review를 통과하기 전에는 `git push` 하지 않는다** |
 | 사이트에 있는 것 | 정육면체 차시 4단계(판별 · 마주 보는 면 · 면 붙이기 · 내 맘대로 전개도) + 도전 주문서 2개(주사위 주문 · 도감 주문), 새 디자인 "종이 공방", 솜씨 점수·칭호·도장·도감, 입체를 끌어서 끝없이 돌리기·0.5~2배 |
-| 지금 하던 일 | **동시 진행 1차**: 직육면체 차시 ∥ 쌓기나무 1·2차시. 둘 다 첫 Build와 Review가 끝났고(둘 다 "수정 필요 — 반드시 수정 1건"), **수정 Build 도중에 일시정지**됐다(2절) |
-| 테스트(`main`) | 단위 184 통과. 브라우저 232개 중 199 통과 · 0 실패 · 33 건너뜀(보통·글꼴 흉내 모두) |
+| 지금 하던 일 | **동시 진행 1차**: 직육면체 차시 ∥ 쌓기나무 1·2차시 ∥ 작은 손질 `c1`. 셋 다 도중에 **일시정지**됐다(2절) |
+| 테스트(`origin/main`) | 단위 184 통과. 브라우저 232개 중 199 통과 · 0 실패 · 33 건너뜀(보통·글꼴 흉내 모두, 이 맥에서). 느린 기기 흉내에서는 1건 실패 |
 
-## 2. 진행 중인 일: 동시 진행 1차 (일시정지)
+## 2. 진행 중인 일: 동시 진행 1차 (일시정지 — 2026-10-12 낮)
 
-두 트랙 모두 `main` `3b48260`에서 갈라져 나왔다. 아직 `main`에 합치지 않았다.
+**오늘 알게 된 것**: 누르기·답하기 직후에 크기·자리를 재는 검사가 **움직임(고른 답이 0.35초 커졌다 돌아옴, 버튼의 1px 들뜸이 0.12초에 걸쳐 가라앉음)이 끝나기 전에** 재면, 빠른 컴퓨터에서는 통과하고 느린 컴퓨터(GitHub CI, 여러 테스트를 함께 돌리는 이 맥)에서는 실패한다. 같은 날 두 번 걸렸다(`cd6a39c`의 CI, 쌓기나무를 합친 뒤의 실행). 규칙은 [common-rules.md](games/net-workshop/common-rules.md) 8절 "움직임이 끝난 뒤에 잰다"에 적었다. 느린 기기 흉내 방법(CPU 느리게 하기)도 거기 있다.
 
-| | 쌓기나무 S1 (트랙 `blocks`) | 직육면체 차시 (트랙 `cuboid`) |
-| --- | --- | --- |
-| 작업 폴더 | `.worktrees/blocks` | `.worktrees/cuboid` |
-| 브랜치 · 커밋 | `track/blocks` · 첫 Build `742805e` | `track/cuboid` · 첫 Build `4626338` |
-| 만든 것 | 쌓고·빼고·돌려 보는 무대(직접 투영 SVG, `src/games/net-workshop/blocks/`), 1차시 `blocks-look`(놀이터·어느 방향·이쪽에서 보면), 2차시 `blocks-top`(똑같이 만들기·모두 몇 개·숨겨진 쌓기나무) | `cuboid-edge` 만나는 선분 → `cuboid-face` 알맞은 면 고르기 → `cuboid-judge` 길이까지 살펴요 → `cuboid-free` 내 맘대로 직육면체 전개도. 공통 부품(`fold.js`·`view3d.js`·`free-board.js`)을 다각형 면 전개도용으로 넓힘 |
-| Build 지침 | [build-brief-s1.md](games/net-workshop/build-brief-s1.md) | [build-brief-m2.md](games/net-workshop/build-brief-m2.md) |
-| Review 결과 | 그 폴더의 `docs/games/net-workshop/review-blocks.md` — **수정 필요**: 반드시 수정 1(S1-1 "모두 몇 개일까?"의 정답이 늘 셋째 보기 95%) · 고치면 좋음 9 · 참고 8. 조작·판정·점수·배치·정육면체 불변은 통과 | 그 폴더의 `docs/games/net-workshop/review-cuboid.md` — **수정 필요**: 반드시 수정 1(M2-1 판별 크기형 문항의 까닭 문장이 엉뚱한 면을 말함 15.5%) · 고치면 좋음 4 · 참고 6. 판정·정육면체 불변·정답 노출·점수·배치는 통과 |
-| 수정 지침 | [build-fix-brief-s1b.md](games/net-workshop/build-fix-brief-s1b.md) | [build-fix-brief-m2b.md](games/net-workshop/build-fix-brief-m2b.md) |
-| 멈춘 곳 | 수정 Build가 **12개 파일을 고치던 중**(커밋 안 됨, 완성·테스트 통과 여부 모름). 마지막으로 하던 일: S1-6(1366×680 세로 여유)을 재는 중 | 수정 Build가 **막 시작한 참**(고친 파일 없음) |
-| Review 지침 | [review-brief-s1.md](games/net-workshop/review-brief-s1.md) (재확인용 지침은 아직 안 씀) | [review-brief-m2.md](games/net-workshop/review-brief-m2.md) (재확인용 지침은 아직 안 씀) |
-| 포트 | 개발 서버 5302, Review 5312 | 개발 서버 5301, Review 5311 |
+| | 쌓기나무 S1 (트랙 `blocks`) | 직육면체 차시 (트랙 `cuboid`) | 작은 손질 (트랙 `c1`) |
+| --- | --- | --- | --- |
+| 작업 폴더 · 브랜치 | `.worktrees/blocks` · `track/blocks` | `.worktrees/cuboid` · `track/cuboid` | `.worktrees/c1` · `track/c1`(`cd6a39c`에서 갈라짐) |
+| 무엇 | 쌓고·빼고·돌려 보는 무대, 1차시 `blocks-look`, 2차시 `blocks-top` | `cuboid-edge` → `cuboid-face` → `cuboid-judge` → `cuboid-free`, 사용자 결정(2가지에서 끝내기 · 54가지 점수 상한) | ① 빌드의 400 KB 크기 상한 걷어내기(사용자 결정 10-09) ② CI에서 흔들린 "플레이 머리 높이" 검사 고치기 |
+| 커밋된 것 | 수정 Build `962e5fc` → **재검토 통과(반드시 수정 0건)** → 결과 기록 `f440d9b`. 이 컴퓨터의 `main`에 합쳐져 있다(`6457d8d`, 올리지 않음) | 수정 Build **`c8ac042`**(M2-1~M2-7·M2-9와 사용자 결정) — 아직 Review 안 함 | Build **`a530e8f`**(끝남, 테스트 셋 다 실패 0이라고 보고) |
+| 커밋 안 된 것(도중) | `tests/e2e/net-workshop-blocks.spec.js` 1개(+28 −2) — **S1c**: 합친 뒤 실패한 검사("정답 노출 0 (이쪽에서 보면?)": 고른 보기가 커지는 도중에 폭을 잼)와 같은 종류를 고치던 중. 완성·통과 여부 모름 | 검사 파일 3개(`net-workshop-cuboid.spec.js`·`net-workshop-free-finish.spec.js`·`net-workshop.spec.js`, +86 −33) — 수정 지침의 "덧붙임(느린 기기에서 흔들리는 검사)"을 하던 중. 완성·통과 여부 모름 | 없음. **Review가 도중에 멈춤** — `review-c1.md`는 아직 없다(처음부터 다시 한다) |
+| 지침 | 수정 [build-fix-brief-s1b.md](games/net-workshop/build-fix-brief-s1b.md) · **[build-fix-brief-s1c.md](games/net-workshop/build-fix-brief-s1c.md)** / 재확인 [review-fix-brief-s1b.md](games/net-workshop/review-fix-brief-s1b.md)(끝남) · **[review-fix-brief-s1c.md](games/net-workshop/review-fix-brief-s1c.md)** | 수정 [build-fix-brief-m2b.md](games/net-workshop/build-fix-brief-m2b.md)(맨 아래 "덧붙임" 포함) / 재확인 **[review-fix-brief-m2b.md](games/net-workshop/review-fix-brief-m2b.md)** | [build-brief-c1.md](games/net-workshop/build-brief-c1.md) / **[review-brief-c1.md](games/net-workshop/review-brief-c1.md)** |
+| Review 결과 파일 | 그 폴더의 `docs/games/net-workshop/review-blocks.md`(`main`에도 합쳐져 있다) | 그 폴더의 `review-cuboid.md`(첫 검토: 수정 필요) | 없음 |
+| 이어서 할 일 | S1c Build 마무리(쓰다 만 검사 파일을 다시 읽고) → **별도 Review**(review-fix-brief-s1c) → 통과하면 `main`에 다시 합쳐 전체 테스트 → 푸시 | "덧붙임" 마무리·커밋 → **별도 Review**(review-fix-brief-m2b) → 통과하면 합치기 | **Review를 처음부터**(review-brief-c1) → 통과하면 `main`에 합치기. 이것이 먼저 들어가야 두 트랙을 함께 합쳤을 때 빌드가 멈추지 않는다 |
+| 포트 · scratchpad | 5302 / Review 5312 · `build-s1/`, `review-s1/`, `review-s1b/` | 5301 / Review 5311 · `build-m2/`, `review-m2/` | Review 5321 · `build-c1/`, `review-c1/` |
+
+**쌓기나무 재검토에서 새로 나온 것**(모두 "고치면 좋음" 이하 — review-blocks.md "재검토 (S1b 수정 확인)"):
+
+- **사용자가 정할 것 (S1b-2)**: `blocks-hidden`의 예상("다른 개수로도 똑같아 보이게 만들 수 있을까요?") 정답이 한 판에 "있어요" 1번 · "없어요" 1번이라, 첫 문항을 풀면 둘째 문항은 그림을 보지 않고도 맞힌다(기대 1.5/2, 찍기 1.0). 계획대로 만든 것이다. (가) 그대로 — Review 추천(두 경우를 한 번씩 겪는 것이 목표, 새는 것은 +2점) / (나) 문항마다 따로 뽑기 / (다) 3문항으로. **아직 사용자에게 묻지 않았다.**
+- S1b-1: "모두 몇 개일까?"의 보기 값의 꼴이 답을 알려 준다("가장 큰 수 − 3 이상 가운데 가장 작은 것"만 골라 60.3%) — 규칙을 알아야 쓸 수 있는 수준. 다음 쌓기나무 Build(S2) 때 함께 고친다.
+- S1b-3: 폭 901~1000px 가로 화면에서 세로 스크롤(960×768에서 확인 뒤 189px). 규칙의 세 크기와 1024×768은 스크롤 0. 받아들일 만함.
+- 참고 6건(S1b-4~9): 1366×768에서 글꼴 흉내 + 글자 110%를 함께 주면 20px 넘침, `?lesson=cube`의 놀이 방법에 쌓기나무 2줄이 보임(B0에서 나눔), 휴대폰에서 [되돌리기]·[모두 치우기]가 그림만 남음 등.
 
 **이어서 할 때**
 
-1. 두 트랙의 수정 Build를 이어서 끝낸다. 쌓기나무는 도중에 끊겼으니 `git status`·`git diff`로 쓰다 만 곳을 먼저 확인한다. 서브에이전트를 새로 만들어야 하면 수정 지침 + Review 결과 파일 + 지금 작업 폴더를 주면 된다.
-2. 트랙마다 별도 Review로 재확인한다(지난 문제가 고쳐졌는지 + 통과했던 것이 깨지지 않았는지). 재확인용 지침을 써서 넘긴다. 결과는 각 트랙의 `review-<트랙>.md`에 덧붙인다.
-3. 통과한 트랙부터 `main`에 합친다(3절).
+1. 세 트랙을 다시 돌린다: `blocks`는 S1c Build 이어서, `cuboid`는 "덧붙임" 이어서, `c1`은 Review를 처음부터. 서브에이전트를 이어서 깨울 수 없으면 새로 만들어 지침 파일 + 지금 작업 폴더를 준다(도중에 끊긴 것은 `git status`·`git diff`부터 읽게 한다).
+2. Build가 끝난 트랙은 별도 Review. 통과한 것부터 `main`에 합친다(3절). **순서는 `c1` → `blocks`(S1c) → `cuboid`**가 편하다.
+3. S1b-2를 사용자에게 선택지와 추천을 붙여 묻는다.
 
 ## 3. `main`에 합칠 때 할 일
 
-- 두 트랙이 함께 고친 파일은 `main.js`·`docs/engine.md`와(첫 Build 기준) 수정 라운드에서 더해질 수 있는 엔진 `app.js`·`base.css`다. 첫 Build끼리는 줄 단위 충돌이 없었다(`git merge-tree`로 확인).
-- **파일 크기 검사를 걷어낸다**: 합치면 `net-workshop.html`이 약 421 KB라 `scripts/build.mjs`의 400 KB 검사에 걸려 빌드가 멈춘다. "HTML 파일 하나·400 KB 이하" 규칙은 사용자 결정으로 없어졌으므로(5절) 검사를 없애거나 알림으로 바꾼다. 관련 단위 테스트(`tests/unit/build.test.js`)와 `docs/dev-guide.md`·`docs/engine.md`의 옛 문장도 함께 고친다.
-- 합친 뒤 전체 테스트를 처음부터 다시 돌린다: `npm test`, `npm run test:e2e`, `E2E_WIDE_TEXT=font npm run test:e2e`. 전체 차시 수·"모은 별 n / 24"를 고정한 검사가 있으면 실패한다(M2-4 — 직육면체 수정 지침에 들어 있다).
-- 각 트랙의 `review-<트랙>.md`를 함께 커밋한다(1절의 표대로 지금은 트랙 브랜치에 커밋해 두었다).
+- 이 컴퓨터의 `main`에는 쌓기나무(`962e5fc`까지)가 이미 합쳐져 있다(`6457d8d`, 푸시 안 함). 합친 상태의 결과: 단위 219 통과, 브라우저 248 통과 · **3 실패** · 49 건너뜀 — 실패는 쌓기나무 "정답 노출 0 (이쪽에서 보면?)" 2건(두 기기)과 엔진 "플레이 머리 높이" 1건으로, 모두 "움직임 도중에 잰 검사"다. S1c와 `c1`이 각각 고친다.
+- **파일 크기 검사**: 두 영역을 함께 합치면 `net-workshop.html`이 약 425 KB라 지금의 400 KB 검사에 걸린다(쌓기나무만 합친 지금은 355.6 KB). `c1`이 검사를 걷어내므로 `c1`을 먼저(또는 함께) 합친다.
+- 두 트랙이 함께 고친 파일: `main.js`·`docs/engine.md`·엔진 `app.js`·`base.css`. Review가 `git merge-tree`로 본 줄 단위 충돌은 0이었다(쌓기나무 `962e5fc` ↔ 직육면체 `b20a419` 기준 — 직육면체의 새 커밋 `c8ac042`와는 다시 본다).
+- 합친 뒤 전체 테스트를 처음부터 다시 돌린다: `npm test`, `npm run test:e2e`, `E2E_WIDE_TEXT=font npm run test:e2e`. 전체 차시 수·"모은 별 n / 24"를 고정한 검사가 있으면 실패한다(M2-4 — 직육면체 수정에 들어 있다).
+- 각 트랙의 `review-<트랙>.md`와, `main` 폴더에 있는 아직 커밋 안 된 지침 파일들(`build-brief-c1`·`review-brief-c1`·`build-fix-brief-s1c`·`review-fix-brief-s1b`·`-s1c`·`-m2b`, 고친 `build-fix-brief-m2b`·`common-rules`·이 문서)을 함께 커밋한다.
 - 푸시한 뒤 GitHub Actions의 배포·CI 결과를 확인한다.
 - 합친 뒤 이 문서와 [HANDOFF.md](HANDOFF.md)의 "끝난 것"을 고친다.
 
@@ -103,3 +111,4 @@
 | 10-10 | 도전 주문서(주사위 주문·도감 주문), 직접 만드는 단계의 예상하기 삭제 |
 | 10-11 | 태블릿 머리 높이 고정, 터치로 끈 직후 누르기 문제(실제 앱 문제였음), 주사위 별, 글꼴 흉내 테스트 모드 → GitHub CI 통과. 공통 규칙 문서. 동시 진행 1차 시작(직육면체 ∥ 쌓기나무) |
 | 10-11~12 | 두 트랙 첫 Build·Review 끝, 사용자 결정 4가지(5절), 수정 Build 도중 일시정지 |
+| 10-12 | 규칙·진행 상황 문서 정리(`cd6a39c`). 쌓기나무 수정 Build → 재검토 통과 → `main`에 합침(올리지 않음: 합친 뒤 검사 3건 실패 — 움직임 도중에 잰 검사). 흔들리는 검사 원인 찾기와 느린 기기 흉내, 트랙 `c1`(크기 검사 걷어내기 + CI 검사) Build. 직육면체 수정 Build 커밋(`c8ac042`). 다시 일시정지 |
