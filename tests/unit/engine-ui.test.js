@@ -268,3 +268,19 @@ test('끌어다 놓기: 끄는 복제의 자리(처음 자리에서 끈 만큼, 
   assert.equal(sameSpot(home, { ...home, left: 104 }, 5), true);
   assert.ok(RETURN_MS >= 100 && RETURN_MS <= 200); // 돌아가는 것이 보이되 다음 조작을 기다리게 하지 않는다
 });
+
+// 차시 정의의 선택 값(chip·minutes·note): 주지 않으면 지금과 같은 글자다
+import { lessonChipText, lessonMinutes, lessonNoteText } from '../../src/shared/ui/app.js';
+
+test('차시 칩: chip이 없으면 "n차시", minutes가 없으면 게임의 시간, note가 없으면 없음', () => {
+  assert.equal(lessonChipText({ id: 'a', title: '첫째' }, 1), '1차시');
+  assert.equal(lessonChipText({ id: 'b', title: '둘째' }, 3), '3차시');
+  assert.equal(lessonChipText({ id: 'c', title: '셋째', chip: '쌓기나무 1차시' }, 2), '쌓기나무 1차시');
+  for (const chip of ['', '   ', null, undefined, 3]) assert.equal(lessonChipText({ chip }, 2), '2차시');
+  assert.equal(lessonMinutes({ id: 'a' }, { playMinutes: 10 }), 10);
+  assert.equal(lessonMinutes({ id: 'a', minutes: 6 }, { playMinutes: 10 }), 6);
+  for (const minutes of [0, -3, 'x', null, undefined]) assert.equal(lessonMinutes({ minutes }, { playMinutes: 10 }), 10);
+  assert.equal(lessonMinutes({ id: 'a' }, {}), null);
+  assert.equal(lessonNoteText({ note: ' 6학년 2학기 · 공간과 입체 ' }), '6학년 2학기 · 공간과 입체');
+  for (const note of ['', '  ', null, undefined, 7]) assert.equal(lessonNoteText({ note }), null);
+});

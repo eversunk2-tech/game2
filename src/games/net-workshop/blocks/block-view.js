@@ -167,9 +167,11 @@ export const depthOf = (pose, p) => pose[6] * (p[0] - CENTER[0]) + pose[7] * (p[
  * 무대 높이에 들어오고(글자 자리까지 넣어 5.6), 가로로는 양옆의 조작 칸(side px씩)을 뺀 자리에 들어오는 크기
  */
 export const unitFor = (width, height, side = 0) => Math.max(18, Math.floor(Math.min(height / 5.6, (width - 2 * side) / 5.2)));
-/** 무대가 이 폭보다 넓으면 양옆에 조작 칸(방향 버튼·위에서 본 판 / 조작판·그림)이 겹쳐 놓인다: 여백 14px + 칸 너비 190px 안팎 */
-const SIDE_FROM = 600;
-const SIDE_ROOM = 210;
+/**
+ * 조작 칸(방향 버튼·위에서 본 판 / 조작판·그림)이 무대 양옆에 겹쳐 놓이는 배치(휴대폰이 아닌 모든 폭)에서 한쪽에 비워 둘 폭:
+ * 여백 14px + 칸 너비 190px 안팎. 무대 폭과 상관없이 늘 빼고 크기를 정한다(좁은 매트에서 쌓기나무가 조작 칸 밑으로 들어가지 않게)
+ */
+export const SIDE_ROOM = 210;
 
 // ── 색 ───────────────────────────────────
 /** 면의 방향에 따른 그늘(0 = 그대로): 윗면 밝게 · 앞면 가운데 · 옆면 어둡게. 방향마다 한 가지라 [앞]에서 보면 모든 면이 같은 색이다 */
@@ -197,12 +199,19 @@ const points = (pts) => pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).
 const mid = (a, b, t = 0.5) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const centerOf = (pts) => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
 
-/** 조형물의 무늬(색만으로 구분하지 않는다): stripe = 가로 줄, dot = 가운데 마름모. 화면 점 넷(면의 꼭짓점) → path d */
+/**
+ * 조형물의 무늬(색만으로 구분하지 않는다): slash = 빗금 두 줄, dot = 가운데 마름모. 화면 점 넷(면의 꼭짓점: 아래 왼쪽부터 시계 반대 방향) → path d
+ * (가로줄·세로줄은 쓰지 않는다 — 면을 가로지르는 줄은 쌓기나무의 층·칸 경계처럼 보인다)
+ */
 export function markPath(mark, pts) {
-  if (mark === 'stripe') {
-    const a = mid(pts[0], pts[3]);
-    const b = mid(pts[1], pts[2]);
-    return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+  if (mark === 'slash') {
+    // 면 안의 자리 (u, v): u는 아래 변을 따라, v는 왼쪽 변을 따라 0~1
+    const at = (u, v) => [pts[0][0] + u * (pts[1][0] - pts[0][0]) + v * (pts[3][0] - pts[0][0]), pts[0][1] + u * (pts[1][1] - pts[0][1]) + v * (pts[3][1] - pts[0][1])];
+    return [[0.26, 0.5], [0.5, 0.74]].map(([from, to]) => {
+      const a = at(from, 0.26);
+      const b = at(to, 0.74);
+      return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+    }).join('');
   }
   if (mark === 'dot') {
     const c = centerOf(pts);
@@ -264,7 +273,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let orderSig = '';
   const shapeEls = new Map(); // 열쇠 → <polygon>
   const markEls = new Map(); // 열쇠 → <path> (조형물 무늬)
-  const listeners = { tap: new Set(), view: new Set(), say: new Set(), drag: new Set(), snap: new Set(), facing: new Set() };
+  const listeners = { tap: new Set(), view: new Set(), say: new Set(), facing: new Set() };
   let edgeList = edge;
   const emit = (name, ...args) => {
     for (const fn of listeners[name]) fn(...args);
@@ -276,7 +285,9 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   function measure() {
     const box = el.getBoundingClientRect();
     if (box.width < 1 || box.height < 1) return;
-    size = { w: box.width, h: box.height, unit: unitFor(box.width, box.height, box.width >= SIDE_FROM ? SIDE_ROOM : 0) };
+    // 휴대폰 배치(blocks.css)에서는 조작 칸이 무대 아래로 내려가고 무대는 흐름 안에 놓인다(position: relative)
+    const overlaid = getComputedStyle(el).position === 'absolute';
+    size = { w: box.width, h: box.height, unit: unitFor(box.width, box.height, overlaid ? SIDE_ROOM : 0) };
     svg.setAttribute('viewBox', `0 0 ${box.width.toFixed(1)} ${box.height.toFixed(1)}`);
     el.style.setProperty('--blk-unit', `${size.unit}px`);
   }
@@ -469,7 +480,6 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       shown = { roll: [...view.roll], zoom: view.zoom };
       el.classList.remove('is-easing');
       render();
-      emit('snap');
       return;
     }
     mixing = { t0: performance.now(), p: 0 };
@@ -484,7 +494,6 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       mixing = null;
       shown = { roll: [...view.roll], zoom: view.zoom };
       el.classList.remove('is-easing');
-      emit('snap');
     }
   }
   /** 끌기·휠처럼 손을 바로 따라가는 조작: 움직임 없이 그 모습으로 */
@@ -541,7 +550,6 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     clearTimeout(swallowTimer);
     swallowTimer = 0;
     swallowClick = true;
-    emit('drag');
   }
 
   function endGesture(told = false) {
@@ -703,10 +711,16 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (canView()) event.preventDefault(); // 사파리의 두 손가락 벌리기(화면 전체 확대)
   }
 
+  /** 한 단계 돌린다(조작판 버튼·방향키). 보는 방향의 말("위에서 본 모습" 등)이 바뀌면 알린다 — 전개도 무대와 같다 */
+  function turnStep(dir, degrees) {
+    const before = poseWord(poseOfRoll(view.roll), names);
+    moveTo(stepView(view, dir, degrees));
+    const after = poseWord(poseOfRoll(view.roll), names);
+    if (after !== before) say(after);
+  }
   function step(dir) {
     if (!canView()) return false;
-    const degrees = dir === 'left' || dir === 'right' ? TURN_BUTTON : TILT_STEP;
-    moveTo(stepView(view, dir, degrees));
+    turnStep(dir, dir === 'left' || dir === 'right' ? TURN_BUTTON : TILT_STEP);
     return true;
   }
   function zoomStep(dir) {
@@ -737,8 +751,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (frozen || event.ctrlKey || event.metaKey || event.altKey) return;
     if (!canView()) return;
     const { key } = event;
-    if (key === 'ArrowLeft') moveTo(stepView(view, 'left', TURN_KEY));
-    else if (key === 'ArrowRight') moveTo(stepView(view, 'right', TURN_KEY));
+    if (key === 'ArrowLeft') turnStep('left', TURN_KEY);
+    else if (key === 'ArrowRight') turnStep('right', TURN_KEY);
     else if (key === 'ArrowUp') step('up');
     else if (key === 'ArrowDown') step('down');
     else if (key === '+' || key === '=') zoomStep(1);

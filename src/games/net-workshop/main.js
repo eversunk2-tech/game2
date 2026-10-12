@@ -13,7 +13,7 @@ import { playJudge } from './play-judge.js';
 import { playPick } from './play-pick.js';
 import { playPlace } from './play-place.js';
 import { heroArt, miniNet, stageThumb } from './thumbs.js';
-import { BLOCK_LESSONS, BLOCK_STAGES, playBlockStage } from './blocks/index.js'; // 쌓기나무 영역(6학년)
+import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, playBlockStage } from './blocks/index.js'; // 쌓기나무 영역(6학년)
 
 const SCREENS = { judge: playJudge, opposite: playPick, complete: playPlace, free: playFree, dex: playFree, dice: playDice };
 
@@ -113,6 +113,7 @@ createGameApp({
     '면 카드는 빈 자리로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요. 키보드는 Tab과 Enter, 방향키를 써요.',
     '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 새로 찾은 전개도는 도감에 모여요.',
     '네 단계를 모두 마치면 도전 주문서(주사위 주문, 도감 주문)가 열려요. 하고 싶은 사람만 해요. 시간은 [시간 재기]를 켠 사람에게만 보여요.',
+    ...BLOCK_HOW_TO, // 쌓기나무 차시의 조작
   ],
   heroArt,
   lessons: [...LESSONS, ...BLOCK_LESSONS],

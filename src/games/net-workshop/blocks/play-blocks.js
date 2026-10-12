@@ -32,6 +32,8 @@ import {
   otherLook,
   sculptureOf,
   spotName,
+  starNoteByWrong,
+  starsByWrong,
 } from './blocks-logic.js';
 import { createBlockTools } from './block-pad.js';
 import { DEFAULT_DIRS, DEFAULT_EDGE, EDGE_FAR, SIDE_NAMES, createBlockPicture, createBlockView, createViewControls } from './block-view.js';
@@ -43,6 +45,8 @@ const TOAST_LIFT = 64;
 const LOOK_PAUSE = 900;
 /** 같은 문항을 이만큼 틀리면 [힌트]가 열린다 */
 const HINT_AFTER_WRONG = 2;
+/** 틀린 쌓기를 고치지 않고 [확인하기]를 또 눌렀을 때: 다시 기록하지 않고(틀림이 두 번으로 세지지 않게) 안내만 한다 */
+export const SAME_CHECK_TEXT = '이미 확인한 쌓기예요. 고친 다음 다시 [확인하기]를 눌러요.';
 
 /**
  * 알림(토스트)에 띄울 짧은 글: 까닭의 첫 문장만("맞아요!" 같은 한 마디뿐이면 다음 문장까지).
@@ -134,10 +138,13 @@ function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DE
     noteSlot.replaceChildren(note);
   }
 
-  /** 보너스 쪽지: 틀린 뒤 "다시 일어서기"·"다시 도전" 기회를 글로 보인다 (점수는 엔진이 행동으로 계산) */
-  function showBounce({ retry = false } = {}) {
+  /**
+   * 보너스 쪽지: 틀린 뒤 "다시 일어서기"·"다시 도전" 기회를 글로 보인다 (점수는 엔진이 행동으로 계산).
+   * last: 이 단계의 마지막 답이었다 — "다음 문제를 맞히면"이라고 말할 다음 문제가 없으니 쪽지를 내지 않는다
+   */
+  function showBounce({ retry = false, last = false } = {}) {
     const peek = ctx.reward.peek?.();
-    if (!peek?.on || peek.practice === false) return;
+    if (!peek?.on || peek.practice === false || (last && !retry)) return;
     bonusSlot.replaceChildren(retry
       ? ctx.ui.bonus(h('b', null, '다시 도전'), ' · 고쳐서 맞히면 +1, 다음 문제도 맞히면 다시 일어서기 +1')
       : ctx.ui.bonus(h('b', null, '다시 일어서기'), ' · 다음 문제를 맞히면 +1'));
@@ -178,6 +185,10 @@ function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DE
     },
     setPrompt(text) {
       prompt.textContent = text;
+    },
+    /** 작업 지시서의 번호만 바꾼다(놀이터: 주문을 하나 마칠 때마다) */
+    setCounter(number) {
+      order.setCounter(`${label} ${number} / ${total}`);
     },
     /** 매트 이름표를 바꾼다(null이면 숨긴다) */
     setTag(text, iconName = 'info') {
@@ -265,6 +276,7 @@ function playPlay(stage, ctx, questions) {
       else li.removeAttribute('aria-current');
     });
     ctx.setProgress?.(Math.min(done + 1, tasks.length), tasks.length, { label: '주문', done, check: true });
+    bench.setCounter(Math.min(done + 1, tasks.length));
     const goal = done === 0 ? q.spot : null;
     view.setMarks({ goal });
     tools.setGoal(goal);
@@ -310,6 +322,20 @@ function playPlay(stage, ctx, questions) {
   return () => bench.destroy();
 }
 
+/**
+ * 단계를 끝낸다. 별을 틀린 답의 수로 정하는 단계(starsBy: 'wrong' — 문항이 2~3개뿐인 blocks-copy·blocks-scene)는
+ * 0번 ★3 · 1번 ★2 · 2번 이상 ★1과 그 기준 안내를 넘기고, 나머지는 엔진의 정답률 기준에 맡긴다.
+ */
+function finishStage(stage, ctx) {
+  if (stage.starsBy !== 'wrong') {
+    ctx.finish();
+    return;
+  }
+  const { attempts, correct } = ctx.log.stats();
+  const stars = starsByWrong(attempts - correct);
+  ctx.finish({ stars, starNote: starNoteByWrong(stars) });
+}
+
 /** 고르는 버튼 하나 (답 버튼과 같은 모습) */
 const choiceButton = (h, { value, content, onclick, cls = '' }) => h('button', {
   type: 'button',
@@ -345,7 +371,7 @@ function settle(ctx, bench, { q, result, given, chosen, last, next }) {
   if (result.correct) ctx.feedback.correct(toastOf(result.message), chosen);
   else {
     ctx.feedback.wrong(toastOf(result.message), chosen);
-    bench.showBounce();
+    bench.showBounce({ last });
   }
   bench.showNote(result.message, result.correct, { title: result.correct ? '맞아요' : '까닭' });
   bench.showNext(last ? '결과 보기' : '다음 문제', next);
@@ -403,7 +429,7 @@ function playWhere(stage, ctx, questions) {
 
   function next() {
     index += 1;
-    if (index >= questions.length) ctx.finish();
+    if (index >= questions.length) finishStage(stage, ctx);
     else {
       showQuestion();
       buttons[0].focus({ preventScroll: true });
@@ -450,9 +476,10 @@ function playScene(stage, ctx, questions) {
     buttons = q.options.map((o, i) => choiceButton(h, {
       value: i + 1,
       cls: 'blk-option',
-      content: [h('b', null, `${i + 1}번`), createScenePicture({ scene: o.picture, look: lookOf, label: describeScene(o.picture), cell: 20 })],
+      content: [h('b', null, `${i + 1}번`), createScenePicture({ scene: o.picture, look: lookOf, label: describeScene(o.picture), cell: 30 })],
       onclick: () => (answered ? lookFrom(o.dir) : answer(i + 1)),
     }));
+    optionRow.classList.remove('is-answered');
     optionRow.replaceChildren(...buttons);
   }
 
@@ -475,6 +502,7 @@ function playScene(stage, ctx, questions) {
       if (!result.correct && b.dataset.answer === String(q.expected)) b.classList.add('is-answer');
       b.setAttribute('title', '이 그림 쪽에서 보기');
     }
+    optionRow.classList.add('is-answered');
     // 입체가 나타나 그 방향으로 돈다
     mapCard.hidden = true;
     bench.mat.prepend(view.el);
@@ -490,7 +518,7 @@ function playScene(stage, ctx, questions) {
 
   function next() {
     index += 1;
-    if (index >= questions.length) ctx.finish();
+    if (index >= questions.length) finishStage(stage, ctx);
     else {
       showQuestion();
       buttons[0].focus({ preventScroll: true });
@@ -572,7 +600,7 @@ function playCount(stage, ctx, questions) {
 
   function next() {
     index += 1;
-    if (index >= questions.length) ctx.finish();
+    if (index >= questions.length) finishStage(stage, ctx);
     else {
       showQuestion();
       buttons[0].focus({ preventScroll: true });
@@ -646,12 +674,14 @@ function playCopy(stage, ctx, questions) {
   bench.card.hidden = false;
   let index = 0;
   let solved = false;
+  let checked = null; // 마지막으로 확인해서 틀린 쌓기(같은 쌓기를 또 확인하면 다시 세지 않는다)
 
   const drawPicture = (q, diff = []) => bench.card.replaceChildren(figure(h, '그림', createBlockPicture({ map: q.target, unit: 30, diff })));
 
   function showQuestion() {
     const q = questions[index];
     solved = false;
+    checked = null;
     bench.setQuestion(index + 1, '그림과 똑같은 모양으로 쌓아 봐요.');
     drawPicture(q);
     checker.reset();
@@ -679,8 +709,16 @@ function playCopy(stage, ctx, questions) {
       ctx.feedback.info(result.message);
       return;
     }
+    if (!result.correct && checked === mapKey(mine)) {
+      // 고치지 않고 또 눌렀다(더블클릭 등): 다른 곳 표시만 다시 보이고 기록하지 않는다
+      const diff = showDiff(view, mine, q.target);
+      drawPicture(q, diff.missing);
+      ctx.feedback.info(SAME_CHECK_TEXT);
+      return;
+    }
     ctx.log.answer({ itemId: q.itemId, correct: result.correct, tag: result.tag, given: mapKey(mine), expected: result.expected });
     if (!result.correct) {
+      checked = mapKey(mine);
       ctx.sfx.play('wrong');
       const diff = showDiff(view, mine, q.target);
       drawPicture(q, diff.missing);
@@ -707,7 +745,8 @@ function playCopy(stage, ctx, questions) {
     }
     // 그림은 같아 보이는데 개수가 다른 쌓기를 돌려서 보여 준다 → "무엇을 더 알면 똑같이 만들 수 있을까요?"
     const [few, many] = count(other) > count(mine) ? [mine, other] : [other, mine];
-    bench.showNote(`${result.message} 그런데 쌓기나무 ${count(many)}개로 만든 것도, ${count(few)}개로 만든 것도 그림과 똑같아 보여요.`, true, {
+    // 내 개수는 바로 뒤 문장("…개로 만든 것도")에 나오므로 "쌓기나무 n개로 만들었어요."는 되풀이하지 않는다(쪽지가 한 줄 짧아진다)
+    bench.showNote(`${toastOf(result.message)} 그런데 쌓기나무 ${count(many)}개로 만든 것도, ${count(few)}개로 만든 것도 그림과 똑같아 보여요.`, true, {
       tip: '뒤에 숨은 쌓기나무는 그림에 보이지 않아요. 돌려서 확인해 봐요.',
     });
     bench.after(() => {
@@ -731,7 +770,7 @@ function playCopy(stage, ctx, questions) {
 
   function next() {
     index += 1;
-    if (index >= questions.length) ctx.finish();
+    if (index >= questions.length) finishStage(stage, ctx);
     else {
       showQuestion();
       tools.focusPad();
@@ -753,7 +792,8 @@ function createCluePick({ ctx, itemId, onDone }) {
   const chips = MORE_CLUES.map((c) => h('button', { type: 'button', class: 'btn btn-small reason-chip', dataset: { clue: c.id }, onclick: () => choose(c) }, c.text));
   const skip = h('button', { type: 'button', class: 'btn btn-small reason-skip', onclick: () => finish(true) }, '넘어가기');
   const chipRow = h('div', { class: 'reason-chips' }, chips, skip);
-  const question = h('p', { class: 'reason-pick-q' }, icon('bulb'), '무엇을 더 알면 똑같이 만들 수 있을까요?', h('small', null, '골라도 되고 넘어가도 돼요'));
+  // 물음과 작은 글을 한 덩이로 묶는다: 글자가 넓어 물음이 두 줄이 되어도 전구 그림이 혼자 한 줄을 차지하지 않는다
+  const question = h('p', { class: 'reason-pick-q' }, icon('bulb'), h('span', { class: 'blk-clue-q' }, '무엇을 더 알면 똑같이 만들 수 있을까요?', h('small', null, '골라도 되고 넘어가도 돼요')));
   const el = h('div', { class: 'reason-pick blk-clue', role: 'group', 'aria-label': '무엇을 더 알면 똑같이 만들 수 있을까요? 고르기' }, question, chipRow, result);
 
   function finish(skipped) {
@@ -797,6 +837,7 @@ function playHidden(stage, ctx, questions) {
   let phase = 'build'; // build(맞게 쌓기) → guess(예상) → other(다른 개수로 한 번 더) → done
   let first = null; // 처음에 맞힌 내 쌓기
   let hinted = null; // 힌트로 위에서 본 모양에 적어 준 자리 { x, y, value } (문항·장면이 바뀌면 지운다)
+  let checked = null; // 마지막으로 확인해서 틀린 쌓기(같은 쌓기를 또 확인하면 다시 세지 않는다)
 
   const PROMPTS = {
     build: '그림과 위에서 본 모양에 맞게 쌓아 봐요.',
@@ -814,6 +855,8 @@ function playHidden(stage, ctx, questions) {
     phase = 'build';
     first = null;
     hinted = null;
+    checked = null;
+    bench.given.classList.remove('is-small', 'is-done');
     bench.setQuestion(index + 1, PROMPTS.build);
     drawGiven(q);
     checker.reset();
@@ -829,7 +872,6 @@ function playHidden(stage, ctx, questions) {
 
   function useHint() {
     const q = questions[index];
-    ctx.reward.event('inspect');
     if (phase === 'other') {
       const [x, y] = q.spot;
       hinted = { x, y, value: '?' };
@@ -859,8 +901,13 @@ function playHidden(stage, ctx, questions) {
   }
 
   function wrongBuild(q, mine, result, itemId) {
-    ctx.log.answer({ itemId, correct: false, tag: result.tag, given: mapKey(mine), expected: mapKey(q.target) });
-    ctx.sfx.play('wrong');
+    // 고치지 않고 또 눌렀으면(더블클릭 등) 다른 곳 표시만 다시 보이고 기록하지 않는다
+    const again = checked === mapKey(mine);
+    if (!again) {
+      checked = mapKey(mine);
+      ctx.log.answer({ itemId, correct: false, tag: result.tag, given: mapKey(mine), expected: mapKey(q.target) });
+      ctx.sfx.play('wrong');
+    }
     if (result.topOk) {
       const diff = showDiff(view, mine, q.target);
       drawGiven(q, { diff: diff.missing, hint: hinted });
@@ -868,6 +915,10 @@ function playHidden(stage, ctx, questions) {
       view.setMarks({});
       view.snapTo('home', { force: true, quiet: true });
       drawGiven(q, { cells: topDiff(q, mine), hint: hinted });
+    }
+    if (again) {
+      ctx.feedback.info(SAME_CHECK_TEXT);
+      return;
     }
     ctx.feedback.wrong(toastOf(result.message));
     bench.showNote(result.message, false, { tip: '✗ 표시한 곳을 살펴보고, 고친 다음 다시 [확인하기]를 눌러요.' });
@@ -893,6 +944,9 @@ function playHidden(stage, ctx, questions) {
       first = mine;
       phase = 'guess';
       hinted = null;
+      checked = null;
+      // 자리는 이미 맞게 쌓았다: 위에서 본 모양 그림을 줄여 까닭 쪽지 자리를 낸다(낮은 화면에서 판이 넘치지 않게)
+      bench.given.classList.add('is-small');
       drawGiven(q);
       view.setMarks({});
       bench.clearBonus();
@@ -944,7 +998,8 @@ function playHidden(stage, ctx, questions) {
     if (result.correct) ctx.feedback.correct(toastOf(result.message), value === 'yes' ? yes : no);
     else {
       ctx.feedback.wrong(toastOf(result.message), value === 'yes' ? yes : no);
-      bench.showBounce();
+      // "하나뿐" 문항의 예상이 이 단계의 마지막 답이면 "다음 문제를 맞히면"이라고 할 다음 문제가 없다
+      bench.showBounce({ last: !q.many && index + 1 >= questions.length });
     }
     if (!q.many) {
       done(result.message, result.correct);
@@ -952,6 +1007,7 @@ function playHidden(stage, ctx, questions) {
     }
     // 여러 가지: 다른 개수로 한 번 더 쌓아 확인한다
     phase = 'other';
+    checked = null;
     bench.showNote(result.message, result.correct, { title: result.correct ? '맞아요' : '까닭' });
     bench.setPrompt(PROMPTS.other);
     guessRow.hidden = true;
@@ -962,6 +1018,8 @@ function playHidden(stage, ctx, questions) {
 
   function done(message, correct = true) {
     phase = 'done';
+    // 답이 끝났다: 낮거나 좁은 판에서는 위에서 본 모양 그림을 접어 까닭·쪽지·[다음 문제]에 자리를 낸다(blocks.css — 그림은 매트의 카드에 그대로 있다)
+    bench.given.classList.add('is-done');
     tools.lock(true);
     checker.hide();
     guessRow.hidden = true;
@@ -972,7 +1030,7 @@ function playHidden(stage, ctx, questions) {
 
   function next() {
     index += 1;
-    if (index >= questions.length) ctx.finish();
+    if (index >= questions.length) finishStage(stage, ctx);
     else {
       showQuestion();
       tools.focusPad();

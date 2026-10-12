@@ -363,6 +363,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .lesson-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .lesson-no { font-family: var(--font-display); font-weight: 700; background: var(--ink); color: #fff; border-radius: 10px; padding: 2px 12px; font-size: 1rem; }
 .lesson-title { margin: 0; font-size: var(--fs-xl); }
+/* 차시 제목 옆의 짧은 말(단원 등 — 차시 정의의 note). 본문 글꼴 */
+.lesson-note { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); white-space: nowrap; }
 /* 칩이 여러 개(도감·노트·시간)여도 칩 안에서 줄이 바뀌지 않고, 좁으면 칩째로 다음 줄로 */
 .lesson-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
 .lesson-chips .chip { white-space: nowrap; }

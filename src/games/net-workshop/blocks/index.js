@@ -2,12 +2,12 @@
  * 쌓기나무 영역의 들머리. main.js는 여기서 차시·단계 목록과 화면 함수만 가져간다
  * (나중에 영역을 들어갈 때 불러오는 묶음으로 나누기 쉽게 — spec-grade6.md 7-4절).
  */
-import { BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST, makeBlockQuestions } from './blocks-logic.js';
+import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST, makeBlockQuestions } from './blocks-logic.js';
 import { createBlockPicture } from './block-view.js';
 import { playBlocks } from './play-blocks.js';
 
 // 단계 카드 그림: 작은 멈춘 그림 (조형물은 색·무늬)
-const SCENE_LOOK = { yellow: { token: '--face-1', mark: 'plain' }, blue: { token: '--face-2', mark: 'stripe' }, pink: { token: '--face-4', mark: 'dot' } };
+const SCENE_LOOK = { yellow: { token: '--face-1', mark: 'plain' }, blue: { token: '--face-2', mark: 'slash' }, pink: { token: '--face-4', mark: 'dot' } };
 const sceneColors = (rows) => rows.map((row) => row.map((id) => (id ? SCENE_LOOK[id] : null)));
 const THUMBS = {
   play: { map: [[1, 2, 0], [0, 1, 0], [0, 0, 0]] },
@@ -29,7 +29,7 @@ function thumbOf(kind) {
   } : null;
 }
 
-export { BLOCK_LESSONS };
+export { BLOCK_HOW_TO, BLOCK_LESSONS };
 export const BLOCK_STAGES = STAGE_LIST.map((stage) => ({ ...stage, thumb: thumbOf(stage.kind) }));
 
 /** 쌓기나무 단계 하나를 플레이한다 → 정리 함수 */

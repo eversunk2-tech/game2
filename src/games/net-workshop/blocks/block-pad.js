@@ -40,8 +40,9 @@ export function createBlockTools({ ctx, view }) {
   }, icon(iconName), h('span', null, label));
   const addButton = modeButton('add', 'blockadd', '쌓기');
   const removeButton = modeButton('remove', 'blockremove', '빼기');
-  const undoButton = h('button', { type: 'button', class: 'btn blk-undo', disabled: true, onclick: () => undo() }, icon('undo'), h('span', null, '되돌리기'));
-  const clearButton = h('button', { type: 'button', class: 'btn blk-clear', disabled: true, onclick: () => clearAll() }, icon('trash'), h('span', null, '모두 치우기'));
+  // 좁은 매트에서는 글자를 숨기고 그림만 보인다(blocks.css) — 이름은 aria-label·title로 늘 읽힌다
+  const undoButton = h('button', { type: 'button', class: 'btn blk-undo', disabled: true, 'aria-label': '되돌리기', title: '되돌리기', onclick: () => undo() }, icon('undo'), h('span', null, '되돌리기'));
+  const clearButton = h('button', { type: 'button', class: 'btn blk-clear', disabled: true, 'aria-label': '모두 치우기', title: '모두 치우기', onclick: () => clearAll() }, icon('trash'), h('span', null, '모두 치우기'));
   const countText = h('b', { class: 'blk-count' }, '0');
   const band = h('div', { class: 'mat-tools blk-tools' },
     h('div', { class: 'blk-modes', role: 'group', 'aria-label': '무대와 판을 누르면 할 일' }, addButton, removeButton),

@@ -31,15 +31,40 @@ import {
 } from './blocks.js';
 
 /** 차시 묶음 (교과서 6-2 3단원의 차시와 하나씩 짝 — S1은 1·2차시) */
+export const BLOCK_UNIT = '6학년 2학기 · 공간과 입체';
+/**
+ * chip: 단계 지도의 차시 칩(영역 고르는 화면이 생기기 전까지 정육면체 차시 뒤에 이어 보이므로 "쌓기나무 n차시"라고 적는다 — 교과서의 차시 번호)
+ * minutes: 이 차시의 어림 시간(문항 수로 어림: 5~7분 · 7~10분) · note: 단원
+ */
 export const BLOCK_LESSONS = [
-  { id: 'blocks-look', title: '어느 방향에서 보았을까' },
-  { id: 'blocks-top', title: '만든 모양과 위에서 본 모양' },
+  { id: 'blocks-look', title: '어느 방향에서 보았을까', chip: '쌓기나무 1차시', minutes: 6, note: BLOCK_UNIT },
+  { id: 'blocks-top', title: '만든 모양과 위에서 본 모양', chip: '쌓기나무 2차시', minutes: 8, note: BLOCK_UNIT },
 ];
+
+/** 놀이 방법에 덧붙이는 쌓기나무 줄 (main.js의 howTo 끝에) */
+export const BLOCK_HOW_TO = [
+  '쌓기나무 차시에서는 판을 짧게 누르면 쌓이고, [빼기]를 누른 다음 누르면 빠져요. "위에서 본 판"의 칸을 눌러도 돼요.',
+  '쌓기나무는 끌어서 여러 방향으로 돌려 보고, [위] [앞] [옆]을 누르면 그 방향에서 본 모양이 돼요.',
+];
+
+/** 별을 틀린 답의 수로 정하는 단계(starsBy: 'wrong'): 0번 ★3 · 1번 ★2 · 2번 이상 ★1 (주사위 주문 spec 16-13과 같은 기준) */
+export function starsByWrong(wrong) {
+  const n = Math.max(0, Math.floor(Number(wrong) || 0));
+  return n === 0 ? 3 : n === 1 ? 2 : 1;
+}
+
+/** 결과 화면의 별 기준 안내 (별 3개가 안 될 때. 별 3개면 엔진의 "별 3개를 모두 받았어요!") */
+export function starNoteByWrong(stars) {
+  if (stars >= 3) return null;
+  return stars === 2 ? '한 번도 틀리지 않으면 별 3개!' : '한 번만 틀리면 별 2개, 한 번도 틀리지 않으면 별 3개!';
+}
 
 /**
  * kind: play(쌓기 놀이터 — 채점 없음) · where(어느 쪽에서 본 모습인지 고르기) · scene(그쪽에서 본 모습 고르기)
  *       · copy(그림을 보고 똑같이 쌓기) · count(개수 고르기) · hidden(쌓기 → 다른 개수로도? → 한 번 더 쌓기)
  * area: 'blocks' — main.js가 이 표시로 쌓기나무 화면(blocks/index.js)에 넘긴다
+ * starsBy: 'wrong' — 별을 틀린 답의 수로 정한다(0번 ★3 · 1번 ★2 · 2번 이상 ★1, starsByWrong). 문항이 2~3개뿐이라
+ *   엔진의 정답률 기준(90%·70%)으로는 한 번만 틀려도 ★1이 되고 ★2가 나올 수 없는 단계에 쓴다(사용자 결정 2026-10-11)
  */
 export const BLOCK_STAGES = [
   {
@@ -53,12 +78,12 @@ export const BLOCK_STAGES = [
     goal: '그림을 보고 어느 쪽에서 본 모습인지 골라요.',
   },
   {
-    id: 'blocks-scene', lesson: 'blocks-look', area: 'blocks', kind: 'scene', count: 3, order: '관찰 주문',
+    id: 'blocks-scene', lesson: 'blocks-look', area: 'blocks', kind: 'scene', count: 3, order: '관찰 주문', starsBy: 'wrong',
     title: '이쪽에서 보면?',
     goal: '위에서 본 그림을 보고, 화살표 쪽에서 본 모습을 골라요.',
   },
   {
-    id: 'blocks-copy', lesson: 'blocks-top', area: 'blocks', kind: 'copy', count: 2, order: '따라 쌓기 주문',
+    id: 'blocks-copy', lesson: 'blocks-top', area: 'blocks', kind: 'copy', count: 2, order: '따라 쌓기 주문', starsBy: 'wrong',
     title: '똑같이 만들기',
     goal: '그림을 보고 똑같은 모양으로 쌓아요.',
   },
@@ -95,7 +120,7 @@ const COLUMN_WORDS = ['왼쪽', '가운데', '오른쪽'];
 /** 조형물 셋: 색 + 무늬 + 높이 + 이름이 모두 다르다 (색만으로 구분하지 않는다) */
 export const SCULPTURES = Object.freeze([
   { id: 'yellow', name: '노란 탑', height: 3, face: 1, mark: 'plain' },
-  { id: 'blue', name: '파란 기둥', height: 2, face: 2, mark: 'stripe' },
+  { id: 'blue', name: '파란 기둥', height: 2, face: 2, mark: 'slash' }, // 빗금 두 줄(가로줄은 층 경계처럼 보여 쓰지 않는다)
   { id: 'pink', name: '분홍 상자', height: 1, face: 4, mark: 'dot' },
 ]);
 export const sculptureOf = (id) => SCULPTURES.find((s) => s.id === id) ?? null;
@@ -143,13 +168,26 @@ export function seenIn(scene) {
   return out;
 }
 
-/** 그 모습을 말로: "왼쪽에 파란 기둥, 오른쪽에 노란 탑이 보여요." (가려진 것은 "분홍 상자는 가려서 안 보여요.") */
+/** 이름들을 잇는다: ["파란 기둥", "분홍 상자"] → "파란 기둥과 분홍 상자" */
+const joinNames = (names) => names.map((name, i) => (i < names.length - 1 ? josa(name, '과/와') : name)).join(' ');
+
+/**
+ * 그 모습을 말로: "왼쪽에 파란 기둥, 오른쪽에 노란 탑이 보여요."
+ * 같은 세로줄에 둘이 겹쳐 보이면 앞의 것부터 "가운데에 분홍 상자와 그 뒤의 노란 탑", 가려진 것은 "파란 기둥과 분홍 상자는 가려서 안 보여요."
+ */
 export function describeScene(scene) {
   const seen = seenIn(scene);
-  const shown = seen.map((s) => `${COLUMN_WORDS[s.column]}에 ${sculptureOf(s.id).name}`).join(', ');
-  const hidden = SCULPTURES.filter((s) => !seen.some((x) => x.id === s.id)).map((s) => s.name);
+  const groups = [];
+  for (const s of seen) {
+    const group = groups.find((g) => g.column === s.column);
+    if (group) group.names.push(sculptureOf(s.id).name);
+    else groups.push({ column: s.column, names: [sculptureOf(s.id).name] });
+  }
+  // 한 세로줄 안에서는 아래층에 먼저 보이는 것이 앞에 있는 것이다: "분홍 상자와 그 뒤의 노란 탑"
+  const stacked = ([front, ...behind]) => (behind.length ? `${josa(front, '과/와')} ${behind.map((name) => `그 뒤의 ${name}`).join(', ')}` : front);
+  const shown = groups.map((g) => `${COLUMN_WORDS[g.column]}에 ${stacked(g.names)}`).join(', ');
   const last = sculptureOf(seen[seen.length - 1].id).name;
-  return `${shown}${josa(last, '이/가').slice(last.length)} 보여요.${hidden.length ? ` ${hidden.map((n) => josa(n, '은/는')).join(', ')} 가려서 안 보여요.` : ''}`;
+  return `${shown}${josa(last, '이/가').slice(last.length)} 보여요.${hiddenNote(scene)}`;
 }
 
 const columnOf = (scene, id) => {
@@ -157,10 +195,10 @@ const columnOf = (scene, id) => {
   return seen ? COLUMN_WORDS[seen.column] : null;
 };
 
-/** 그 모습에서 가려서 안 보이는 조형물: " 분홍 상자는 가려서 안 보여요." (없으면 빈 글) */
+/** 그 모습에서 가려서 안 보이는 조형물: " 파란 기둥과 분홍 상자는 가려서 안 보여요." (없으면 빈 글) */
 function hiddenNote(scene) {
-  const hidden = SCULPTURES.filter((s) => !columnOf(scene, s.id)).map((s) => josa(s.name, '은/는'));
-  return hidden.length ? ` ${hidden.join(', ')} 가려서 안 보여요.` : '';
+  const hidden = SCULPTURES.filter((s) => !columnOf(scene, s.id)).map((s) => s.name);
+  return hidden.length ? ` ${josa(joinNames(hidden), '은/는')} 가려서 안 보여요.` : '';
 }
 
 /** 그 모습의 한 줄: "노란 탑이 왼쪽에 보여요." (노란 탑은 가장 높아 어느 쪽에서도 보인다) + 가려진 것 */
@@ -188,12 +226,25 @@ export function tellApart(scene, other) {
   return '앞뒤로 겹친 모습이 달라요';
 }
 
+/** 한 판에서 같은 방향이 정답인 문항은 이만큼까지 */
+export const WHERE_REPEAT_MAX = 2;
+
+/**
+ * blocks-where의 정답 방향들: 문항마다 따로 뽑는다(넷이 한 번씩 나오게 하면 지워 가며 맞힐 수 있다 — 끝 문항은 그림을 보지 않고도 정해진다).
+ * 한 방향만 거듭 나오지는 않게 같은 방향은 한 판에 두 번까지.
+ */
+export function drawDirections(rng, n) {
+  for (;;) {
+    const dirs = Array.from({ length: n }, () => rng.pick(AROUND));
+    if (AROUND.every((d) => dirs.filter((x) => x === d).length <= WHERE_REPEAT_MAX)) return dirs;
+  }
+}
+
 function makeWhereQuestions(stage, rng) {
-  // 네 방향이 고루 나오게: 넷을 섞어 앞에서부터 쓴다(문항 수가 넷보다 많으면 되풀이)
-  const dirs = rng.shuffle(AROUND);
+  const dirs = drawDirections(rng, stage.count);
   return Array.from({ length: stage.count }, (_, i) => {
     const scene = makeScene(rng);
-    const dir = dirs[i % dirs.length];
+    const dir = dirs[i];
     return { itemId: `${stage.id}:${i + 1}`, ...scene, dir, expected: DIR_LETTERS[dir], picture: scene.views[dir] };
   });
 }
@@ -392,6 +443,23 @@ export const MORE_CLUES = Object.freeze([
 ]);
 export const MORE_CLUE_ANSWER = 'top';
 
+/**
+ * blocks-count의 보기 넷(작은 수부터).
+ * 정답이 크기 순으로 몇째인지(= 놓이는 자리)를 먼저 뽑는다 — 함정 값(보이는 것만 센 수, 위에서 본 모양의 칸 수)은 늘 정답보다 작아서,
+ * 함정을 늘 넣고 남는 칸을 큰 수로 채우면 정답이 늘 "끝에서 둘째"가 된다(자리가 답을 알려 준다).
+ * 정답보다 작은 보기 rank개: 함정 값부터(숨겨진 것이 있으면 보이는 것만 센 수 먼저) 넣고 모자라면 가까운 수. 큰 보기 3 − rank개: 가까운 수.
+ * 가까운 수는 위·아래 모두 1~3 차이에서 무작위로 골라, 보기의 간격으로도 정답이 드러나지 않게 한다.
+ */
+export function countOptions(rng, { total, seen, spots }) {
+  const rank = rng.int(0, 3);
+  const below = [...new Set([seen, spots])].filter((n) => n > 0 && n < total).slice(0, rank);
+  const near = rng.shuffle([1, 2, 3].map((d) => total - d).filter((n) => n > 0 && !below.includes(n)));
+  while (below.length < rank && near.length) below.push(near.shift());
+  // 작은 수가 모자라면(정답이 아주 작을 때) 큰 수로 채운다
+  const above = rng.shuffle([1, 2, 3].map((d) => total + d)).slice(0, 3 - below.length);
+  return [...below, total, ...above].sort((a, b) => a - b);
+}
+
 function makeCountQuestions(stage, rng) {
   const fixed = (h) => lookAlikes(h, { top: topView(h) }).length === 1;
   const used = new Set();
@@ -417,12 +485,6 @@ function makeCountQuestions(stage, rng) {
     const total = count(target);
     const hidden = hiddenCells(target);
     const spots = count(topView(target));
-    // 보기: 정답 · 보이는 것만 센 수 · 위에서 본 모양의 칸 수 · 가까운 수 (넷, 작은 수부터)
-    const options = new Set([total, total - hidden.length, spots]);
-    for (const d of [1, -1, 2, -2, 3]) {
-      if (options.size >= 4) break;
-      if (total + d > 0) options.add(total + d);
-    }
     return {
       itemId: `${stage.id}:${i + 1}`,
       target,
@@ -430,7 +492,7 @@ function makeCountQuestions(stage, rng) {
       hidden,
       spots,
       seen: total - hidden.length,
-      options: [...options].sort((a, b) => a - b),
+      options: countOptions(rng, { total, seen: total - hidden.length, spots }),
       expected: total,
     };
   });
