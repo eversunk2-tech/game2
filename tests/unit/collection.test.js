@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { discoverXp } from '../../src/shared/core/rewards.js';
 import {
   collectItem,
   collectionChips,
   collectionStatus,
   collectionTotals,
+  collectionXp,
   normalizeCollectionState,
   normalizeCollections,
 } from '../../src/shared/core/collection.js';
@@ -105,4 +107,38 @@ test('화면에 보이지 않는 모음(quiet): 칩 숫자에 넣지 않고, 등
   // 저장된 값 읽기도 같다
   assert.deepEqual(normalizeCollectionState(JSON.parse(JSON.stringify(state)), defs).many, { i7: { at: state.many.i7.at, stage: null } });
   for (const quiet of ['yes', 1]) assert.throws(() => normalizeCollections([{ id: 'a', title: 'A', quiet, items: items(1) }]), /quiet/);
+});
+
+test('xpAfter: 칸이 count개 찬 뒤에 등록하는 칸은 xp 대신 그 점수 — 어떤 칸을 먼저 찾든 점수의 합이 같다', () => {
+  const items = (n) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, name: `칸 ${i}` }));
+  const [plain, capped, low] = normalizeCollections([
+    { id: 'plain', title: '도감', items: items(5) },
+    { id: 'capped', title: '많은 모음', quiet: true, xpAfter: { count: 10, xp: 1 }, items: items(54) },
+    { id: 'low', title: '노트', xp: 2, xpAfter: { count: 3, xp: 0 }, items: items(8) },
+  ]);
+  // xpAfter가 없으면 지금까지와 같다(도감 정의의 xp, 없으면 undefined → 엔진 기본 +5)
+  assert.deepEqual([1, 5, 99].map((n) => collectionXp(plain, n)), [undefined, undefined, undefined]);
+  assert.equal(discoverXp(collectionXp(plain, 3)), 5);
+  assert.equal(collectionXp(DEFS[0], 2), undefined);
+  // count번째까지는 xp, 그다음부터 xpAfter.xp
+  assert.deepEqual([1, 9, 10, 11, 54].map((n) => discoverXp(collectionXp(capped, n))), [5, 5, 5, 1, 1]);
+  assert.deepEqual([1, 3, 4, 8].map((n) => discoverXp(collectionXp(low, n))), [2, 2, 0, 0]);
+  // 54칸을 아무 순서로 등록해도 점수의 합은 10 × 5 + 44 × 1 = 94 (몇 번째인지는 등록한 뒤의 칸 수로 센다)
+  for (const order of [items(54), items(54).reverse(), items(54).filter((_, i) => i % 2).concat(items(54).filter((_, i) => i % 2 === 0))]) {
+    let state = normalizeCollectionState(null, [capped]);
+    let sum = 0;
+    for (const item of order) {
+      const r = collectItem(state, [capped], 'capped', item.id);
+      assert.equal(r.isNew, true);
+      state = r.state;
+      sum += discoverXp(collectionXp(capped, r.count));
+      assert.equal(collectItem(state, [capped], 'capped', item.id).isNew, false); // 한 칸은 한 번만
+    }
+    assert.equal(sum, 94);
+  }
+  // 정의 검사: count는 1 이상 정수, xp는 0부터 그 도감의 xp(없으면 5)까지
+  const bad = (xpAfter, more = {}) => () => normalizeCollections([{ id: 'a', title: 'A', items: items(3), xpAfter, ...more }]);
+  for (const value of [5, 'x', {}, { count: 0, xp: 1 }, { count: 2.5, xp: 1 }, { count: 2, xp: -1 }, { count: 2, xp: 6 }, { count: 2 }]) assert.throws(bad(value), /xpAfter/, JSON.stringify(value));
+  assert.throws(bad({ count: 2, xp: 3 }, { xp: 2 }), /xpAfter/); // 뒤의 점수가 앞의 점수보다 클 수 없다
+  assert.doesNotThrow(bad({ count: 2, xp: 2 }, { xp: 2 }));
 });

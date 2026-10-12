@@ -9,6 +9,7 @@ import {
   DEX_STOP_MIN,
   FREE_EXPECTED,
   FREE_FOLD_NOTES,
+  FREE_FINISH,
   FREE_GOAL,
   FREE_NOTE_BEFORE_PICK,
   FREE_REPLAY_NOTE,
@@ -32,6 +33,7 @@ import {
   explainProblem,
   freeFeedback,
   freeHighlights,
+  freeStarNote,
   freeStars,
   freeStats,
   freeSummary,
@@ -163,6 +165,9 @@ test('목표: 서로 다른 전개도 3가지 (도감에 이미 있던 것도 �
   const r4 = s.fold(byName('2-2-2').cells, L6);
   assert.deepEqual([r4.kind, r4.collect, r4.found, r4.done, r4.correct], ['new', { id: 'cube-nets', item: '2-2-2', isNew: true }, 3, true, true]);
   assert.equal(FREE_GOAL, 3);
+  // 끝내기 기준(사용자 결정 2026-10-11): 2가지를 찾으면 끝낼 수 있고 별 2개, 3가지면 별 3개. 결과 화면의 별 기준 안내도 그 말
+  assert.equal(FREE_FINISH, 2);
+  assert.deepEqual([1, 2, 3].map(freeStarNote), ['서로 다른 전개도 3가지를 찾으면 별 3개!', '서로 다른 전개도 3가지를 찾으면 별 3개!', null]);
   assert.equal(s.done(), true);
   assert.deepEqual(freeSummary(s.history()), { shapes: 4, found: 3, newNets: 1, newNotes: 1, fixes: 1 });
   // 안 되는 모양을 접으면 늘 까닭 고르기가 나온다(예상이 없으므로 "맞혔을 때만"이 아니다)
@@ -237,8 +242,9 @@ const DEX = 'cube-dex';
  *   startStars: 판을 시작할 때 이 단계의 별, explain: 까닭 고르기 'right' | 'wrong' | 'skip' (접기마다 fold.explain으로 따로 줄 수도 있다),
  *   finished: false면 중간에 나간 판(← 단계 선택·새로 고침). 그 자리에서 저장된 몫(play.instant(): 등록 + 처음 접는 모양의
  *     만들기 성공·설명 점수)은 남고, 단계 완료·별 점수는 없다 (spec 16-9, N1c-3)
- * 끝낼 수 있는 조건(화면과 같다): 내 맘대로 전개도는 이번 판에 전개도 3가지, 도감 주문은 도감 6칸 — 못 채웠으면 마친 것으로 치지 않는다.
- * 별: 내 맘대로 전개도 = 이번 판에 찾은 전개도 수(3가지 = 별 3개), 도감 주문 = 도감 수(6·9·11칸)
+ * 끝낼 수 있는 조건(화면과 같다): 내 맘대로 전개도는 이번 판에 전개도 2가지(사용자 결정 2026-10-11 — 그 전에는 3가지),
+ *   도감 주문은 도감 6칸 — 못 채웠으면 마친 것으로 치지 않는다.
+ * 별: 내 맘대로 전개도 = 이번 판에 찾은 전개도 수(2가지 = 별 2개, 3가지 = 별 3개), 도감 주문 = 도감 수(6·9·11칸)
  * → { xp(이 판으로 저장되는 점수), play(단계 완료·별 점수를 뺀 이번 판 점수), stage, stars, finished, entries, earned(갈래별), explainCount, session }
  */
 function freePlayXp(folds, { stage = FREE, dex = [], note = [], explain = 'right', startStars = 0, finished = true } = {}) {
@@ -264,7 +270,7 @@ function freePlayXp(folds, { stage = FREE, dex = [], note = [], explain = 'right
     assert.equal(play.instant(), play.xp());
   }
   const dexCount = session.dex().size;
-  const canFinish = dexMode ? dexCount >= DEX_STOP_MIN : session.found().size >= FREE_GOAL;
+  const canFinish = dexMode ? dexCount >= DEX_STOP_MIN : session.found().size >= FREE_FINISH;
   const done = finished && canFinish;
   const stars = dexMode ? dexStars(dexCount) : freeStars(session.found().size);
   const stageGain = done ? stageXp({ prevStars: startStars, stars, cleared: true, challenge: dexMode }).total : 0;
@@ -316,7 +322,8 @@ const NON_NET_XP = NOTE_XP + XP.explain; // 안 되는 모양 하나: 노트 1 +
  *   - 이 기기에서 처음 접는 모양(어느 단계에서든): 되는 전개도 = 도감 +5, 만들기 성공 +2, 처음 접는 전개도를 연달아 3번마다 +1,
  *     앞에서 처음 접은 안 되는 모양이 있었으면 다시 일어서기 +1(한 번) / 안 되는 모양 = 노트 +1, 까닭을 맞히면 +2, 연속은 끊기고 다시 일어서기 기회가 생긴다
  *   - 접어 본 모양: 0점. 안 되는 모양이면 연속만 끊긴다
- *   - 마치면: 내 맘대로 전개도(이번 판에 전개도 3가지)는 별 3개 — 처음 마칠 때 5 + 6. 도감 주문(도감 6칸부터)은 처음 +10, 별(6·9·11칸)이 늘어난 만큼 +2씩
+ *   - 마치면: 내 맘대로 전개도(이번 판에 전개도 2가지부터)는 별 = 찾은 가지 수(3까지) — 처음 마칠 때 +5, 별이 늘어난 만큼 +2씩
+ *     (3가지를 찾아 처음 마치면 5 + 6). 도감 주문(도감 6칸부터)은 처음 +10, 별(6·9·11칸)이 늘어난 만큼 +2씩
  */
 function createModelDevice() {
   const seen = new Set();
@@ -360,9 +367,12 @@ function createModelDevice() {
       total += xp;
       let stageGain = 0;
       if (finished) {
-        if (stage === FREE && foundNow.size >= 3) {
-          stageGain = (stars[FREE] === 0 ? 5 : 0) + (3 - stars[FREE]) * 2;
-          stars[FREE] = 3;
+        if (stage === FREE && foundNow.size >= 2) {
+          const now = Math.min(3, foundNow.size);
+          if (now > stars[FREE]) {
+            stageGain = (stars[FREE] === 0 ? 5 : 0) + (now - stars[FREE]) * 2;
+            stars[FREE] = now;
+          }
         }
         if (stage === DEX && dex.size >= 6) {
           const now = dex.size >= 11 ? 3 : dex.size >= 9 ? 2 : 1;

@@ -11,6 +11,7 @@ import {
   FREE_CARDS,
   SLOT_DEPTH,
   centerOnBoard,
+  cuboidHintNet,
   cuboidReasonOf,
   freeNets,
 } from '../../src/games/net-workshop/cuboid-logic.js';
@@ -173,6 +174,9 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cuboid&seed=1&sound=off'));
   await expect(page.locator('.eyebrow')).toHaveText('직육면체의 전개도');
+  // 내 공방 카드: 이 차시에는 도감이 없다 — 정육면체 차시의 "도감 0 / 11"을 보이지 않는다 (별 · 도장만)
+  await expect(page.locator('.workshop-meta .chip')).toHaveCount(2);
+  await expect(page.locator('.workshop-meta')).not.toContainText('도감');
   await page.getByRole('button', { name: '시작하기' }).click();
   await expect(page.locator('.lesson-group h3')).toHaveText(['직육면체의 전개도']);
   const cards = page.locator('.stage-path .stage-card');
@@ -182,8 +186,9 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
   await expect(cards.nth(0)).toBeEnabled();
   for (const i of [1, 2, 3]) await expect(cards.nth(i)).toBeDisabled();
   await expect(page.locator('.stage-path .stage-thumb svg')).toHaveCount(4);
-  await expect(page.locator('.lesson-chips .collection-chip')).toHaveCount(0); // 찾은 전개도 모음은 화면에 보이지 않는다(가지 수는 단계 화면에서)
-  await expect(page.getByText('모은 별 0 / 12')).toBeVisible();
+  // 도감 칩이 화면 어디에도 없다: 찾은 전개도 모음은 보이지 않는 모음이고(가지 수는 단계 화면에서), 다른 차시(정육면체)의 도감·노트는 이 화면에 넣지 않는다
+  await expect(page.locator('.collection-chip')).toHaveCount(0);
+  await expect(page.locator('.head-chips')).toHaveText('모은 별 0 / 12'); // 이 차시의 일반 4단계 × 별 3개
 
   await cards.first().click();
   await expect(page.locator('.order-kind')).toHaveText('짝 찾기 주문');
@@ -211,17 +216,26 @@ test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   await page.getByRole('button', { name: '시작하기' }).click();
-  await expect(page.locator('.lesson-group h3')).toHaveText(['정육면체의 전개도', '직육면체의 전개도']);
+  // 두 차시의 묶음만 본다(data-lesson) — 다른 차시가 더해져도 이 검사가 달라지지 않게 전체 차시 목록·전체 별 수에 기대지 않는다
   const cube = page.locator('.lesson-group[data-lesson="cube"]');
   const cuboid = page.locator('.lesson-group[data-lesson="cuboid"]');
+  await expect(cube.locator('h3')).toHaveText('정육면체의 전개도');
+  await expect(cuboid.locator('h3')).toHaveText('직육면체의 전개도');
+  // 직육면체 차시는 정육면체 차시 다음에 온다(두 묶음의 앞뒤)
+  expect(await page.evaluate(() => {
+    const [a, b] = ['cube', 'cuboid'].map((id) => document.querySelector(`.lesson-group[data-lesson="${id}"]`));
+    return Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
   await expect(cube.locator('.stage-card')).toHaveCount(6);
   await expect(cube.locator('.collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
-  await expect(cuboid.locator('.lesson-no')).toHaveText('2차시');
   await expect(cuboid.locator('.stage-card')).toHaveCount(4);
   await expect(cuboid.locator('.collection-chip')).toHaveCount(0);
   await expect(cuboid.locator('.stage-card').nth(0)).toBeEnabled();
   await expect(cuboid.locator('.stage-card').nth(1)).toBeDisabled();
-  await expect(page.getByText('모은 별 0 / 24')).toBeVisible();
+  // 모은 별: 모든 차시의 일반 단계 × 3 (두 차시만 있으면 24) — 숫자는 고정하지 않는다
+  const starTotal = (await page.locator('.star-total').textContent()).match(/^모은 별 0 \/ (\d+)$/);
+  expect(Number(starTotal?.[1])).toBeGreaterThanOrEqual(24);
+  expect(Number(starTotal[1]) % 3).toBe(0);
   await cuboid.locator('.stage-card').first().click();
   await expect(page.getByRole('heading', { name: '만나는 선분' })).toBeVisible();
   await expect(page.locator('.play-chip')).toHaveText('1단계');
@@ -680,15 +694,19 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   // 학습 기록·결과 복사·도감 화면에는 이 모음이 보이지 않는다(정육면체 차시의 도감 칩 그대로). 기록을 지우면 찾은 전개도도 지워진다
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.btn-collection')).toHaveText('전개도 도감 0 / 11 ㆍ 노트 0 / 24');
+  await expect(page.locator('.btn-collection')).toContainText('0 / '); // 도감 수에 찾은 직육면체 전개도(3가지)가 들어가지 않는다
+  await expect(page.locator('.btn-collection')).not.toContainText(/직육면체|54/);
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
   });
   await page.getByRole('button', { name: '결과 복사' }).click();
   await expect(page.locator('.toast-info')).toContainText('결과를 복사했어요');
-  expect(await page.evaluate(() => window.copied.split('\n').at(-1))).toMatch(/^칭호: 견습생\(30점\) · 도장 \d개 · 도감 0\/11 · 노트 0\/24$/);
+  const copied = await page.evaluate(() => window.copied.split('\n').at(-1));
+  expect(copied).toMatch(/^칭호: 견습생\(30점\) · 도장 \d+개 · 도감 0\//);
+  expect(copied).not.toMatch(/직육면체|54/);
   await page.locator('.btn-collection').click();
-  await expect(page.locator('[data-collection]')).toHaveCount(2);
+  await expect(page.locator('[data-collection="cube-nets"]')).toHaveCount(1);
+  await expect(page.locator('[data-collection="cuboid-nets"]')).toHaveCount(0);
   await page.getByRole('button', { name: '학습 기록' }).click();
   await page.getByRole('button', { name: '기록 모두 지우기' }).click();
   await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
@@ -1334,4 +1352,414 @@ test.describe('직육면체 차시 (움직임 줄이기)', () => {
     await page.keyboard.press('Control+z');
     expect(errors).toEqual([]);
   });
+});
+
+// ── 검토 반영 (review-cuboid M2-1 · M2-2 · M2-3 · M2-5 · M2-6)과 점수 상한 (사용자 결정 2026-10-11) ─────────────────────────────
+/**
+ * 무대의 글자 요소(띠 이름표 · "✗ 겹쳐요" · 길이 글자 · 면 이름)와 면의 화면 위 네 꼭짓점을 잰다.
+ * 요소 안에 크기 없는 점 넷을 잠깐 넣어 그 자리를 읽는다 — 접힌(3D) 면 위의 글자도 기울어진 그대로의 사각형이 나온다.
+ * → [{ kind: 'face' | 'tag' | 'mark' | 'len' | 'label', face(면 id), text, quad: [[x, y] × 4], angle(글자가 누운 각도, °), mirrored }]
+ * 보이지 않는(visibility: hidden) 글자와 빈 글자는 뺀다. 띠 이름표의 방향은 글자를 담은 안쪽 span으로 잰다(종이 안쪽이 보이는 면에서는 그 span만 뒤집는다)
+ */
+const stageTexts = (page) => page.evaluate(() => {
+  const quadOf = (el) => {
+    const cs = getComputedStyle(el);
+    const before = el.style.position;
+    if (cs.position === 'static') el.style.position = 'relative';
+    const [w, h] = [el.offsetWidth, el.offsetHeight];
+    const [bw, bh] = [parseFloat(cs.borderLeftWidth) || 0, parseFloat(cs.borderTopWidth) || 0];
+    const dots = [[-bw, -bh], [w - bw, -bh], [w - bw, h - bh], [-bw, h - bh]].map(([x, y]) => {
+      const dot = document.createElement('i');
+      dot.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:0;height:0;`;
+      el.append(dot);
+      return dot;
+    });
+    const quad = dots.map((dot) => {
+      const b = dot.getBoundingClientRect();
+      return [b.left, b.top];
+    });
+    for (const dot of dots) dot.remove();
+    el.style.position = before;
+    return quad;
+  };
+  const out = [];
+  const add = (el, kind, face) => {
+    const cs = getComputedStyle(el);
+    if (cs.visibility === 'hidden' || cs.display === 'none' || !el.textContent.trim()) return;
+    const quad = quadOf(el);
+    const inner = kind === 'tag' ? quadOf(el.querySelector('span')) : quad;
+    const ux = [inner[1][0] - inner[0][0], inner[1][1] - inner[0][1]];
+    const uy = [inner[3][0] - inner[0][0], inner[3][1] - inner[0][1]];
+    out.push({ kind, face, text: el.textContent.trim(), quad, angle: Math.round(Math.atan2(ux[1], ux[0]) * 180 / Math.PI), mirrored: ux[0] * uy[1] - ux[1] * uy[0] < 0 });
+  };
+  for (const f of document.querySelectorAll('.fold-stage .net-face')) {
+    const id = f.dataset.face;
+    out.push({ kind: 'face', face: id, text: f.dataset.label, quad: quadOf(f), angle: 0, mirrored: false });
+    for (const tag of f.querySelectorAll('.edge-tag')) add(tag, 'tag', id);
+    add(f.querySelector('.face-mark'), 'mark', id);
+    for (const len of f.querySelectorAll('.face-len')) add(len, 'len', id);
+    add(f.querySelector('.face-label'), 'label', id);
+  }
+  return out;
+});
+/** 두 볼록 사각형이 포개진 넓이(px²) — 다각형 자르기 */
+function overlapArea(subject, clipper) {
+  const signed = (p) => p.reduce((sum, a, i) => sum + a[0] * p[(i + 1) % p.length][1] - a[1] * p[(i + 1) % p.length][0], 0) / 2;
+  const cl = signed(clipper) > 0 ? clipper : clipper.slice().reverse();
+  let out = subject;
+  for (let i = 0; i < cl.length && out.length > 0; i += 1) {
+    const [a, b] = [cl[i], cl[(i + 1) % cl.length]];
+    const inside = (p) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) >= 0;
+    const cut = (p, q) => {
+      const [d1, d2] = [[q[0] - p[0], q[1] - p[1]], [b[0] - a[0], b[1] - a[1]]];
+      const t = ((a[0] - p[0]) * d2[1] - (a[1] - p[1]) * d2[0]) / (d1[0] * d2[1] - d1[1] * d2[0]);
+      return [p[0] + t * d1[0], p[1] + t * d1[1]];
+    };
+    const next = [];
+    out.forEach((p, j) => {
+      const q = out[(j + 1) % out.length];
+      if (inside(p)) {
+        next.push(p);
+        if (!inside(q)) next.push(cut(p, q));
+      } else if (inside(q)) next.push(cut(p, q));
+    });
+    out = next;
+  }
+  return out.length >= 3 ? Math.abs(signed(out)) : 0;
+}
+/**
+ * 지금 장면의 표시를 잰다: 읽어야 하는 표시(띠 이름표 · "✗ 겹쳐요")는 거울상이 아니고 거꾸로 서지 않으며(처음 시점에서는 60° 안으로 바로 선다),
+ * 같은 면의 길이 글자와 포개지지 않는다. 처음 시점에서는 띠 이름표가 면 이름과도 포개지지 않는다. → { tags, marks }
+ */
+async function expectMarksReadable(page, label, { first = true } = {}) {
+  const list = await stageTexts(page);
+  const signs = list.filter((m) => m.kind === 'tag' || m.kind === 'mark');
+  for (const m of signs) {
+    expect(m.mirrored, `${label}: ${m.text} 거울상`).toBe(false);
+    expect(Math.abs(m.angle), `${label}: ${m.text} 누운 각도 ${m.angle}°`).toBeLessThan(first ? 60 : 90);
+    for (const other of list.filter((x) => x.face === m.face && (x.kind === 'len' || (first && m.kind === 'tag' && x.kind === 'label')))) {
+      expect(overlapArea(m.quad, other.quad), `${label}: ${m.kind} "${m.text}" × ${other.kind} "${other.text}" 포개짐(px²)`).toBeLessThanOrEqual(0.5);
+    }
+    if (first && m.kind === 'mark') {
+      // "✗ 겹쳐요" 띠는 제 면 안에 있다(긴 면을 돌려 세워도 밖으로 나가지 않는다)
+      const face = list.find((x) => x.kind === 'face' && x.face === m.face);
+      const whole = overlapArea(m.quad, m.quad);
+      expect(whole - overlapArea(m.quad, face.quad), `${label}: "${m.text}" 면 밖(px²)`).toBeLessThanOrEqual(Math.max(4, whole * 0.04));
+    }
+  }
+  return { tags: signs.filter((m) => m.kind === 'tag').length, marks: signs.filter((m) => m.kind === 'mark').length };
+}
+/** 조작판으로 몇 가지 자세를 돌려 보며 표시를 잰다 (끌기와 같은 보기 값을 바꾼다) */
+async function expectMarksReadableTurned(page, label) {
+  for (const [i, button] of ['view-right', 'view-up', 'view-up', 'view-left', 'view-down', 'view-down', 'view-left', 'view-left'].entries()) {
+    await page.locator(`.view-pad .${button}`).click();
+    if (i % 2 === 1) await expectMarksReadable(page, `${label} · 돌림 ${i + 1}`, { first: false });
+  }
+}
+
+test('접은 장면의 표시: 띠 이름표(선분 이름 · 길이)는 화면에서 바로 서고(거울상 0 · 거꾸로 0), "✗ 겹쳐요"와 띠 이름표가 길이 글자와 포개지지 않는다 — 처음 시점과 돌려 본 자세, 판별 · 알맞은 면 · 만나는 선분', async ({ page }) => {
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  const seen = { tags: 0, marks: 0 };
+  const count = (r) => {
+    seen.tags += r.tags;
+    seen.marks += r.marks;
+  };
+  for (const seed of ['1', '5']) {
+    // 판별: 틀리게 답하면 까닭 고르기 없이 바로 접어서 보여 준다(되는 전개도는 표시가 없어 접기를 기다리지 않고 넘어간다)
+    await page.goto(`${STAGE_URL('cuboid-judge', '', seed)}&fx=low`);
+    for (const [i, q] of questionsFor('cuboid-judge', seed).entries()) {
+      const at = `판별 시드 ${seed} ${i + 1}번(${q.intended ?? '됨'})`;
+      // 답하기 전(펼친 전개도): 띠·이름표가 없다 — 길이 글자는 면마다 둘씩 모두 보인다
+      expect((await stageTexts(page)).filter((m) => m.kind === 'len').length, at).toBe(12);
+      await expect(page.locator('.edge-tag, .edge-band')).toHaveCount(0);
+      await page.locator(`.answer-btn[data-answer="${q.expected === 'yes' ? 'no' : 'yes'}"]`).click();
+      if (!q.valid) {
+        await folded(page);
+        const r = await expectMarksReadable(page, at);
+        count(r);
+        if (q.intended === 'overlap') {
+          expect(r.marks, at).toBeGreaterThanOrEqual(2);
+          // "✗ 겹쳐요"가 켜진 면의 길이 글자는 숨는다
+          const shown = await page.locator('.net-face.is-overlap .face-len').evaluateAll((els) => els.map((el) => getComputedStyle(el).visibility));
+          expect(shown.length, at).toBeGreaterThanOrEqual(4);
+          expect(new Set(shown), at).toEqual(new Set(['hidden']));
+        } else {
+          expect(r.tags, at).toBe(2);
+          // 띠 이름표가 붙은 변과 같은 쪽 길이 글자는 숨는다(그 길이는 이름표가 말한다) — 이름표의 글자 = 숨은 길이 글자
+          const hidden = await page.locator('.net-face').evaluateAll((faces) => faces.flatMap((f) => [...f.querySelectorAll('.edge-tag')].map((tag) => {
+            const len = f.querySelector(f.classList.contains('has-tag-w') ? '.face-len.is-w' : '.face-len.is-h');
+            return { tag: tag.textContent, len: len.textContent, visibility: getComputedStyle(len).visibility };
+          })));
+          for (const h of hidden) expect([h.len, h.visibility], at).toEqual([h.tag, 'hidden']);
+        }
+        await expectMarksReadableTurned(page, at);
+      }
+      await page.locator('.next-btn').click();
+    }
+    // 알맞은 면: 틀린 카드 두 장(길이 하나만 다른 면 · 크기가 다른 면)
+    await page.goto(`${STAGE_URL('cuboid-face', '', seed)}&fx=low`);
+    const fq = questionsFor('cuboid-face', seed)[0];
+    for (const kind of ['length', 'pair']) {
+      await placeCard(page, fq, kind);
+      const at = `알맞은 면 시드 ${seed} ${kind}`;
+      count(await expectMarksReadable(page, at));
+      if (kind === 'length') await expectMarksReadableTurned(page, at);
+      await page.getByRole('button', { name: '펴고 다시 하기' }).click();
+    }
+    // 만나는 선분: 맞힌 뒤 두 선분의 이름표
+    await page.goto(`${STAGE_URL('cuboid-edge', '', seed)}&fx=low`);
+    for (const [i, q] of questionsFor('cuboid-edge', seed).slice(0, 2).entries()) {
+      const at = `만나는 선분 시드 ${seed} ${i + 1}번`;
+      await expect(page.locator('.edge-tag')).toHaveCount(0); // 답하기 전: 물음의 띠 하나뿐, 이름표 없음
+      await pickEdge(page, q.answer);
+      await folded(page);
+      const r = await expectMarksReadable(page, at);
+      expect(r.tags, at).toBe(2);
+      count(r);
+      expect((await page.locator('.edge-tag').allTextContents()).sort(), at).toEqual([q.segments[q.target].name, q.segments[q.answer].name].sort());
+      if (i === 0) await expectMarksReadableTurned(page, at);
+      await page.locator('.next-btn').click();
+    }
+  }
+  expect(seen.tags).toBe(2 * (4 + 4 + 4)); // 시드마다: 판별 길이형·크기형 2개씩, 알맞은 면 2개씩 × 2, 만나는 선분 2개씩 × 2
+  expect(seen.marks).toBeGreaterThanOrEqual(4);
+  expect(errors).toEqual([]);
+});
+
+test('접은 장면의 표시(내 맘대로 직육면체 전개도): 안 되는 모양의 까닭을 고른 뒤 "✗ 겹쳐요"는 제 면 안에서 바로 서고, 길이가 다른 두 변의 이름표도 바로 선다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '놓는 판 12 × 8에서 본다');
+  const errors = collectErrors(page);
+  await page.goto(`${STAGE_URL('cuboid-free')}&fx=low`);
+  await buildNet(page, BAD.overlap);
+  await foldIt(page, 'overlap');
+  const overlap = await expectMarksReadable(page, '겹침');
+  expect(overlap.marks).toBeGreaterThanOrEqual(2);
+  await expectMarksReadableTurned(page, '겹침');
+  await fresh(page);
+  await buildNet(page, BAD.length);
+  await foldIt(page, 'length');
+  const length = await expectMarksReadable(page, '길이');
+  expect(length.tags).toBe(2);
+  expect((await page.locator('.edge-tag').allTextContents()).sort()).toEqual(['1 cm', '2 cm']);
+  await expectMarksReadableTurned(page, '길이');
+  expect(errors).toEqual([]);
+});
+
+test('길이까지 살펴요의 크기형 까닭 문장: 문장이 말한 두 면은 접은 화면에서 실제로 마주 보고(법선이 반대) 크기가 다르다 — 시드 8개 (검토에서 틀렸던 시드 1 · 18 · 20 포함)', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  let checked = 0;
+  for (const seed of ['1', '18', '20', '3', '4', '6', '7', '9']) {
+    const questions = questionsFor('cuboid-judge', seed);
+    await page.goto(`${STAGE_URL('cuboid-judge', '', seed)}&fx=low`);
+    for (const [i, q] of questions.entries()) {
+      await page.locator(`.answer-btn[data-answer="${q.expected === 'yes' ? 'no' : 'yes'}"]`).click();
+      if (q.intended === 'pair') {
+        await folded(page); // 다른 문항은 접기를 기다리지 않고 넘어간다
+        const said = (await page.locator('.reason .note-text, .reason').first().innerText()).match(/(.) 면은 마주 보는 (.) 면과 크기가 달라요/);
+        expect(said, `시드 ${seed} ${i + 1}번 까닭 문장`).not.toBeNull();
+        expect([said[1], said[2]], `시드 ${seed} ${i + 1}번`).toEqual([q.changed, q.opposite]);
+        // 화면의 두 면: 면의 법선(면 변환 행렬의 z축)이 서로 반대이고, 적힌 크기(가로 × 세로)가 다르다
+        const faces = await page.locator('.net-face').evaluateAll((els, names) => names.map((name) => {
+          const el = els.find((x) => x.dataset.label === name);
+          const m = new DOMMatrixReadOnly(el.style.transform);
+          const n = [m.m31, m.m32, m.m33];
+          const len = Math.hypot(...n);
+          return { normal: n.map((v) => v / len), size: [Number(el.style.getPropertyValue('--fw')), Number(el.style.getPropertyValue('--fh'))].sort((a, b) => a - b).join('×') };
+        }), [said[1], said[2]]);
+        const dot = faces[0].normal.reduce((sum, v, k) => sum + v * faces[1].normal[k], 0);
+        expect(dot, `시드 ${seed} ${i + 1}번: ${said[1]} · ${said[2]} 면의 법선`).toBeLessThan(-0.999);
+        expect(faces[0].size, `시드 ${seed} ${i + 1}번: 두 면의 크기`).not.toBe(faces[1].size);
+        checked += 1;
+      }
+      await page.locator('.next-btn').click();
+    }
+  }
+  expect(checked).toBe(8);
+  expect(errors).toEqual([]);
+});
+
+test('한 차시만 열었을 때의 도감 칩: ?lesson=cube는 지금까지처럼 내 공방 카드에 "도감 0 / 11", 차시 머리에 도감·노트 칩. 차시를 고르지 않은 화면도 그대로다 (?lesson=cuboid는 위 검사)', async ({ page }) => {
+  await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off'));
+  await expect(page.locator('.workshop-meta .chip')).toHaveText(['별 0 / 12', '도감 0 / 11', '도장 0 / 12']);
+  await page.getByRole('button', { name: '시작하기' }).click();
+  await expect(page.locator('.head-chips .collection-chip')).toHaveCount(0);
+  await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
+  await expect(page.locator('.lesson-group')).toHaveCount(1);
+  // 차시를 고르지 않은 화면: 정육면체 차시의 도감은 그 차시 머리에, 내 공방 카드에는 도감 칩이 그대로 있다
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await expect(page.locator('.workshop-meta')).toContainText('도감 0 / ');
+  await page.getByRole('button', { name: '시작하기' }).click();
+  await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
+  await expect(page.locator('.lesson-group[data-lesson="cuboid"] .collection-chip')).toHaveCount(0);
+});
+
+/** 이 기기에서 찾은 직육면체 전개도를 저장소에 적어 둔다(점수는 그대로) — 여러 가지를 찾아 둔 기기에서 시작하려고 */
+async function seedFoundNets(page, ids) {
+  await page.evaluate((list) => {
+    const key = 'edu:net-workshop:collections';
+    const saved = JSON.parse(localStorage.getItem(key) ?? '{}') ?? {};
+    saved['cuboid-nets'] = Object.fromEntries(list.map((id, i) => [id, { at: 1000 + i, stage: 'cuboid-free' }]));
+    localStorage.setItem(key, JSON.stringify(saved));
+  }, ids);
+}
+const storedNetCount = (page) => page.evaluate(() => Object.keys((JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {})['cuboid-nets'] ?? {}).length);
+
+test('내 맘대로 직육면체 전개도 점수 상한: 이 기기에서 10번째까지는 새 발견 +5 · 만들기 성공 +2, 11번째부터는 새 전개도마다 +1(안내 문장도 그 점수). 새로 고침 · 나가기를 섞어도 10번째의 경계에서 두 번 받거나 못 받지 않는다. 화면 = 저장', async ({ page }) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const board = boardOf(page);
+  const ids = freeNets().filter((n) => centerOnBoard(n.net, board)).map((n) => n.id);
+  const [tenth, eleventh, twelfth, thirteenth] = ids.slice(30, 34);
+  await page.goto(STAGE_URL('cuboid-free'));
+  await seedFoundNets(page, ids.slice(0, 9)); // 아홉 가지를 찾아 둔 기기
+  await page.reload();
+  await expect(page.locator('.found-count')).toHaveText('지금까지 9가지');
+  // 10번째: 지금까지처럼 +7. 무대 도장은 "전개도 10가지!"
+  await buildNet(page, netRects(tenth, board));
+  await foldIt(page);
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2');
+  await expect(page.locator('.meta-xp b')).toHaveText('+7');
+  await expect(page.locator('.found-stamp')).toContainText('10가지!');
+  await expect(page.locator('.found-count')).toHaveText('지금까지 10가지');
+  expect([await storedXpOf(page), await storedNetCount(page)]).toEqual([7, 10]);
+  // 11번째: 모두 합쳐 +1 (만들기 성공 점수도 연속 점수도 없다). 쪽지가 까닭을 말한다
+  await fresh(page);
+  await buildNet(page, netRects(eleventh, board));
+  await foldIt(page);
+  await expect(page.locator('.reason .note-title')).toHaveText('새 전개도 발견');
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +1 · 10가지를 넘으면 새 전개도마다 1점이에요.');
+  await expect(page.locator('.meta-xp b')).toHaveText('+8');
+  await expect(page.locator('.found-stamp')).toContainText('11가지째');
+  expect([await storedXpOf(page), await storedNetCount(page)]).toEqual([8, 11]);
+  await noScroll(page, '11번째 전개도');
+  if (page.viewportSize().width > 900) await expectPanelFits(page, '11번째 전개도');
+  // 판 중간에 새로 고침: 점수와 가지 수가 남고, 12번째도 +1
+  await page.reload();
+  await expect(page.locator('.rank-chip small')).toHaveText('8점');
+  await expect(page.locator('.found-count')).toHaveText('지금까지 11가지');
+  await buildNet(page, netRects(twelfth, board));
+  await foldIt(page);
+  await expect(page.locator('.bonus-note')).toHaveText('새 발견 +1 · 10가지를 넘으면 새 전개도마다 1점이에요.');
+  await expect(page.locator('.meta-xp b')).toHaveText('+1');
+  expect([await storedXpOf(page), await storedNetCount(page)]).toEqual([9, 12]);
+  // [← 단계 선택]으로 나갔다 들어와 10번째 전개도를 다시 만든다(돌려서): 찾아본 전개도라 0점 — 경계의 전개도로 다시 받지 못한다
+  await page.getByRole('button', { name: '← 단계 선택' }).click();
+  await page.locator('.stage-card', { hasText: '내 맘대로 직육면체 전개도' }).click();
+  await buildNet(page, netRects(tenth, board, 5));
+  await foldIt(page);
+  await expect(page.locator('.bonus-note')).toHaveText('전에 찾은 전개도라 점수는 없어요.');
+  await expect(page.locator('.meta-xp b')).toHaveText('+0');
+  expect([await storedXpOf(page), await storedNetCount(page)]).toEqual([9, 12]);
+  // 13번째를 찾고(+1) 2가지로 끝낸다: 결과의 칸 점수 합 + 단계 점수 = 모은 점수 = 저장
+  await fresh(page);
+  await buildNet(page, netRects(thirteenth, board));
+  await foldIt(page);
+  await expect(page.locator('.meta-xp b')).toHaveText('+1');
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
+  const sum = await resultXpSum(page);
+  expect([sum.tiles, sum.line, sum.gained]).toEqual([1, 9, 10]);
+  await expect(page.locator('.behavior', { hasText: '지금까지 찾은 전개도' })).toContainText('13가지');
+  expect([await storedXpOf(page), await storedNetCount(page)]).toEqual([19, 13]); // 7 + 1 + 1 + 0 + 1 + 단계 완료 5 · 별 2개 4
+  expect(errors).toEqual([]);
+});
+
+test('점수 상한의 경계에서 탭 두 개: 아홉 가지를 찾아 둔 기기를 두 탭에서 열어 섞어 접어도, 저장된 점수는 늘 저장된 가지 수로 정해진다(10가지 = 7점, 그 뒤 한 가지에 1점) — 10번째 점수를 두 번 받지 못한다', async ({ page, context }) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const board = boardOf(page);
+  const ids = freeNets().filter((n) => centerOnBoard(n.net, board)).map((n) => n.id);
+  const [X, Y, Z] = ids.slice(40, 43).map((id) => netRects(id, board));
+  const foldNow = async (p) => {
+    await p.bringToFront();
+    await p.locator('.free-fold').click();
+    await expect(p.locator('.free-result')).toBeVisible();
+  };
+  const again = async (p) => {
+    await p.locator('.free-new').click();
+    await expect(p.locator('.rect-tile')).toHaveCount(0);
+  };
+  /** 저장된 한 쌍: 가지 수 n(9가지에서 시작, 점수 0)이면 점수는 10번째의 7점 + 그 뒤 한 가지에 1점 */
+  const expectPair = async (p, nets, label) => {
+    const pair = [await storedNetCount(p), await storedXpOf(p)];
+    expect(pair, label).toEqual([nets, nets <= 9 ? 0 : 7 + (nets - 10)]);
+  };
+  const tabA = page;
+  await tabA.goto(STAGE_URL('cuboid-free'));
+  await seedFoundNets(tabA, ids.slice(0, 9));
+  await tabA.reload();
+  const tabB = await context.newPage();
+  await tabB.goto(STAGE_URL('cuboid-free')); // 두 탭 모두 아홉 가지에서 시작
+  await expect(tabB.locator('.found-count')).toHaveText('지금까지 9가지');
+  // A가 10번째(X)를 찾는다: +7
+  await tabA.bringToFront();
+  await buildNet(tabA, X);
+  await foldNow(tabA);
+  await expect(tabA.locator('.meta-xp b')).toHaveText('+7');
+  await expectPair(tabA, 10, 'A: X');
+  // B(아직 아홉 가지로 알고 있다)가 다른 전개도(Y)를 찾는다: B에게도 10번째라 +7로 보이지만, 저장은 B의 한 쌍(10가지 · 7점) — 14점이 되지 않는다
+  await tabB.bringToFront();
+  await buildNet(tabB, Y);
+  await foldNow(tabB);
+  await expect(tabB.locator('.meta-xp b')).toHaveText('+7');
+  await expectPair(tabB, 10, 'B: Y');
+  // A가 하나 더(Z): A에게는 11번째라 +1 → 저장은 A의 한 쌍(11가지 · 8점)
+  await tabA.bringToFront();
+  await again(tabA);
+  await buildNet(tabA, Z);
+  await foldNow(tabA);
+  await expect(tabA.locator('.meta-xp b')).toHaveText('+8');
+  await expect(tabA.locator('.bonus-note')).toContainText('새 발견 +1');
+  await expectPair(tabA, 11, 'A: Z');
+  // B도 Z를: B에게도 11번째 +1 → 저장은 B의 한 쌍(11가지 · 8점)
+  await tabB.bringToFront();
+  await again(tabB);
+  await buildNet(tabB, Z);
+  await foldNow(tabB);
+  await expect(tabB.locator('.meta-xp b')).toHaveText('+8');
+  await expectPair(tabB, 11, 'B: Z');
+  // 새 탭: 저장된 것(B의 한 쌍)에 없는 X는 12번째라 +1뿐이다 — 10번째의 7점을 다시 받지 못한다
+  const tabC = await context.newPage();
+  await tabC.goto(STAGE_URL('cuboid-free'));
+  await expect(tabC.locator('.rank-chip small')).toHaveText('8점');
+  await expect(tabC.locator('.found-count')).toHaveText('지금까지 11가지');
+  await buildNet(tabC, X);
+  await foldNow(tabC);
+  await expect(tabC.locator('.meta-xp b')).toHaveText('+1');
+  await expectPair(tabC, 12, 'C: X');
+  await again(tabC);
+  await buildNet(tabC, Y);
+  await foldNow(tabC);
+  await expect(tabC.locator('.meta-xp b')).toHaveText('+1'); // 저장된 것에 있던 전개도: 0점
+  await expectPair(tabC, 12, 'C: Y');
+  expect(errors).toEqual([]);
+});
+
+test('힌트 그림자는 이 기기에서 아직 찾지 않은 전개도다: 가장 작은 전개도를 찾아 둔 기기에서는 그다음 전개도의 자리가 점선으로 보인다', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '놓는 판 12 × 8에서 본다');
+  const errors = collectErrors(page);
+  const board = boardOf(page);
+  const first = cuboidHintNet(new Set(), board);
+  const next = cuboidHintNet(new Set(), board, new Set([first.id]));
+  expect(next.id).not.toBe(first.id);
+  await page.goto(STAGE_URL('cuboid-free'));
+  await seedFoundNets(page, [first.id]);
+  await page.reload();
+  await expect(page.locator('.found-count')).toHaveText('지금까지 1가지');
+  // 안 되는 모양을 연달아 2번 접으면 힌트가 켜진다(글 → 그림자)
+  await buildNet(page, BAD.overlap);
+  await foldIt(page, 'skip');
+  await fresh(page);
+  await buildNet(page, BAD.length);
+  await foldIt(page, 'skip');
+  await fresh(page);
+  await page.locator('.tool-hint').click();
+  await page.locator('.tool-hint').click();
+  const shadow = await page.locator('.rect-shadow').evaluateAll((els) => els.map((el) => ['x', 'y', 'w', 'h'].map((k) => Number(el.style.getPropertyValue(`--${k}`))).join(',')).sort());
+  const want = (net) => centerOnBoard(net.net, board).map((r) => [r.x, r.y, r.w, r.h].join(',')).sort();
+  expect(shadow).toEqual(want(next));
+  expect(shadow).not.toEqual(want(first));
+  expect(errors).toEqual([]);
 });

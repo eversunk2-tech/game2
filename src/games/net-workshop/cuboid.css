@@ -18,8 +18,10 @@
 }
 .face-len.is-w { left: 50%; top: calc(4px * var(--k, 1)); transform: translateX(-50%); }
 .face-len.is-h { left: calc(4px * var(--k, 1)); top: 50%; transform: translateY(-50%); }
-/* 길이 이름표가 있는 면: 면 이름(가~바)을 가운데에서 오른쪽 아래로 조금 옮겨, 좁은 면에서도 세로 길이와 겹치지 않게 */
-.net-face.has-len .face-label { transform: translate(calc(var(--unit, 40px) * 0.34), calc(var(--unit, 40px) * 0.14)); }
+/* 직사각형 면(.is-rect: 정육면체가 아닌 입체)의 이름(가~바) 자리: view3d.js가 --lx · --ly(칸)로 준다.
+   길이 이름표가 있는 면은 가운데에서 오른쪽 아래로 조금 옮겨 좁은 면에서도 세로 길이와 겹치지 않게 —
+   면 안쪽을 돌려 세우거나(다 접힌 뒤의 표시) 뒤집어도(종이 안쪽이 보일 때) 같은 자리에 있다. "✗ 겹쳐요"가 켜진 면은 띠 위로 조금 올린다 */
+.net-face.is-rect .face-label { transform: translate(calc(var(--unit, 40px) * var(--lx, 0)), calc(var(--unit, 40px) * var(--ly, 0))); }
 /* 종이 안쪽이 보이는 면: 글자가 거울상이 되지 않게 제자리에서 뒤집는다 */
 .net-face.is-back .face-len.is-w { transform: translateX(-50%) scaleX(-1); }
 .net-face.is-back .face-len.is-h { transform: translateY(-50%) scaleX(-1); }
@@ -76,10 +78,10 @@
   background-image: repeating-linear-gradient(45deg, var(--paper) 0 calc(3px * var(--k, 1)), transparent calc(3px * var(--k, 1)) calc(8px * var(--k, 1)));
 }
 .edge-tag {
-  --tag-in: max(calc(17px * var(--k, 1)), calc(var(--unit, 40px) * 0.42));
   position: absolute;
   z-index: 2;
-  transform: translate(-50%, -50%) translate(calc(var(--ix) * var(--tag-in)), calc(var(--iy) * var(--tag-in)));
+  /* 자리(left · top: 변 안쪽, 면 이름·길이 글자를 피한 곳)와 돌림(--tag-turn: 화면에서 바로 읽히는 쪽, 90° 단위)은 view3d.js가 준다 */
+  transform: translate(-50%, -50%) rotate(var(--tag-turn, 0deg));
   padding: calc(1px * var(--k, 1)) calc(5px * var(--k, 1));
   border-radius: calc(6px * var(--k, 1));
   border: calc(1.5px * var(--k, 1)) solid var(--ink);
@@ -94,6 +96,23 @@
 }
 .edge-tag > span { display: inline-block; }
 .net-face.is-back .edge-tag > span { transform: scaleX(-1); }
+/* 까닭 표시와 길이 글자가 포개지지 않게 (common-rules 6절):
+   · 띠 이름표가 붙은 변과 같은 쪽 길이 글자는 숨긴다 — 그 길이는 띠 이름표가 말한다(위·아래 변 = 가로, 왼쪽·오른쪽 변 = 세로)
+   · 남은 길이 글자도 이름표와 포개지면 숨긴다(.is-covered — view3d.js가 잰다)
+   · "✗ 겹쳐요"가 켜진 면(다 접힌 뒤)은 길이 글자를 숨긴다 — 그 면에서 읽을 것은 겹침이다 */
+.net-face.has-tag-w .face-len.is-w,
+.net-face.has-tag-h .face-len.is-h,
+.face-len.is-covered,
+.marks-on .net-face.is-overlap .face-len { visibility: hidden; }
+/* 직사각형 면의 안쪽을 90° 돌려 글자를 바로 세울 때(view3d.js가 .is-quarter를 준다): 안쪽 상자의 가로·세로를 바꿔 면에 꼭 맞게 —
+   "✗ 겹쳐요" 띠가 긴 면 밖으로 나가지 않는다 */
+.net-face.is-quarter .face-inner {
+  inset: auto;
+  left: calc(50% - (var(--unit, 40px) * var(--fh, 1) - 5px * var(--k, 1)) / 2);
+  top: calc(50% - (var(--unit, 40px) * var(--fw, 1) - 5px * var(--k, 1)) / 2);
+  width: calc(var(--unit, 40px) * var(--fh, 1) - 5px * var(--k, 1));
+  height: calc(var(--unit, 40px) * var(--fw, 1) - 5px * var(--k, 1));
+}
 
 /* ── 만나는 선분: 보기 4개 (2 × 2) ── */
 .edge-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

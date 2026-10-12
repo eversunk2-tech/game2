@@ -8,6 +8,8 @@
  * - 별은 이번 판에 찾은 서로 다른 전개도 수(2가지부터 끝낼 수 있고 3가지면 별 3개). 안 되는 모양을 접어도 별이 깎이지 않는다
  * - 점수는 전개도마다 이 기기에서 한 번만: 처음 찾은 전개도 = 만들기 성공(scored: 'once') + 등록 점수, 그 자리에서 바로 저장.
  *   찾아본 전개도는 기록에는 넣고 점수는 없다(scored: false). 같은 모양(돌리기·뒤집기 포함)을 이번 판에 다시 접으면 기록도 없다
+ * - 점수 상한(사용자 결정 2026-10-11): 이 기기에서 처음 찾는 10가지까지만 위와 같고, 11번째부터는 새로 찾을 때마다 등록 +1점뿐이다
+ *   (만들기 성공 점수 없음 — scored: false). 몇 번째인지는 엔진이 등록한 뒤의 가지 수(ctx.collect의 count)로 센다
  * - 안 되는 모양은 끝없이 많아 "모양마다 한 번"을 적어 둘 수 없다 → 기록(오개념 tag)과 까닭 고르기는 있지만 점수는 없다
  * - 54가지는 도감 칸으로 보이지 않는다(spec 16-2): 이번 판에 찾은 것 3칸과 "지금까지 n가지"만 보인다. 5가지 · 10가지째에는 무대 도장
  */
@@ -23,6 +25,7 @@ import {
   CUBOID_FREE_REPLAY_NOTE,
   CUBOID_HINT_AFTER_INVALID,
   CUBOID_HINT_TEXT,
+  CUBOID_LATER_NOTE,
   CUBOID_NETS_ID,
   FREE_BOX,
   FREE_CARDS,
@@ -36,6 +39,7 @@ import {
   cuboidFreeSummary,
   cuboidHintNet,
   freeNets,
+  isLaterNet,
   judgeCuboidReason,
   primaryCuboidProblem,
   rectReadiness,
@@ -228,8 +232,8 @@ export function playCuboidFree(stage, ctx) {
       hintText.textContent = '그림자 힌트';
       return;
     }
-    // 그림자: 이번 판에서 아직 못 찾은 전개도 하나
-    const net = cuboidHintNet(session.found(), size);
+    // 그림자: 이번 판에서 아직 못 찾은 전개도 하나 — 이 기기에서 아직 찾지 않은 것을 먼저
+    const net = cuboidHintNet(session.found(), size, deviceFound());
     const rects = net ? centerOnBoard(net.net, size) : null;
     if (!rects) return;
     hintLevel = 2;
@@ -302,8 +306,10 @@ export function playCuboidFree(stage, ctx) {
     const collected = step.collect ? ctx.collect(step.collect.id, step.collect.item) : null;
     const afterCollect = playXp();
     const first = step.first && Boolean(collected?.isNew);
+    // 점수 상한: 이 기기에서 11번째부터 찾은 전개도는 등록 +1점뿐이다(엔진이 xpAfter로 준다) — 만들기 성공 점수는 주지 않는다
+    const later = first && isLaterNet(collected.count);
     // 기록: 접은 것 하나가 학습 기록 하나 — 직육면체가 되면 맞음, 안 되면 그 까닭의 오개념 tag (안 되는 모양은 점수 없음)
-    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.valid, tag: step.tag, given: step.given, expected: CUBOID_FREE_EXPECTED, scored: first ? 'once' : false });
+    if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.valid, tag: step.tag, given: step.given, expected: CUBOID_FREE_EXPECTED, scored: first && !later ? 'once' : false });
     const gain = { discover: afterCollect - before, answer: playXp() - afterCollect };
     earned.answer += gain.answer;
     earned.nets += gain.discover;
@@ -337,7 +343,7 @@ export function playCuboidFree(stage, ctx) {
     }
 
     showNote(step, feedback);
-    showBonus(step, first, gain);
+    showBonus(step, first, gain, later);
     renderFound();
     setProgress();
 
@@ -381,8 +387,8 @@ export function playCuboidFree(stage, ctx) {
     noteSlot.replaceChildren(note);
   }
 
-  /** 보너스 쪽지: 이번 접기로 엔진이 준 점수를 글로 보인다. 점수는 이 기기에서 처음 찾은 전개도에만 있다 */
-  function showBonus(step, first, gain) {
+  /** 보너스 쪽지: 이번 접기로 엔진이 준 점수를 글로 보인다. 점수는 이 기기에서 처음 찾은 전개도에만 있다(11번째부터는 +1점씩 — later) */
+  function showBonus(step, first, gain, later = false) {
     const peek = ctx.reward.peek?.();
     bonusSlot.replaceChildren();
     if (!peek?.on || !step.valid) return;
@@ -400,7 +406,7 @@ export function playCuboidFree(stage, ctx) {
       parts.push(`만들기 성공 +${Math.min(gain.answer, XP.first)}`);
       if (gain.answer > XP.first) parts.push(`연속 +${gain.answer - XP.first}`);
     }
-    if (parts.length > 0) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, parts.join(' · '))));
+    if (parts.length > 0) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, parts.join(' · ')), later ? ` · ${CUBOID_LATER_NOTE}` : null));
   }
 
   const actionButton = (cls, iconName, text, onclick, { after = false } = {}) => h('button', { type: 'button', class: `btn ${cls}`, onclick },

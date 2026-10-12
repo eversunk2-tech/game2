@@ -80,10 +80,13 @@ function orientNet(net, rng, fit = NET_FIT) {
   return wide.length > 0 ? rng.pick(wide) : null;
 }
 
-/** 무대에 들어가는 전개도 하나: 직육면체 고르기 → 54가지 가운데 하나 → 돌리기·뒤집기 → 면 이름 섞기. used에 있는 것은 다시 고르지 않는다 */
-function pickNet(rng, used = new Set()) {
+/**
+ * 무대에 들어가는 전개도 하나: 직육면체 고르기 → 54가지 가운데 하나 → 돌리기·뒤집기 → 면 이름 섞기. used에 있는 것은 다시 고르지 않는다.
+ * boxes: 고를 직육면체(주지 않으면 문항에 쓰는 것 모두)
+ */
+function pickNet(rng, used = new Set(), boxes = QUESTION_BOXES) {
   for (let guard = 0; guard < 200; guard += 1) {
-    const dims = rng.pick(QUESTION_BOXES);
+    const dims = rng.pick(boxes);
     const pool = cuboidNets(dims).filter((n) => fits(n.size) && !used.has(n.id));
     if (pool.length === 0) continue;
     const item = rng.pick(pool);
@@ -188,8 +191,12 @@ export const CUBOID_TAG_OF_PROBLEM = Object.freeze({
   gap: TAGS.edgeLength, // 면 6장이 겹치지 않는데 틈이 생기면 맞닿아야 할 모서리가 어긋난 것이다
 });
 
-/** 까닭 문장. opposite: 크기를 바꾼 면과 마주 보는 면의 이름(문항이 알 때) */
-export function explainCuboidProblem(net, problem, { opposite = null } = {}) {
+/**
+ * 까닭 문장. changed · opposite: 크기를 바꾼 면과 그 면이 마주 보는 면의 이름(문항이 알 때 — 길이까지 살펴요의 크기형).
+ * 크기형은 problem.faces(짝이 남은 면)로 말하지 않는다: 바꾼 크기가 그 상자의 다른 면 크기와 같아지면 같은 크기가 세 장이 되어
+ * "짝이 남은 면"이 바꾼 면이 아닐 수 있다(그 면은 문장의 맞은편 면과 마주 보지도 않는다).
+ */
+export function explainCuboidProblem(net, problem, { changed = null, opposite = null } = {}) {
   if (!problem) return '';
   const names = (problem.faces ?? []).map((id) => labelOf(net, id));
   if (problem.type === 'vertex-full') return '면이 한 점을 빈틈없이 둘러싸면 접을 수 없어요. 직육면체의 한 꼭짓점에는 면이 3개만 모여요.';
@@ -199,7 +206,7 @@ export function explainCuboidProblem(net, problem, { opposite = null } = {}) {
   }
   if (problem.type === 'face-pair') {
     const tail = '직육면체에서 마주 보는 면은 모양과 크기가 같아요.';
-    return opposite ? `${names[0]} 면은 마주 보는 ${opposite} 면과 크기가 달라요. ${tail}` : `${names[0]} 면과 크기가 같은 면이 없어요. ${tail}`;
+    return changed && opposite ? `${changed} 면은 마주 보는 ${opposite} 면과 크기가 달라요. ${tail}` : `크기가 같은 면이 두 장씩 짝을 이루지 않아요. ${tail}`;
   }
   if (problem.type === 'edge-length') {
     const [a, b] = names;
@@ -289,16 +296,31 @@ function makeEdgeQuestions(stage, rng) {
     const sameOf = (t) => othersOf(t).filter((i) => !cyclicNear(i, t, n) && Math.abs(segments[i].length - segments[t].length) < 1e-9);
     // 길이가 같은 다른 선분(바로 옆이 아닌 것)이 있는 물음을 먼저 고른다: "길이가 같은 선분"만 찾아서는 맞힐 수 없게
     const tricky = far.filter((t) => sameOf(t).length > 0);
-    const target = rng.pick(tricky.length > 0 ? tricky : far);
+    // 정답 보기가 놓일 자리(보기는 테두리 순서로 늘어놓는다)를 먼저 정한다: 네 자리에 고르게 나와야 "끝 보기"처럼 자리로 찍어서 맞힐 수 없다
+    const want = rng.int(0, 3);
+    let chosen = null;
+    let spare = null;
+    for (const t of rng.shuffle(tricky.length > 0 ? tricky : far)) {
+      // 오답 보기 3개: 바로 옆 선분 하나는 꼭 넣고(오개념 "가까이 있는 선분끼리 만난다"), 길이가 같은 선분, 나머지는 아무 선분
+      const sets = [];
+      for (const a of nearOf(t)) {
+        for (const b of (sameOf(t).length > 0 ? sameOf(t) : [null])) {
+          const base = [a, b].filter((v) => v != null);
+          const free = othersOf(t).filter((i) => !base.includes(i));
+          if (base.length === 2) for (const c of free) sets.push([...base, c]);
+          else for (let i = 0; i < free.length; i += 1) for (let j = i + 1; j < free.length; j += 1) sets.push([...base, free[i], free[j]]);
+        }
+      }
+      const fit = sets.filter((set) => set.filter((i) => i < pairs[t]).length === want);
+      spare ??= { target: t, picked: rng.pick(sets) }; // 그 자리가 되는 물음이 없을 때 쓴다
+      if (fit.length === 0) continue;
+      chosen = { target: t, picked: rng.pick(fit) };
+      break;
+    }
+    const { target, picked } = chosen ?? spare;
     const answer = pairs[target];
-    const others = othersOf(target);
     const near = nearOf(target);
     const same = sameOf(target);
-    // 오답 보기 3개: 바로 옆 선분 하나는 꼭 넣고(오개념 "가까이 있는 선분끼리 만난다"), 길이가 같은 선분, 나머지는 아무 선분
-    const picked = [rng.pick(near)];
-    if (same.length > 0) picked.push(rng.pick(same));
-    const rest = rng.shuffle(others.filter((i) => !picked.includes(i)));
-    while (picked.length < 3) picked.push(rest.shift());
     const kindOf = (i) => (i === answer ? 'answer' : near.includes(i) ? 'near' : same.includes(i) ? 'same' : 'other');
     questions.push({
       kind: 'edge',
@@ -353,15 +375,19 @@ function placeCard(parentRect, side, card) {
 function makeFaceQuestions(stage, rng) {
   const used = new Set();
   const questions = [];
-  for (let guard = 0; questions.length < stage.count && guard < 600; guard += 1) {
+  // 알맞은 카드가 세 장 가운데 몇 번째로 큰 카드일지 문항마다 먼저 정한다(0 가장 큼 · 1 가운데 · 2 가장 작음):
+  // 고르게 나와야 "가운데 크기 카드"처럼 크기 순서로 찍어서 맞힐 수 없다. 그 순위가 되는 전개도를 찾을 때까지 전개도를 바꿔 가며 찾는다
+  // (전개도마다 순위를 다시 정하면, 만들기 어려운 순위 — 가장 작은 카드 — 가 덜 나온다).
+  // 직육면체도 문항마다 먼저 정한다: 상자마다 순위가 고르게 나와야 "이 상자는 가장 작은 카드"처럼 찍을 수 없다
+  let rank = rng.int(0, 2);
+  let box = rng.pick(QUESTION_BOXES);
+  let misses = 0;
+  for (let guard = 0; questions.length < stage.count && guard < 8000; guard += 1) {
     const tried = new Set(used);
-    const { id, dims, net } = pickNet(rng, tried);
+    const { id, dims, net } = pickNet(rng, tried, misses < 400 ? [box] : QUESTION_BOXES);
     const rects = net.faces.map(faceRect);
     const classes = [[dims[0], dims[1]], [dims[1], dims[2]], [dims[0], dims[2]]];
     const isClass = (w, h) => classes.some(([p, q]) => (p === w && q === h) || (p === h && q === w));
-    // 알맞은 카드가 세 장 가운데 몇 번째로 큰 카드일지 먼저 정한다(0 가장 큼 · 1 가운데 · 2 가장 작음):
-    // 고르게 나와야 "가운데 크기 카드"처럼 크기 순서로 찍어서 맞힐 수 없다
-    const rank = rng.int(0, 2);
     let made = null;
     for (const leaf of rng.shuffle(leavesOf(net))) {
       const L = leaf.along;
@@ -375,7 +401,7 @@ function makeFaceQuestions(stage, rng) {
       for (const off of offs) for (const other of otherClass) combos.push([off, other]);
       for (const [off, other] of rng.shuffle(combos)) {
         const bigger = Number(L * off > L * M) + Number(other[0] * other[1] > L * M);
-        if (guard < 400 && bigger !== rank) continue; // 오래 못 찾으면 순서를 따지지 않는다
+        if (misses < 800 && bigger !== rank) continue; // 아주 오래 못 찾으면 상자를, 그래도 못 찾으면 순서를 따지지 않는다
         const cards = [
           { kind: 'answer', w: L, h: M },
           { kind: 'length', w: L, h: off },
@@ -393,8 +419,14 @@ function makeFaceQuestions(stage, rng) {
       }
       if (made) break;
     }
-    if (!made) continue;
+    if (!made) {
+      misses += 1;
+      continue;
+    }
     used.add(id);
+    rank = rng.int(0, 2);
+    box = rng.pick(QUESTION_BOXES);
+    misses = 0;
     const { leaf, cards } = made;
     const face = net.faces[leaf.index];
     const base = fromRects(rects.filter((_, i) => i !== leaf.index), { labels: net.faces.filter((_, i) => i !== leaf.index).map((f) => f.label), dims });
@@ -463,6 +495,8 @@ function mutations(net, kind) {
       if (kind === 'overlap' && !(types.has('overlap') && onlyTypes(problems, ['overlap', 'gap']))) return;
       if (kind === 'length' && !(hingeLength(problems) && !types.has('overlap') && !types.has('face-pair') && !types.has('vertex-full'))) return;
       if (kind === 'pair' && !(types.has('face-pair') && !hingeLength(problems) && !types.has('overlap') && !types.has('vertex-full'))) return;
+      // 크기형: 까닭 문장이 말할 두 면(바꾼 면 · 그 맞은편)이 고친 전개도를 접었을 때도 마주 보고, 크기가 정말 다른 것만 쓴다
+      if (kind === 'pair' && !facesOpposite(made, extra.changed, extra.opposite)) return;
       out.push({ net: made, problems, face: net.faces[leaf.index].id, gap: Math.abs(leaf.along - leaf.out), ...extra });
     };
     if (kind === 'overlap') {
@@ -484,13 +518,26 @@ function mutations(net, kind) {
       for (const at of ['start', 'end']) add(attachRect(rects[leaf.parent], leaf.side, leaf.out, leaf.along, at), leaf.parent);
     } else {
       // 끝 면의 한 변(붙은 변이 아닌 쪽)을 1 cm 늘이거나 줄인다: 마주 보는 면과 크기가 달라진다
+      const changed = net.faces[leaf.index].label;
       const opposite = labelOf(net, oppositeFace(net, net.faces[leaf.index].id));
       for (const depth of [leaf.out - 1, leaf.out + 1]) {
-        if (depth >= 1) add(attachRect(rects[leaf.parent], leaf.side, leaf.along, depth), leaf.parent, { opposite });
+        if (depth >= 1) add(attachRect(rects[leaf.parent], leaf.side, leaf.along, depth), leaf.parent, { changed, opposite });
       }
     }
   }
   return out;
+}
+
+/** 이름이 a · b인 두 면이 접었을 때 마주 보고(법선이 반대) 크기가 다른가 */
+function facesOpposite(net, a, b) {
+  const fa = net.faces.find((f) => f.label === a);
+  const fb = net.faces.find((f) => f.label === b);
+  if (!fa || !fb || oppositeFace(net, fa.id) !== fb.id) return false;
+  const size = (f) => {
+    const r = faceRect(f);
+    return [Math.min(r.w, r.h), Math.max(r.w, r.h)].join('×');
+  };
+  return size(fa) !== size(fb);
 }
 
 /** 그 직육면체의 되는 전개도(가로로 길게 놓은 것)에서 나오는 테두리 크기 '가로×세로' */
@@ -509,7 +556,7 @@ function makeCJudgeQuestions(stage, rng) {
   return plan.map((intended, i) => {
     for (let guard = 0; guard < 200; guard += 1) {
       const { id, dims, net } = pickNet(rng, new Set(used));
-      let item = { net, problems: [], opposite: null };
+      let item = { net, problems: [], changed: null, opposite: null };
       if (intended) {
         // 고친 전개도의 테두리 크기가 되는 전개도에서도 나오는 크기인 것만 쓴다 — 전개도의 가로·세로 크기로 답을 짐작하기 어렵게
         let options = mutations(net, intended).filter((o) => isUsualSize(dims, o.net));
@@ -530,6 +577,8 @@ function makeCJudgeQuestions(stage, rng) {
         valid,
         problems: item.problems,
         intended,
+        // 크기형: 크기를 바꾼 면과 그 면이 마주 보는 면의 이름 (까닭 문장이 이 두 면을 말한다)
+        changed: item.changed ?? null,
         opposite: item.opposite ?? null,
         expected: valid ? 'yes' : 'no',
       };
@@ -547,7 +596,7 @@ export function judgeCuboidAnswer(question, answer) {
     return { correct, expected, tag: TAGS.variety, message: '이 전개도는 접으면 직육면체가 돼요. 만나는 선분의 길이가 모두 같고, 마주 보는 면의 크기도 같아요.' };
   }
   const problem = primaryCuboidProblem(question.problems);
-  const why = explainCuboidProblem(net, problem, { opposite: question.opposite });
+  const why = explainCuboidProblem(net, problem, { changed: question.changed, opposite: question.opposite });
   if (correct) return { correct, expected, tag: null, message: `맞아요! ${why}` };
   return { correct, expected, tag: CUBOID_TAG_OF_PROBLEM[problem.type] ?? TAGS.edgeLength, message: why };
 }
@@ -582,10 +631,21 @@ export const CUBOID_FREE_GOAL = 2;
 export const CUBOID_FREE_FULL = 3;
 /** 찾은 전개도를 이 기기에 적어 두는 모음(main.js collections, 화면에는 보이지 않는 quiet 모음)의 id */
 export const CUBOID_NETS_ID = 'cuboid-nets';
+/**
+ * 점수 상한 (사용자 결정 2026-10-11): 이 기기에서 처음 찾는 CUBOID_FULL_SCORE_NETS가지까지는 만들기 성공(엔진 규칙: +2 · 연속) + 등록 +5,
+ * 그 뒤로는 새로 찾을 때마다 모두 합쳐 CUBOID_LATER_XP점(만들기 성공 점수도 따로 없다). 54가지를 다 찾아도 10 × 7 + 44 × 1 = 114점
+ * (+ 연속 · 단계 점수) — 어떤 순서로, 몇 판에 나눠 찾아도 같다. 몇 번째인지는 모음에 든 가지 수로 센다(엔진 모음의 xpAfter와 같은 값).
+ */
+export const CUBOID_FULL_SCORE_NETS = 10;
+export const CUBOID_LATER_XP = 1;
+/** 이 기기에서 count번째로 찾은 전개도가 상한 뒤의 것인가 (점수는 등록 CUBOID_LATER_XP뿐) */
+export const isLaterNet = (count) => count > CUBOID_FULL_SCORE_NETS;
 export const CUBOID_FREE_EXPECTED = '전개도';
 export const CUBOID_HINT_AFTER_INVALID = 2;
 export const CUBOID_HINT_TEXT = '길이가 3 cm인 변끼리 이어 네 장을 한 줄로 놓고, 남은 작은 면 두 장을 위와 아래에 붙여 봐요.';
 export const CUBOID_FREE_REPLAY_NOTE = '처음 찾은 전개도는 점수를 받아요. 찾아본 전개도는 다시 만들어도 점수가 없어요.';
+/** 보너스 쪽지에 덧붙이는 말: 상한 뒤(11번째부터)의 새 전개도는 1점씩이다 */
+export const CUBOID_LATER_NOTE = `${CUBOID_FULL_SCORE_NETS}가지를 넘으면 새 전개도마다 ${CUBOID_LATER_XP}점이에요.`;
 export const CUBOID_NOTE_BEFORE_PICK = '접어 보니 직육면체가 안 돼요. 왜 그런지 골라 볼까요?';
 /** 놓는 판 아래 안내 (접기 전). 까닭 낱말을 쓰지 않는다 — 까닭을 고르는 동안에도 문서에 남는 글이다 */
 export const CUBOID_FOLD_NOTES = Object.freeze({
@@ -686,7 +746,8 @@ export function judgeCuboidFree({ rects, seen = new Set(), found = new Set() }) 
 /**
  * 한 판의 흐름 (순수 상태). 화면(cuboid-free.js)과 점수 테스트가 같은 규칙을 쓴다.
  * fold(rects) → judgeCuboidFree 결과 + { itemId(기록할 때), collect: { id, item, isNew }(되는 전개도를 처음 찾았을 때 모음에 넣을 칸),
- *   first(이 기기에서 처음 찾은 전개도 — 점수는 이때만), explainable(안 되는 모양: 까닭 고르기), fixed(안 된 뒤 바로 전개도를 만듦),
+ *   first(이 기기에서 처음 찾은 전개도 — 점수는 이때만), later(처음 찾았지만 상한 뒤의 것 — 등록 1점뿐이고 만들기 성공 점수는 없다),
+ *   explainable(안 되는 모양: 까닭 고르기), fixed(안 된 뒤 바로 전개도를 만듦),
  *   found(이번 판에 찾은 가지 수), total(이 기기에서 찾은 가지 수), done(끝낼 수 있음), full(별 3개만큼 찾음) }
  * 안 되는 모양은 끝없이 많아 "모양마다 한 번"을 적어 둘 수 없다 → 안 되는 모양에는 점수가 없다(기록·까닭 고르기·표시는 그대로).
  */
@@ -719,6 +780,7 @@ export function createCuboidFreeSession({ stageId = 'cuboid-free', goal = CUBOID
         itemId,
         collect,
         first: Boolean(collect?.isNew),
+        later: Boolean(collect?.isNew) && isLaterNet(device.size),
         explainable: r.kind === 'invalid',
         fixed: r.valid && r.kind !== 'repeat' && Boolean(prev && !prev.valid),
         found: foundNow.size,
@@ -789,10 +851,14 @@ export function cuboidFreeHighlights(sum, { earned, total }) {
   ];
 }
 
-/** 힌트 그림자: 아직 못 찾은 전개도 가운데 판에 들어가는 가장 작은 것 */
-export function cuboidHintNet(foundIds = new Set(), board = CUBOID_BOARDS.wide) {
+/**
+ * 힌트 그림자: 이번 판에 아직 못 찾은 전개도 가운데 판에 들어가는 가장 작은 것.
+ * 이 기기에서 아직 찾지 않은 것(deviceIds에 없는 것 — 점수를 받는 새 전개도)을 먼저 고른다 (정육면체의 hintNet과 같은 순서)
+ */
+export function cuboidHintNet(foundIds = new Set(), board = CUBOID_BOARDS.wide, deviceIds = new Set()) {
   const left = freeNets().filter((n) => !foundIds.has(n.id) && centerOnBoard(n.net, board));
-  return left.sort((p, q) => p.size[0] * p.size[1] - q.size[0] * q.size[1] || (p.id < q.id ? -1 : 1))[0] ?? null;
+  const fresh = left.filter((n) => !deviceIds.has(n.id));
+  return (fresh.length > 0 ? fresh : left).sort((p, q) => p.size[0] * p.size[1] - q.size[0] * q.size[1] || (p.id < q.id ? -1 : 1))[0] ?? null;
 }
 
 /** 전개도를 판(cols × rows) 가운데에 놓은 직사각형들. 들어가지 않으면 돌려서 놓고, 그래도 안 되면 null */

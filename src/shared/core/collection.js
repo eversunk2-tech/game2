@@ -10,6 +10,9 @@
  *   quiet: true면 화면에 보이지 않는 모음 — 칩·도감 화면·결과 복사에 나오지 않고 "새로 찾았어요" 안내도 없다.
  *     저장과 점수는 다른 도감과 같다(ctx.collect · ctx.collection, 도장 판정의 collections). 칸이 너무 많아 도감으로 보여 주지 않지만
  *     "이 기기에서 한 번만 점수"를 지키려고 찾은 것을 적어 둬야 할 때 쓴다(예: 직육면체 전개도 54가지) — 가지 수는 게임이 보여 준다
+ *   xpAfter: { count, xp } — 칸이 count개 찬 뒤에(count + 1번째 칸부터) 처음 등록하는 칸은 xp 대신 이 점수를 준다(0~xp 사이 정수).
+ *     칸이 아주 많은 모음에서 점수가 끝없이 쌓이지 않게 할 때 쓴다(예: 54가지 가운데 처음 10가지만 +5, 그 뒤는 +1).
+ *     몇 번째인지는 등록하는 순간 그 모음에 든 칸 수로 센다 — 어떤 칸을 먼저 찾든, 몇 판에 나눠 찾든 점수의 합이 같다
  */
 import { XP } from './rewards.js';
 
@@ -31,6 +34,13 @@ export function normalizeCollections(defs) {
       throw new Error(`collections(${def.id}): label은 짧은 이름 글자예요 (예: '노트').`);
     }
     if (def.quiet != null && typeof def.quiet !== 'boolean') throw new Error(`collections(${def.id}): quiet는 true나 false예요.`);
+    if (def.xpAfter != null) {
+      const { count, xp } = def.xpAfter ?? {};
+      const top = def.xp ?? XP.discover;
+      if (!(Number.isInteger(count) && count >= 1 && Number.isInteger(xp) && xp >= 0 && xp <= top)) {
+        throw new Error(`collections(${def.id}): xpAfter는 { count: 1 이상 정수, xp: 0~${top} 사이 정수 }예요.`);
+      }
+    }
     const itemIds = new Set();
     const items = def.items.map((item) => {
       if (item?.id == null || !item?.name) throw new Error(`collections(${def.id}): 칸마다 id와 name이 필요해요.`);
@@ -111,4 +121,13 @@ export function collectItem(state, defs, collectionId, itemId, { at = Date.now()
   const next = { ...state, [def.id]: { ...current, [id]: { at, stage } } };
   const s = collectionStatus(next, def);
   return { state: next, isNew: true, count: s.count, total: s.total, item, known: true };
+}
+
+/**
+ * 그 도감에 count번째로 등록한 칸이 받는 솜씨 점수: 도감 정의의 xp(없으면 undefined → 엔진 기본 +5),
+ * xpAfter가 있고 count가 xpAfter.count를 넘으면 xpAfter.xp
+ */
+export function collectionXp(def, count) {
+  const after = def?.xpAfter;
+  return after && count > after.count ? after.xp : def?.xp;
 }

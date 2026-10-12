@@ -1823,7 +1823,11 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     // 접힘이 풀린 화면에서는 "방금 접은 모양과 같은 도감 칸"의 파랑 테두리가 보인다
     if (roomy) expect((await dexState(page)).same, `${at} 같은 모양 칸 강조`).toBe(true);
     await fold('목표 전 · 새 전개도(안 되는 모양 뒤가 아님)', CUBE_NETS[1]);
-    await expect(page.locator('.btn-pair .btn')).toHaveCount(2);
+    // 전개도 2가지를 찾으면 끝낼 수 있다(사용자 결정 2026-10-11 — 그 전에는 3가지를 찾아야 [결과 보기]가 나와 여기서 버튼이 둘이었다):
+    // 한 가지 더 찾으라는 안내와 세 버튼 한 줄([펴서 고치기]가 주 버튼, [결과 보기]는 그 옆). 이 장면의 넘침·잘림은 위 fold의 check가 잰다
+    await expect(page.locator('.goal-done')).toHaveText('전개도 2가지를 찾았어요! 한 가지 더 찾으면 별 3개예요.');
+    await expect(page.locator('.btn-trio .btn')).toHaveText(['펴서 고치기', '새로 만들기', '결과 보기']);
+    expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
     await page.locator('.free-fix').click();
     await check('목표 전 · 펴서 고치기(놓는 판, 6장)');
     await fold('목표 달성 순간', CUBE_NETS[2]); // 쪽지와 점수 쪽지(연속 3번)에 달성 문장까지 있는 장면
@@ -1852,7 +1856,7 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[0], 'right');
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[1], 'wrong');
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[2], 'count');
-    // 별 3개를 받은 뒤 다시 하는 판(내 맘대로 전개도는 한 번 마치면 늘 별 3개다): 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
+    // 별 3개를 받은 뒤 다시 하는 판(위에서 전개도 3가지를 넘겨 찾고 마쳐 별 3개다): 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
     await page.goto(FREE());
     await fold('별 3개 판 · 새 겹침', OVERLAP[10], 'skip');
     await expect(page.locator('.bonus-note')).toContainText('다음에 새 전개도를 만들면 +1');

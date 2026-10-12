@@ -388,6 +388,11 @@ export function judgeReason(problems, choice) {
 // ── 자유 배치 "내 맘대로 전개도" (spec 16-1, 예상 없이 접는다 — 16-12) ──────────
 /** 이번 판 목표: 서로 다른 전개도 수 */
 export const FREE_GOAL = 3;
+/**
+ * "내 맘대로 전개도"를 끝낼 수 있는 가지 수 (사용자 결정 2026-10-11 — 직육면체 차시의 내 맘대로 전개도와 같은 기준):
+ * 2가지를 찾으면 [결과 보기]가 나오고(별 2개), 더 찾아 FREE_GOAL가지가 되면 별 3개. 도감 주문은 그대로다
+ */
+export const FREE_FINISH = 2;
 /** 놓는 판 크기: 보통 7칸 × 5줄, 휴대폰(560px 이하) 6칸 × 6줄 (한 줄 6칸 모양도 놓을 수 있게) */
 export const BOARD_SIZES = Object.freeze({ wide: { cols: 7, rows: 5 }, phone: { cols: 6, rows: 6 } });
 /** 힌트가 켜지는 조건: 안 되는 모양을 연달아 이만큼 접었거나, 이 시간(ms) 동안 새 전개도를 못 찾음 */
@@ -662,6 +667,8 @@ export function freeSummary(history) {
 
 /** "내 맘대로 전개도"의 별: 이번 판에 찾은 서로 다른 전개도 수 (1 · 2 · 3가지 → 별 1 · 2 · 3개, spec 16-12). 안 되는 모양은 별에 영향이 없다 */
 export const freeStars = (found) => Math.max(0, Math.min(3, Math.floor(Number(found) || 0)));
+/** "내 맘대로 전개도" 결과 화면의 별 기준 안내 (별 3개가 안 될 때. 별 3개면 엔진의 "별 3개를 모두 받았어요!") */
+export const freeStarNote = (stars) => (stars >= 3 ? null : '서로 다른 전개도 3가지를 찾으면 별 3개!');
 
 /**
  * 결과 화면의 기록 칸: 정답률·맞힘/시도 대신 "찾은 전개도 n가지 · 접어 본 모양 n가지" (spec 16-12 — 직접 만드는 단계는

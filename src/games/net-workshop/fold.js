@@ -193,7 +193,7 @@ function pickHinges(net, hinges) {
 
 /** root에서 너비 우선으로 신장 트리를 고른다. 고리의 남는 경첩은 접을 때 떨어진다. */
 export function spanningTree(net, allHinges = findHinges(net)) {
-  const hinges = net.tree ? allHinges.filter((hg) => net.tree.some(([a, b]) => (hg.a === a && hg.b === b) || (hg.a === b && hg.b === a))) : pickHinges(net, allHinges);
+  const hinges = pickHinges(net, allHinges);
   const parent = new Map();
   const order = net.root ? [net.root] : [];
   const seen = new Set(order);
