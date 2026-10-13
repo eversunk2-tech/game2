@@ -1256,16 +1256,19 @@ test('자유 배치: 알림이 조작(칸·카드·접어 보기·접기 도구�
     expect(fits.cell).toBeGreaterThanOrEqual(48);
     const phone = size.width <= 560;
     await placeShape(page, phone ? SHAPES.cross : shiftCells(SHAPES.cross, 1, 1));
-    await foldIt(page); // 처음 찾은 전개도예요!
+    // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초쯤 뒤 스스로 사라진다: 접히기(1.3초)를 기다리기 전에 본다(버튼·까닭 칩도 누르는 순간 놓인다)
+    await page.locator('.free-fold').click(); // 처음 찾은 전개도예요!
     await expectToastClear(page);
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     await page.locator('.free-fix').click();
     await expect(page.locator('.toast')).toHaveCount(0); // 판으로 돌아가면 앞 알림을 지운다
     // 안 되는 모양의 안내 알림도 까닭 칩·접기 도구를 가리지 않는다
     await fresh(page);
     await placeShape(page, centerOnBoard(SHAPES.line5, phone ? BOARD_SIZES.phone : BOARD_SIZES.wide));
-    await foldIt(page);
+    await page.locator('.free-fold').click();
     await expect(page.locator('.reason-chip').first()).toBeVisible();
     await expectToastClear(page);
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
   }
 });
 
@@ -2999,6 +3002,9 @@ test('주사위 주문 보기 조작·정리: 조작판은 접힌 뒤에만, 끌
   test.skip(testInfo.project.name !== 'chromebook', '마우스 끌기·시계는 크롬북 화면에서 확인');
   const errors = collectErrors(page);
   await page.clock.install();
+  // 90초 경계(89초에는 없고 91초에는 있다)는 시계를 멈춰 두고 잰다: 시계가 실제 시간과 함께 흐르면 화면이 뜨고 재는 사이에 흐른 시간이 더해져,
+  // 그 시간이 1초를 넘는 느린 기기에서는 "89초"에 이미 힌트가 켜져 있다. 멈춘 채로 화면을 열면 단계가 시작한 때부터 정확히 89초·91초다
+  await page.clock.pauseAt(Date.now() + 60_000);
   await page.goto(DICE());
   // 90초 동안 주사위를 못 만들면 [힌트]
   await expect(page.locator('.tool-hint')).toBeHidden();
@@ -3006,6 +3012,7 @@ test('주사위 주문 보기 조작·정리: 조작판은 접힌 뒤에만, 끌
   await expect(page.locator('.tool-hint')).toBeHidden();
   await page.clock.fastForward(2_000);
   await expect(page.locator('.tool-hint')).toBeVisible();
+  await page.clock.resume(); // 여기부터는 지금까지처럼 시계가 실제 시간과 함께 흐른다
   // 접기 전: 조작판 없음, 무대 없음
   await placeShape(page, diceOrder(shiftCells(SHAPES.cross, 1, 1)));
   await expect(page.locator('.view-pad')).toBeHidden();
@@ -3201,11 +3208,12 @@ test('도감 주문 배치(네 크기): 놓는 판·접은 장면·까닭 고르
       if (!phone) await noScroll(page);
       expect(await hasHorizontalScroll(page), `${at} ${label}`).toBe(false);
     };
-    const fold = async (label, name, pick = null) => {
+    const fold = async (label, name, pick = null, onFold = null) => {
       await fresh(page);
       await placeShape(page, centerOnBoard(netCells(name), board));
       await check(`${label} · 6장을 놓음`);
       await page.locator('.free-fold').click();
+      if (onFold) await onFold(); // 알림처럼 잠깐만 보이는 것은 누른 바로 뒤에 본다
       await expect(page.locator('.free-result')).toBeVisible();
       if (await page.locator('.reason-chip').first().isVisible()) {
         await check(`${label} · 고르는 중`);
@@ -3224,10 +3232,13 @@ test('도감 주문 배치(네 크기): 놓는 판·접은 장면·까닭 고르
     await fold('5칸 · 접어 본 전개도', '1-4-1a');
     await fold('5칸 · 안 되는 모양(까닭 맞힘)', 'other-a', 'overlap');
     await fold('5칸 · 안 되는 모양(까닭 틀림)', 'block-b', 'overlap');
-    await fold('6칸째(별 1개 알림 + 세 버튼)', '1-4-1f');
+    // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초쯤 뒤 스스로 사라진다: 세 버튼이 놓인 바로 뒤, 긴 재기(check)보다 먼저 본다
+    await fold('6칸째(별 1개 알림 + 세 버튼)', '1-4-1f', null, async () => {
+      await expect(page.locator('.btn-trio .free-stop')).toBeVisible();
+      await expectToastClear(page);
+    });
     await expect(page.locator('.btn-trio .free-stop')).toBeVisible();
     expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
-    await expectToastClear(page);
     // (나) 6칸 이상: 놓는 판 아래쪽의 [오늘은 여기까지]
     await fresh(page);
     await expect(page.locator('.free-stop')).toBeVisible();
@@ -3775,21 +3786,25 @@ test('답하기 전 힌트(반만 접어 보기) 동안에도 새 조작은 잠�
   const q = questionsFor('cube-opposite')[0];
   const wrong = q.net.faces.find((f) => f.id !== q.star && f.id !== q.answer);
   await page.locator(`.net-face[data-face="${wrong.id}"]`).click();
-  await page.locator('.hint-btn').click();
-  await expect(foldStage(page)).toHaveAttribute('data-fold', 'half');
-  const half = await sceneStyle(page);
-  // 반만 접힌 모습은 지금과 같은 방향·크기(기울기 56° × 0.5, 선명하게 그리는 배수 없음)
-  expect(half).toMatch(/^scale3d\(1\.\d+, 1\.\d+, 1\.\d+\) rotateX\(28deg\) rotateZ\(-?[\d.]+deg\)$/);
-  expect((await viewOf(page)).turn).toBe((-28 + displayNet(q.net, { focus: [q.star, q.answer] }).turn) * 0.5);
-  // 반만 접힌 동안(1.4초) 무대 변환이 한 번도 바뀌지 않는다 — 바뀐 값을 모두 적어 두고 본다(마지막 값만 보면 느린 기기에서 힌트가 끝난 뒤를 보게 된다)
+  // 반만 접힌 상태는 1.4초만 이어진다. 그 상태를 본 뒤에 값을 읽으면 느린 기기에서는 이미 펴지는 중의 값을 읽게 되므로,
+  // 힌트를 누르기 전부터 지켜보며 반만 접힌 동안(data-fold="half")의 무대 변환을 모두 적어 두고 본다(움직임 줄이기 검사와 같은 방법)
   await page.evaluate(() => {
     const stage = document.querySelector('.fold-stage');
     const scene = stage.querySelector('.net-scene');
-    window.halfScenes = new Set([scene.style.transform]);
-    new MutationObserver(() => {
+    window.halfScenes = new Set();
+    const note = () => {
       if (stage.dataset.fold === 'half') window.halfScenes.add(scene.style.transform);
-    }).observe(scene, { attributes: true, attributeFilter: ['style'] });
+    };
+    new MutationObserver(note).observe(stage, { attributes: true, attributeFilter: ['data-fold'] });
+    new MutationObserver(note).observe(scene, { attributes: true, attributeFilter: ['style'] });
   });
+  await page.locator('.hint-btn').click();
+  await expect.poll(() => page.evaluate(() => window.halfScenes.size), '반만 접힌 상태(data-fold="half")가 된다').toBeGreaterThan(0);
+  const [half] = await page.evaluate(() => [...window.halfScenes]);
+  // 반만 접힌 모습은 지금과 같은 방향·크기(기울기 56° × 0.5, 선명하게 그리는 배수 없음)
+  expect(half).toMatch(/^scale3d\(1\.\d+, 1\.\d+, 1\.\d+\) rotateX\(28deg\) rotateZ\(-?[\d.]+deg\)$/);
+  expect(Number(half.match(/rotateZ\((-?[\d.]+)deg\)$/)[1])).toBe((-28 + displayNet(q.net, { focus: [q.star, q.answer] }).turn) * 0.5);
+  // 반만 접힌 동안(1.4초) 무대 변환이 한 번도 바뀌지 않는다 — 조작을 해 보아도 적어 둔 값은 그 하나뿐이다
   await tryLockedView(page, { mouse });
   expect(await page.evaluate(() => [...window.halfScenes])).toEqual([half]);
   // 힌트 동안에도 조작판은 없다: 보이는 보기 버튼은 좌우 돌리기 둘뿐
