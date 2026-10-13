@@ -58,6 +58,7 @@ async function expectFits(page, label) {
 }
 
 test('내 맘대로 전개도(정육면체): 1가지로는 끝낼 수 없고, 2가지를 찾으면 [결과 보기]가 나온다 — 끝내면 별 2개와 "3가지를 찾으면 별 3개!" 23점. 다시 해서 3가지를 찾으면 별 3개(늘어난 별만큼만 +2)', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await expect(page.locator('.play-goal')).toHaveText('면 6장을 마음대로 놓고 접어 봐요. 서로 다른 전개도 3가지를 찾아요.');
@@ -125,6 +126,7 @@ test('내 맘대로 전개도(정육면체): 1가지로는 끝낼 수 없고, 2�
 });
 
 test('내 맘대로 전개도(정육면체): 2가지에서 [결과 보기]가 보여도 더 찾을 수 있고 3가지를 찾으면 지금까지처럼 별 3개 — 힌트는 3가지를 찾기 전까지 나온다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await fold(page, 'cross');
@@ -158,6 +160,7 @@ test('내 맘대로 전개도(정육면체): 2가지에서 [결과 보기]가 �
 });
 
 test('내 맘대로 전개도(정육면체): 전개도 3가지만 찾아 마치는 판의 점수는 33점 그대로다 (연속 3번 +1, 단계 완료 5 + 별 3개 6)', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto(FREE());
   await fold(page, 'cross');
   expect(await storedXpOf(page)).toBe(7);

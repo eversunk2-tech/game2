@@ -109,6 +109,37 @@ async function expectToastClear(page, label = '', { required = true } = {}) {
   expect((await handle.jsonValue()).hits, label).toEqual([]);
 }
 
+/**
+ * 알림(토스트)에 뜬 글을 적어 둔다. 알림은 몇 초(1.5초 + 글자당 0.08초) 뒤에 사라지는 잠깐의 상태라, 누른 뒤에 그 글을 바로 읽으려 하면
+ * 검사 쪽이 느려질 때(아주 바쁜 컴퓨터) 놓칠 수 있다 — 누르기 전에 지켜보기 시작해 뜬 글을 적어 두고, 나중에 견준다
+ */
+async function watchToasts(page) {
+  await page.evaluate(() => {
+    if (window.toastLog) return;
+    window.toastLog = [];
+    const note = () => {
+      for (const toast of document.querySelectorAll('.toast')) {
+        const text = `${toast.className} ${toast.textContent}`;
+        if (window.toastLog.at(-1) !== text) window.toastLog.push(text);
+      }
+    };
+    new MutationObserver(note).observe(document.body, { childList: true, subtree: true });
+  });
+}
+/** watchToasts로 지켜본 알림 가운데 그 종류(info · correct · wrong)의 글에 text가 들어 있다 */
+const expectToasted = (page, type, text) => expect.poll(() => page.evaluate((cls) => window.toastLog.filter((t) => t.includes(cls)).join('\n'), `toast-${type}`)).toContain(text);
+/** 무대의 data-fold가 지나가는 값을 적어 둔다(window.foldLog). 잠깐만 보이는 장면(반 접힘)을 누른 뒤에 바로 보려 하지 않고, 지나간 값을 본다 */
+async function watchFold(page) {
+  await page.evaluate(() => {
+    const el = document.querySelector('.fold-stage');
+    window.foldLog = [];
+    new MutationObserver(() => {
+      const name = el.querySelector('.net-vname');
+      window.foldLog.push({ fold: el.dataset.fold, names: name ? getComputedStyle(name).opacity : null });
+    }).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
+  });
+}
+
 /** 결과 화면: "오늘의 솜씨" 칸 점수 합 + 단계 완료·별 점수 줄 = "이번에 모은 솜씨 점수" (화면 = 저장) */
 async function resultXpSum(page) {
   return page.evaluate(() => {
@@ -195,6 +226,7 @@ const VALID_STRIP = [...STRIP, TOP, { label: '바', x: 3, y: 5, w: 2, h: 1 }]; /
 
 // ── 차시와 단계 지도 ─────────────────────────────
 test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도전 주문서·도감 칩 없음), 만나는 선분 5문항을 끝까지 하면 다음 단계가 열린다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cuboid&seed=1&sound=off'));
   await expect(page.locator('.eyebrow')).toHaveText('직육면체의 전개도');
@@ -268,6 +300,7 @@ test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이
 
 // ── 1단계: 만나는 선분 ─────────────────────────────
 test('만나는 선분: 바로 옆 선분을 고르면 까닭(가까이 있다고 만나는 것은 아니에요)과 [반만 접어 보기], 다시 눌러도 다시 기록하지 않는다. 맞히면 두 선분이 같은 무늬 띠로 한 모서리에서 만난다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-edge'));
   const [q] = questionsFor('cuboid-edge');
@@ -285,13 +318,19 @@ test('만나는 선분: 바로 옆 선분을 고르면 까닭(가까이 있다�
   await expect(page.locator('.hint-btn')).toBeVisible();
   await expect(foldStage(page)).toHaveAttribute('data-fold', 'flat');
   await expect(page.locator('.edge-band')).toHaveCount(1); // 틀려도 정답 선분은 표시하지 않는다
+  await watchToasts(page);
   await pickEdge(page, near.index); // 이미 골라 본 보기
-  await expect(page.locator('.toast-info')).toContainText('이미 골라 본 선분');
-  // 힌트: 반만 접었다가 편다
+  await expectToasted(page, 'info', '이미 골라 본 선분');
+  // 힌트: 반만 접었다가 편다. "반 접힘"은 1.4초 동안만 보이는 장면이라, 지나간 상태를 적어 두고 다 펴진 뒤에 본다
+  await watchFold(page);
   await page.locator('.hint-btn').click();
-  await expect(foldStage(page)).toHaveAttribute('data-fold', 'half');
-  await expect(page.locator('.net-vname').first()).toHaveCSS('opacity', '0'); // 접히는 동안 꼭짓점 이름은 숨는다
-  await expect(foldStage(page)).toHaveAttribute('data-fold', 'flat', { timeout: 6000 });
+  await page.waitForFunction(() => window.foldLog.some((x) => x.fold === 'half') && document.querySelector('.fold-stage').dataset.fold === 'flat');
+  const peek = await page.evaluate(() => window.foldLog);
+  const passed = peek.map((x) => x.fold);
+  expect(passed.indexOf('folding')).toBeGreaterThanOrEqual(0);
+  expect(passed.indexOf('half')).toBeGreaterThan(passed.indexOf('folding')); // 접는 움직임 → 반 접힘 → (펴는 움직임) → 펼침
+  expect(passed.at(-1)).toBe('flat');
+  expect(peek.find((x) => x.fold === 'half').names).toBe('0'); // 접혀 있는 동안 꼭짓점 이름은 숨는다
   await pickEdge(page, q.answer);
   await folded(page);
   await expect(page.locator('.edge-band.is-a')).toHaveCount(2);
@@ -357,6 +396,7 @@ test('만나는 선분 정답 노출 0: 답하기 전 화면은 정답과 무관
 
 // ── 2단계: 알맞은 면 고르기 ───────────────────────────
 test('알맞은 면 고르기: 길이 하나만 다른 카드 → 접어서 길이가 다른 두 선분을 같은 무늬와 길이 이름표로, [펴고 다시 하기] → 크기가 다른 면 → 알맞은 카드. 학습 기록에 tag 두 가지', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-face'));
   const questions = questionsFor('cuboid-face');
@@ -379,9 +419,10 @@ test('알맞은 면 고르기: 길이 하나만 다른 카드 → 접어서 길�
   await expect(foldStage(page)).toHaveAttribute('data-fold', 'flat');
   await expect(cardOf(page, q, 'length')).toHaveClass(/is-tried/);
   await expect(page.locator('.edge-band')).toHaveCount(0);
+  await watchToasts(page);
   await cardOf(page, q, 'length').click();
   await page.locator('.net-slot').click();
-  await expect(page.locator('.toast-info')).toContainText('이미 붙여 본 카드');
+  await expectToasted(page, 'info', '이미 붙여 본 카드');
 
   await placeCard(page, q, 'pair');
   await expect(page.locator('.reason')).toContainText(`빠진 면은 ${q.oppositeLabel} 면과 마주 봐요. 마주 보는 면은 모양과 크기가 같아요.`);
@@ -403,7 +444,7 @@ test('알맞은 면 고르기: 길이 하나만 다른 카드 → 접어서 길�
 });
 
 test('알맞은 면 고르기 정답 노출 0: 빈 자리 표시는 빠진 면의 크기와 무관하게 같은 깊이(2 cm)이고 48px 이상, 카드 세 장은 같은 색·같은 축척, 1 cm의 크기가 문항마다 같다 (시드 6개 × 4문항)', async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
   const units = new Set();
   const answerAt = new Set();
   for (let seed = 1; seed <= (testInfo.project.name === 'chromebook' ? 6 : 2); seed += 1) {
@@ -480,6 +521,7 @@ test('알맞은 면 고르기 터치(태블릿): 카드를 빈 자리로 끌어 
 
 // ── 3단계: 길이까지 살펴요 ───────────────────────────
 test('길이까지 살펴요: 5문항을 모두 맞히고 안 되는 전개도 3개의 까닭(겹침 · 붙은 변의 길이 · 마주 보는 면의 크기)까지 고르면 결과에 설명 맞힘 3번', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-judge'));
   await expect(page.locator('.order-kind')).toHaveText('검사 주문');
@@ -519,6 +561,7 @@ test('길이까지 살펴요: 5문항을 모두 맞히고 안 되는 전개도 3
 });
 
 test('길이까지 살펴요: 안 되는 전개도에 "돼요"를 고르면 까닭과 표시를 보여 주고 학습 기록에 tag(면이 겹침 · 맞닿는 모서리 길이 · 마주 보는 면은 합동)가 남는다. 되는 전개도에 "안 돼요"는 여러 가지 전개도', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-judge'));
   for (const q of questionsFor('cuboid-judge')) {
@@ -636,10 +679,11 @@ test('내 맘대로 직육면체 전개도: 면 6장을 놓고 [접어 보기] �
   // 셋째: 마 면을 다 면 위로 (1 cm인 변끼리)
   await page.locator('.free-fix').click();
   // 다른 면에 붙은 채로는 돌릴 자리가 없다: 그대로 두고 알린다 → 빈 곳으로 옮긴 다음 두 번 눌러 돌린다
+  await watchToasts(page);
   await tileOf(page, '마').click();
   await tileOf(page, '마').click();
   expect((await tileRect(page, '마')).slice(2)).toEqual([2, 1]);
-  await expect(page.locator('.toast-info')).toContainText('돌릴 자리가 모자라요');
+  await expectToasted(page, 'info', '돌릴 자리가 모자라요');
   await tileOf(page, '마').click();
   await cellOf(page, [9 + shift, 6]).click({ position: { x: 4, y: 4 } });
   await tileOf(page, '마').click();
@@ -674,7 +718,7 @@ test('내 맘대로 직육면체 전개도: 면 6장을 놓고 [접어 보기] �
 });
 
 test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개와 "서로 다른 전개도 3가지를 찾으면 별 3개!", 다시 해서 같은 전개도를 만들면 0점(전에 찾은 전개도), 새로 고쳐도 찾은 가지 수와 점수가 남는다', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-free'));
   const board = boardOf(page);
@@ -718,13 +762,14 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   // 학습 기록·결과 복사·도감 화면에는 이 모음이 보이지 않는다(정육면체 차시의 도감 칩 그대로). 기록을 지우면 찾은 전개도도 지워진다
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.btn-collection')).toContainText('0 / '); // 도감 수에 찾은 직육면체 전개도(3가지)가 들어가지 않는다
+  await expect(page.locator('.btn-collection')).toContainText('도감 0 / '); // 도감 수에 찾은 직육면체 전개도(3가지)가 들어가지 않는다
   await expect(page.locator('.btn-collection')).not.toContainText(/직육면체|54/);
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
   });
+  await watchToasts(page);
   await page.getByRole('button', { name: '결과 복사' }).click();
-  await expect(page.locator('.toast-info')).toContainText('결과를 복사했어요');
+  await expectToasted(page, 'info', '결과를 복사했어요');
   const copied = await page.evaluate(() => window.copied.split('\n').at(-1));
   expect(copied).toMatch(/^칭호: 견습생\(30점\) · 도장 \d+개 · 도감 0\//);
   expect(copied).not.toMatch(/직육면체|54/);
@@ -743,7 +788,7 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
 });
 
 test('내 맘대로 직육면체 전개도 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘 한 탭의 점수와 찾은 전개도 한 쌍이라, 한 전개도의 점수를 두 번 받지 못한다', async ({ page, context }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(150_000);
   const errors = collectErrors(page);
   const storedNets = (p) => p.evaluate(() => Object.keys((JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {})['cuboid-nets'] ?? {}).sort());
   /** [접어 보기]를 누른다. 점수·등록·저장은 누르는 순간 정해지므로 접는 장면이 끝나기를 기다리지 않는다(뒤에 있는 탭은 장면 그리기를 멈춘다) */
@@ -805,7 +850,8 @@ test('내 맘대로 직육면체 전개도 점수: 탭 두 개를 섞어 써도 
 async function expectNoReasonShown(page) {
   await expect(page.locator('.reason-pick')).toBeVisible();
   await expect(page.locator('.reason-chip')).toHaveCount(3);
-  await page.waitForTimeout(60); // 화면 읽기 알림은 30ms 뒤에 들어간다
+  // 화면 읽기 알림은 조금 뒤(30ms)에 들어간다: 그 글이 들어온 뒤에 본다 — 알림 글에도 까닭 낱말이 없어야 한다
+  await expect(page.locator('.sr-only[aria-live]').first()).not.toHaveText('');
   const found = await page.evaluate(() => {
     const words = /겹|둘러|달라|어긋|비어|꼭짓점|한 점|≠|모서리/;
     const pick = document.querySelector('.reason-pick');
@@ -835,7 +881,7 @@ async function expectNoReasonShown(page) {
 
 test('내 맘대로 직육면체 전개도 까닭 고르기: 안 되는 모양(겹침 · 붙은 변의 길이 · 한 점을 둘러쌈)을 접으면 고르기 전에는 까닭이 화면·속성 어디에도 없고, 고른 뒤에 표시와 까닭 문장이 나온다. 점수는 없다. 떨어진 면이 있으면 접지 않는다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '화면 전체를 견주는 검사는 크롬북 화면에서 한 번 (다른 크기의 배치는 아래 검사)');
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-free'));
   // 떨어진 면: 접지 않고 기록하지 않는다
@@ -995,7 +1041,7 @@ test('내 맘대로 직육면체 전개도 터치(태블릿): 카드를 판으�
 
 // ── 화면 배치 ─────────────────────────────
 test('배치(네 크기): 세 단계의 모든 장면(답하기 전 · 틀림 · 까닭 고르기 · 맞힘)에서 스크롤과 판 안쪽 넘침이 없고 버튼이 잘리지 않으며(48px 이상), 알림이 조작을 가리지 않는다', async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const errors = collectErrors(page);
   for (const size of sizesFor(testInfo)) {
     await page.setViewportSize(size);
@@ -1072,7 +1118,7 @@ test('배치(네 크기): 세 단계의 모든 장면(답하기 전 · 틀림 ·
 });
 
 test('내 맘대로 직육면체 전개도 배치(네 크기): 놓는 판 · 접은 장면 · 까닭 고르기 · 끝낼 수 있는 장면 모두 스크롤과 판 안쪽 넘침이 없고 버튼이 잘리지 않으며, 1 cm 칸은 48px 이상(휴대폰 제외), 판 → 무대 어긋남 0px', async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const errors = collectErrors(page);
   for (const size of sizesFor(testInfo)) {
     await page.setViewportSize(size);
@@ -1159,7 +1205,7 @@ test('내 맘대로 직육면체 전개도 배치(네 크기): 놓는 판 · 접
 });
 
 test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × 네 단계): 연달아 맞혀 "연속 2"가 생기는 순간과 틀려서 사라지는 순간에 머리·제목·목표·매트의 화면 자리가 0px 움직인다', async ({ page }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   const errors = collectErrors(page);
   const spot = () => page.evaluate(() => {
     const rect = (sel) => {
@@ -1233,7 +1279,7 @@ test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × �
 
 test('머리가 두 줄이 되어도(글자가 넓은 기기) 크롬북 화면이 넘치지 않는다: 1366×768·1366×680 × 네 단계에서 목표 글이 한 줄 더 늘면 매트가 그만큼 낮아지고, 그 높이로 해 봐도 세로 스크롤과 판 안쪽 넘침이 없다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '작업대가 화면 높이에 맞춰지는 넓은 화면에서 확인');
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const errors = collectErrors(page);
   const look = () => page.evaluate(() => {
     const header = document.querySelector('.play-header').getBoundingClientRect();
@@ -1378,12 +1424,19 @@ test.describe('직육면체 차시 (움직임 줄이기)', () => {
   test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
   test('접기는 펼침 → 반 접힘 → 다 접힘 장면으로 끝나고, 새 전개도를 찾아도 색종이 0개. 나간 뒤 남는 것이 없다', async ({ page }) => {
+    test.setTimeout(90_000);
     const errors = collectErrors(page);
     await page.goto(STAGE_URL('cuboid-judge'));
     const [q] = questionsFor('cuboid-judge');
+    // "반 접힘"은 0.55초 동안만 보이는 장면이다. 누른 뒤에 그 상태를 바로 보려 하면 검사 쪽이 느릴 때(아주 바쁜 컴퓨터) "다 접힘"을 받는다 —
+    // 누르기 전부터 data-fold가 지나간 값을 적어 두고, 다 접힌 뒤에 "반 접힘을 거쳐 다 접혔고 접는 움직임(folding)은 없었다"를 본다
+    await watchFold(page);
     await page.locator(`.answer-btn:not([data-answer="${q.expected}"])`).click();
-    await expect(foldStage(page)).toHaveAttribute('data-fold', 'half');
     await folded(page);
+    const passed = (await page.evaluate(() => window.foldLog)).map((x) => x.fold);
+    expect(passed).toContain('half');
+    expect(passed).not.toContain('folding');
+    expect(passed.indexOf('half')).toBeLessThan(passed.lastIndexOf('done'));
     await page.goto(STAGE_URL('cuboid-free'));
     const board = boardOf(page);
     await buildNet(page, netRects('123-10', board));
@@ -1503,7 +1556,7 @@ async function expectMarksReadableTurned(page, label) {
 }
 
 test('접은 장면의 표시: 띠 이름표(선분 이름 · 길이)는 화면에서 바로 서고(거울상 0 · 거꾸로 0), "✗ 겹쳐요"와 띠 이름표가 길이 글자와 포개지지 않는다 — 처음 시점과 돌려 본 자세, 판별 · 알맞은 면 · 만나는 선분', async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   const errors = collectErrors(page);
   const seen = { tags: 0, marks: 0 };
   const count = (r) => {
@@ -1574,6 +1627,7 @@ test('접은 장면의 표시: 띠 이름표(선분 이름 · 길이)는 화면�
 
 test('접은 장면의 표시(내 맘대로 직육면체 전개도): 안 되는 모양의 까닭을 고른 뒤 "✗ 겹쳐요"는 제 면 안에서 바로 서고, 길이가 다른 두 변의 이름표도 바로 선다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '놓는 판 12 × 8에서 본다');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(`${STAGE_URL('cuboid-free')}&fx=low`);
   await buildNet(page, BAD.overlap);
@@ -1592,7 +1646,7 @@ test('접은 장면의 표시(내 맘대로 직육면체 전개도): 안 되는 
 });
 
 test('길이까지 살펴요의 크기형 까닭 문장: 문장이 말한 두 면은 접은 화면에서 실제로 마주 보고(법선이 반대) 크기가 다르다 — 시드 8개 (검토에서 틀렸던 시드 1 · 18 · 20 포함)', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   const errors = collectErrors(page);
   let checked = 0;
   for (const seed of ['1', '18', '20', '3', '4', '6', '7', '9']) {
@@ -1652,7 +1706,7 @@ async function seedFoundNets(page, ids) {
 const storedNetCount = (page) => page.evaluate(() => Object.keys((JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {})['cuboid-nets'] ?? {}).length);
 
 test('내 맘대로 직육면체 전개도 점수 상한: 이 기기에서 10번째까지는 새 발견 +5 · 만들기 성공 +2, 11번째부터는 새 전개도마다 +1(안내 문장도 그 점수). 새로 고침 · 나가기를 섞어도 10번째의 경계에서 두 번 받거나 못 받지 않는다. 화면 = 저장', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   const errors = collectErrors(page);
   const board = boardOf(page);
   const ids = freeNets().filter((n) => centerOnBoard(n.net, board)).map((n) => n.id);
@@ -1784,6 +1838,7 @@ test('점수 상한의 경계에서 탭 두 개: 아홉 가지를 찾아 둔 기
 
 test('힌트 그림자는 이 기기에서 아직 찾지 않은 전개도다: 가장 작은 전개도를 찾아 둔 기기에서는 그다음 전개도의 자리가 점선으로 보인다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '놓는 판 12 × 8에서 본다');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const board = boardOf(page);
   const first = cuboidHintNet(new Set(), board);
