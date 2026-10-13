@@ -2,6 +2,7 @@
  * 쌓기나무 영역(S1: 1·2차시) 브라우저 검사. 기획서: docs/games/net-workshop/spec-grade6.md 3·5·11절, 공통 규칙: common-rules.md
  * 정답은 게임과 같은 시드로 blocks-logic.js를 불러 계산한다(DOM에 정답을 숨겨 두지 않는다).
  * 글자 폭에 기대는 픽셀 상수는 쓰지 않는다(글꼴 흉내 모드 E2E_WIDE_TEXT=font에서도 통과해야 한다).
+ * 혼자 돌려 3초 넘게 걸리는 검사에는 시간 예산(test.setTimeout)을 적는다 — 느린 CI(리눅스)에서는 같은 검사가 서너 배 더 걸려 기본 30초에 닿는다.
  */
 import { expect, test } from '@playwright/test';
 import { createRng } from '../../src/shared/core/random.js';
@@ -316,6 +317,7 @@ async function answerAndNext(page, testInfo, value) {
 }
 
 test('1차시(?lesson=blocks-look): 쌓기 놀이터 → 어느 방향에서 보았을까? → 이쪽에서 보면? 을 처음부터 끝까지', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=blocks-look&seed=1&sound=off'));
   await page.getByRole('button', { name: '시작하기' }).click();
@@ -409,6 +411,7 @@ async function solveHidden(page, testInfo, q) {
 }
 
 test('2차시(?lesson=blocks-top): 똑같이 만들기 → 모두 몇 개일까? → 숨겨진 쌓기나무 를 처음부터 끝까지', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=blocks-top&seed=1&sound=off'));
   await page.getByRole('button', { name: '시작하기' }).click();
@@ -613,6 +616,7 @@ test('키보드만: "위에서 본 판"에서 방향키·Enter·Backspace·숫�
 });
 
 test('버튼만: "위에서 본 판"·[쌓기][빼기]·[되돌리기]·[모두 치우기]·조작판·[위][앞][옆]으로 끝까지 (끌지 않는다)', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-copy');
   const target = copyTarget();
@@ -718,6 +722,7 @@ test('누르기와 끌기(마우스): 3px 움직이고 떼면 1개 놓이고, 10
 
 test('누르기와 끌기(터치): 떨리는 탭은 놓이고, 끌면 돌아가기만 하며, 휙 돌린 바로 뒤의 탭이 먹힌다(브라우저의 관성 스크롤 0)', async ({ page, browser }, testInfo) => {
   test.skip(!isTouch(testInfo), '터치는 태블릿에서');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-copy');
   const cdp = await page.context().newCDPSession(page);
@@ -1061,6 +1066,7 @@ test('정답 노출 0 (어느 방향에서 보았을까?): 답하기 전에는 �
 });
 
 test('틀리면 고른 쪽으로 먼저 돌아간 뒤 바른 쪽으로 돌고, 맞은편을 골랐으면 까닭에 "맞은편"이 나온다. 다음 문항에는 앞 문항의 움직임이 남지 않는다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-where');
   const [q1, q2] = questionsFor('blocks-where');
@@ -1095,6 +1101,7 @@ test('틀리면 고른 쪽으로 먼저 돌아간 뒤 바른 쪽으로 돌고, �
 });
 
 test('정답 노출 0 (이쪽에서 보면?): 답하기 전에는 입체가 없고(무대 요소 0), 답하면 입체가 나타나 그 방향으로 돈다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-scene');
   const questions = questionsFor('blocks-scene');
@@ -1258,6 +1265,7 @@ test('정답 노출 0 (쌓는 단계): [확인하기] 전에는 내 쌓기를 �
 
 // ── 쌓는 단계의 틀린 시도·힌트·예상 ───────────────
 test('똑같이 만들기: 틀린 [확인하기]도 기록되고(고치지 않고 또 누르면 다시 세지 않는다), 다르게 두 번 틀리면 힌트가 열린다. 숨길 수 있는 문항은 다른 개수의 쌓기를 돌려 보여 주고, 별은 틀린 횟수로 정한다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-copy');
   const [q1, q2] = questionsFor('blocks-copy');
@@ -1318,6 +1326,7 @@ test('똑같이 만들기: 틀린 [확인하기]도 기록되고(고치지 않�
 });
 
 test('숨겨진 쌓기나무: 위에서 본 모양이 다르면 그 자리에 ✗, 예상하는 동안은 쌓기가 잠기고, 같은 쌓기를 또 내면 기록하지 않는다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-hidden');
   const questions = questionsFor('blocks-hidden');
@@ -1413,6 +1422,7 @@ test('숨겨진 쌓기나무: 위에서 본 모양이 다르면 그 자리에 �
 });
 
 test('별(틀린 횟수 기준): 이쪽에서 보면?·똑같이 만들기에서 한 번 틀리면 별 2개, 두 번 틀리면 별 1개이고, 결과 화면의 안내도 그 기준이다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const stars = (n) => expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', `별 3개 중 ${n}개`);
   const fresh = () => page.evaluate(() => localStorage.clear());
@@ -1483,6 +1493,7 @@ test('별(틀린 횟수 기준): 이쪽에서 보면?·똑같이 만들기에서
 });
 
 test('돌려 보기 알림(화면 읽기): 조작판 버튼·방향키로 돌려 보는 구간("비스듬히 위에서 본 모습" 등)이 바뀌면 알려 준다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-copy');
   let view = homeView();
@@ -1551,6 +1562,7 @@ test('조형물의 무늬: 파란 기둥은 빗금 두 줄(층 경계처럼 보�
 });
 
 test('점수: 별 3개를 받은 단계를 다시 해도 점수가 쌓이지 않고, 놀이터도 두 번째에는 0점이다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const playOnce = async () => {
     await open(page, 'blocks-where');
@@ -1803,6 +1815,7 @@ test('글자가 커져도(110%) 크롬북 1366×680에서 작업 지시서가 �
 });
 
 test('꽉 찬 3×3×3도 어느 쪽으로 돌려도 무대 안에 있고, 양옆의 조작 칸과 겹치지 않는다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   for (const height of isTouch(testInfo) ? [1180] : [768, 680]) {
     await page.setViewportSize({ width: isTouch(testInfo) ? 820 : 1366, height });
