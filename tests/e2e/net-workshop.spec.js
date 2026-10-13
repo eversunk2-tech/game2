@@ -1827,6 +1827,9 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     // 한 가지 더 찾으라는 안내와 세 버튼 한 줄([펴서 고치기]가 주 버튼, [결과 보기]는 그 옆). 이 장면의 넘침·잘림은 위 fold의 check가 잰다
     await expect(page.locator('.goal-done')).toHaveText('전개도 2가지를 찾았어요! 한 가지 더 찾으면 별 3개예요.');
     await expect(page.locator('.btn-trio .btn')).toHaveText(['펴서 고치기', '새로 만들기', '결과 보기']);
+    // 세 버튼이 한 줄: 포인터를 버튼 밖으로 옮기고(올려 둔 버튼은 1px 들뜬다) 버튼의 움직임이 끝난 뒤의 자리를 잰다
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => [...document.querySelectorAll('.btn-trio .btn')].every((b) => b.getAnimations().every((a) => a.playState !== 'running')));
     expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
     await page.locator('.free-fix').click();
     await check('목표 전 · 펴서 고치기(놓는 판, 6장)');

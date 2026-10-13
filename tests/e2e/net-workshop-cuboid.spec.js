@@ -35,7 +35,16 @@ async function openReport(page) {
 const SIZES = { chromebook: { width: 1366, height: 768 }, low: { width: 1366, height: 680 }, tablet: { width: 820, height: 1180 }, phone: { width: 390, height: 844 } };
 const sizesFor = (testInfo) => (testInfo.project.name === 'chromebook' ? [SIZES.chromebook, SIZES.low] : [SIZES.tablet, SIZES.phone]);
 
+/**
+ * 재기 전에 그 요소들(과 그 안)의 움직임이 끝날 때까지 기다린다: 고른 답의 튀기기(pop 0.35초)·흔들기(shake 0.4초), 버튼에 올린 포인터를 떼면
+ * 들뜸이 가라앉는 전환(0.12초), 알림·화면이 들어오는 움직임, 판의 면이 내려앉는 움직임. 움직임 도중에 재면 크기·자리가 조금 달라
+ * 느린 기기(GitHub CI)에서만 실패한다. 끝없이 도는 움직임과 자리·크기를 바꾸지 않는 강조([↻]의 turn-hint — 3.6초)는 기다리지 않는다
+ */
+const settled = (page, selector = '.screen') => page.waitForFunction((sel) => [...document.querySelectorAll(sel)].every((el) => el.getAnimations({ subtree: true }).every((a) => (
+  a.playState !== 'running' || a.animationName === 'turn-hint' || a.effect?.getComputedTiming().iterations === Infinity))), selector);
+
 async function noScroll(page, label = '') {
+  await settled(page);
   const m = await page.evaluate(() => ({ over: document.documentElement.scrollHeight - window.innerHeight }));
   // 휴대폰은 세로 스크롤을 허용한다(가로만 0)
   if (page.viewportSize().width > 560) expect(m.over, `${label} 세로 넘침`).toBeLessThanOrEqual(0);
@@ -44,6 +53,7 @@ async function noScroll(page, label = '') {
 
 /** 오른쪽 판(작업 지시서) 안쪽이 넘치지 않고, 판 안의 보이는 버튼이 잘리지 않으며 48px 이상이다 */
 async function expectPanelFits(page, label = '') {
+  await settled(page, '.net-panel');
   const m = await page.evaluate(() => {
     const panel = document.querySelector('.net-panel');
     const box = panel.getBoundingClientRect();
@@ -65,24 +75,38 @@ async function expectPanelFits(page, label = '') {
   expect(m.buttons, label).toBeGreaterThan(0);
 }
 
-/** 지금 보이는 알림(토스트)이 조작(답 버튼·보기·카드·빈 자리·접기 도구·보기 조작판·판의 버튼)과 겹치지 않는다 */
-async function expectToastClear(page, label = '') {
-  await expect(page.locator('.toast')).toBeVisible();
-  const hits = await page.evaluate(() => {
-    const t = document.querySelector('.toast').getBoundingClientRect();
-    const controls = '.topbar button, .play-header button, .answer-btn, .edge-opt, .size-card, .net-slot, .fold-toggle, .btn-icon, .fold-range, .hint-btn, .next-btn, '
-      + '.rect-card, .free-fold, .reason-chip, .reason-skip, .mat-tools button, .view-pad button, .free-buttons button';
-    const out = [];
-    for (const el of document.querySelectorAll(controls)) {
-      const b = el.getBoundingClientRect();
-      if (b.width === 0 || el.closest('[hidden]')) continue;
-      const w = Math.min(t.right, b.right) - Math.max(t.left, b.left);
-      const h = Math.min(t.bottom, b.bottom) - Math.max(t.top, b.top);
-      if (w > 0 && h > 0) out.push(`${el.className} ${Math.round(w)}×${Math.round(h)}`);
-    }
-    return out;
-  });
-  expect(hits, label).toEqual([]);
+/**
+ * 지금 보이는 알림(토스트)이 조작(답 버튼·보기·카드·빈 자리·접기 도구·보기 조작판·판의 버튼)과 겹치지 않는다.
+ * 알림이 들어오는 움직임(0.2초)과 조작의 움직임(고른 답의 튀기기 등)이 끝난 순간에, 기다리기와 재기를 한 번의 평가 안에서 한다 —
+ * 알림은 몇 초(1.5초 + 글자당 0.08초) 뒤에 사라지므로 따로 기다렸다 재면 느린 기기에서는 그 사이에 없어진다.
+ * required: 알림을 띄운 조작 바로 뒤에는 true(알림이 꼭 보여야 한다). 그 뒤의 장면(접기가 끝난 뒤 · 다른 것을 더 누른 뒤)은 false —
+ *   알림이 아직 남아 있을 때만 겹침을 본다(느린 기기에서는 이미 사라졌을 수 있고, 그러면 가릴 것이 없다)
+ */
+async function expectToastClear(page, label = '', { required = true } = {}) {
+  let handle;
+  try {
+    handle = await page.waitForFunction((must) => {
+      const toast = document.querySelector('.toast');
+      if (!toast) return must ? null : { hits: [], shown: false };
+      const controls = '.topbar button, .play-header button, .answer-btn, .edge-opt, .size-card, .net-slot, .fold-toggle, .btn-icon, .fold-range, .hint-btn, .next-btn, '
+        + '.rect-card, .free-fold, .reason-chip, .reason-skip, .mat-tools button, .view-pad button, .free-buttons button';
+      const shown = [...document.querySelectorAll(controls)].filter((el) => el.getBoundingClientRect().width > 0 && !el.closest('[hidden]'));
+      const moving = (el) => el.getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.animationName !== 'turn-hint' && a.effect?.getComputedTiming().iterations !== Infinity);
+      if ([toast, ...shown].some(moving)) return null;
+      const t = toast.getBoundingClientRect();
+      const hits = [];
+      for (const el of shown) {
+        const b = el.getBoundingClientRect();
+        const w = Math.min(t.right, b.right) - Math.max(t.left, b.left);
+        const h = Math.min(t.bottom, b.bottom) - Math.max(t.top, b.top);
+        if (w > 0 && h > 0) hits.push(`${el.className} ${Math.round(w)}×${Math.round(h)}`);
+      }
+      return { hits, shown: true };
+    }, required, { timeout: 15_000 });
+  } catch (error) {
+    throw new Error(`${label}: 알림이 보이지 않아요(뜨지 않았거나 재기 전에 사라졌어요) — ${error.message.split('\n')[0]}`);
+  }
+  expect((await handle.jsonValue()).hits, label).toEqual([]);
 }
 
 /** 결과 화면: "오늘의 솜씨" 칸 점수 합 + 단계 완료·별 점수 줄 = "이번에 모은 솜씨 점수" (화면 = 저장) */
@@ -981,45 +1005,63 @@ test('배치(네 크기): 세 단계의 모든 장면(답하기 전 · 틀림 ·
      * 내려 본 채로 답하면 판이 짧아지며 화면이 당겨져(문서 높이가 줄어든다) 알림이 잠깐 조작 띠 위에 놓일 수 있다 — 엔진의 알림 자리 계산이
      * 그렇다(정육면체 차시의 면 붙이기도 같다). 그래서 휴대폰에서는 내려 보지 않은 화면(scrollY = 0)에서만 겹침을 본다
      */
-    const check = async (label, { toast = true } = {}) => {
+    const check = async (label) => {
       await noScroll(page, at(label));
       if (size.width > 900) await expectPanelFits(page, at(label));
-      if (toast && (size.width > 560 || await page.evaluate(() => window.scrollY === 0))) await expectToastClear(page, at(label));
+    };
+    /**
+     * 알림이 조작을 가리지 않는다. 알림을 띄운 조작(답하기) 바로 뒤에는 꼭 보고(required), 접기가 끝난 뒤·까닭을 고른 뒤의 장면에서는
+     * 알림이 아직 남아 있을 때만 본다 — 알림은 몇 초 뒤 사라져, 느린 기기에서는 접기가 끝나기 전에 없어진다
+     */
+    const checkToast = async (label, required = true) => {
+      if (size.width > 560 || await page.evaluate(() => window.scrollY === 0)) await expectToastClear(page, at(label), { required });
     };
     // 만나는 선분
     await page.goto(STAGE_URL('cuboid-edge'));
     let [q] = questionsFor('cuboid-edge');
-    await check('만나는 선분: 답하기 전', { toast: false });
+    await check('만나는 선분: 답하기 전');
     await pickEdge(page, q.options.find((o) => o.kind === 'near').index);
+    await checkToast('만나는 선분: 틀림');
     await check('만나는 선분: 틀림(힌트 버튼)');
     await pickEdge(page, q.answer);
+    await checkToast('만나는 선분: 맞힘');
     await folded(page);
     await check('만나는 선분: 맞힘');
+    await checkToast('만나는 선분: 맞힘(접힌 뒤)', false);
     // 알맞은 면 고르기
     await page.goto(STAGE_URL('cuboid-face'));
     [q] = questionsFor('cuboid-face');
-    await check('알맞은 면: 답하기 전', { toast: false });
-    for (const kind of ['length', 'pair']) {
-      await placeCard(page, q, kind);
-      await check(`알맞은 면: 틀린 카드(${kind})`);
+    await check('알맞은 면: 답하기 전');
+    for (const kind of ['length', 'pair', 'answer']) {
+      await cardOf(page, q, kind).click();
+      await page.locator('.net-slot').click();
+      await checkToast(`알맞은 면: 카드를 붙임(${kind})`);
+      await folded(page);
+      await check(kind === 'answer' ? '알맞은 면: 맞힘' : `알맞은 면: 틀린 카드(${kind})`);
+      await checkToast(`알맞은 면: 접힌 뒤(${kind})`, false);
+      if (kind === 'answer') break;
       await page.getByRole('button', { name: '펴고 다시 하기' }).click();
-      await check(`알맞은 면: 펴고 다시(${kind})`, { toast: false });
+      await check(`알맞은 면: 펴고 다시(${kind})`);
     }
-    await placeCard(page, q, 'answer');
-    await check('알맞은 면: 맞힘');
     // 길이까지 살펴요: 다섯 문항 — 무효는 번갈아 맞히고(까닭 고르기 · 틀린 까닭) 틀린다
     await page.goto(STAGE_URL('cuboid-judge'));
     for (const [i, x] of questionsFor('cuboid-judge').entries()) {
-      await check(`길이까지 ${i + 1}: 답하기 전`, { toast: false });
+      await check(`길이까지 ${i + 1}: 답하기 전`);
       if (x.valid || i % 2 === 0) {
         await page.locator(`.answer-btn[data-answer="${x.expected}"]`).click();
+        await checkToast(`길이까지 ${i + 1}: 맞힘`);
         if (!x.valid) {
           await check(`길이까지 ${i + 1}: 까닭 고르기`);
           await page.locator(`.reason-chip:not([data-reason="${x.intended}"])`).first().click(); // 틀린 까닭: 글이 가장 길다
+          await checkToast(`길이까지 ${i + 1}: 까닭을 고른 뒤`, false);
         }
-      } else await page.locator(`.answer-btn:not([data-answer="${x.expected}"])`).click();
+      } else {
+        await page.locator(`.answer-btn:not([data-answer="${x.expected}"])`).click();
+        await checkToast(`길이까지 ${i + 1}: 틀림`);
+      }
       await folded(page);
       await check(`길이까지 ${i + 1}: 접힘(${x.intended ?? '되는 전개도'})`);
+      await checkToast(`길이까지 ${i + 1}: 접힌 뒤`, false);
       await page.locator('.next-btn').click();
     }
     await expect(page.locator('.screen-result')).toBeVisible();
@@ -1080,9 +1122,11 @@ test('내 맘대로 직육면체 전개도 배치(네 크기): 놓는 판 · 접
     await buildNet(page, bad);
     await check('6장을 놓음');
     expect(await foldDrift(), at('판 → 무대(안 되는 모양)')).toBe(0);
+    // 알림이 조작을 가리지 않는다: [접어 보기] 바로 뒤에 본다(알림은 몇 초 뒤 사라져, 느린 기기에서는 접기가 끝나기 전에 없어진다)
+    await expectToastClear(page, at('까닭 고르기'));
     await folded(page);
     await check('까닭 고르기');
-    await expectToastClear(page, at('까닭 고르기'));
+    await expectToastClear(page, at('까닭 고르기(접힌 뒤)'), { required: false });
     await page.locator('.reason-chip[data-reason="vertex"]').click();
     await check('틀린 까닭을 고른 뒤');
     // 전개도 세 가지: 첫째 · 끝낼 수 있는 장면(둘째) · 별 3개(셋째)
@@ -1090,9 +1134,10 @@ test('내 맘대로 직육면체 전개도 배치(네 크기): 놓는 판 · 접
       await fresh(page);
       await buildNet(page, netRects(id, board));
       expect(await foldDrift(), at(`판 → 무대(전개도 ${i + 1})`)).toBe(0);
+      await expectToastClear(page, at(`전개도 ${i + 1}`));
       await folded(page);
       await check(`전개도 ${i + 1}을 접음`);
-      await expectToastClear(page, at(`전개도 ${i + 1}`));
+      await expectToastClear(page, at(`전개도 ${i + 1}(접힌 뒤)`), { required: false });
       // 보기 조작판이 도장·이름표와 겹치지 않는다
       const clash = await page.evaluate(() => {
         const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();

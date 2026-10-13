@@ -41,8 +41,13 @@ async function resultXp(page) {
     };
   });
 }
-/** 화면이 넘치지 않고(휴대폰은 가로만), 오른쪽 판 안쪽도 넘치지 않는다 */
+/**
+ * 화면이 넘치지 않고(휴대폰은 가로만), 오른쪽 판 안쪽도 넘치지 않는다.
+ * 재기 전에 화면 안의 움직임(버튼의 들뜸이 가라앉는 전환, 알림·도장이 들어오는 움직임)이 끝날 때까지 기다린다 — 느린 기기에서 움직임 도중에 재지 않게
+ */
 async function expectFits(page, label) {
+  await page.waitForFunction(() => [...document.querySelectorAll('.screen')].every((el) => el.getAnimations({ subtree: true }).every((a) => (
+    a.playState !== 'running' || a.animationName === 'turn-hint' || a.effect?.getComputedTiming().iterations === Infinity))));
   const m = await page.evaluate(() => {
     const panel = document.querySelector('.net-panel');
     return { page: document.documentElement.scrollHeight - window.innerHeight, panel: panel ? panel.scrollHeight - panel.clientHeight : 0 };
