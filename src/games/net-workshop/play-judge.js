@@ -11,12 +11,13 @@ import { createNetView, createWorkbench } from './view3d.js';
  * "왜 안 될까요?" 까닭 고르기 칩 3개 + 넘어가기 (판별·자유 배치가 함께 쓴다).
  * 고르면 맞는지 보여 주고(틀리면 바른 까닭), 맞으면 ctx.reward.event('explain', { correct, itemId })로 점수(문항마다 한 번).
  * onDone({ chosen, correct, xp }) — 넘어가면 chosen은 null
+ * reasons · judge: 다른 입체의 칩과 채점(직육면체: CUBOID_JUDGE_REASONS · judgeCuboidReason). 없으면 정육면체의 칩 3개
  */
-export function createReasonPick({ ctx, itemId, problems, skipLabel = '넘어가기', onDone }) {
+export function createReasonPick({ ctx, itemId, problems, skipLabel = '넘어가기', onDone, reasons = REASONS, judge = judgeReason }) {
   const { h } = ctx;
   let done = false;
   const result = h('p', { class: 'reason-pick-result', role: 'status' });
-  const chips = REASONS.map((r) => h('button', {
+  const chips = reasons.map((r) => h('button', {
     type: 'button',
     class: 'btn btn-small reason-chip',
     dataset: { reason: r.id },
@@ -41,14 +42,14 @@ export function createReasonPick({ ctx, itemId, problems, skipLabel = '넘어가
 
   function choose(id) {
     if (done) return;
-    const r = judgeReason(problems, id);
+    const r = judge(problems, id);
     const xp = r.correct ? ctx.reward.event('explain', { correct: true, itemId }) : 0;
     ctx.sfx.play(r.correct ? 'correct' : 'click');
     for (const c of chips) {
       if (c.dataset.reason === id) c.classList.add('is-chosen', r.correct ? 'is-right' : 'is-wrong');
       if (!r.correct && c.dataset.reason === r.answer) c.classList.add('is-right');
     }
-    const mine = REASONS.find((x) => x.id === id).text;
+    const mine = reasons.find((x) => x.id === id).text;
     result.replaceChildren(icon(r.correct ? 'check' : 'info'), h('span', null,
       r.correct ? `내 까닭 "${mine}" 맞아요!${xp ? ` 설명 +${xp}` : ''}` : `내 까닭 "${mine}" — 바른 까닭은 "${r.answerText}"예요.`));
     result.classList.toggle('is-right', r.correct);

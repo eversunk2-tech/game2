@@ -31,6 +31,10 @@ const square = (x, y, fill, { size = 14, stroke = INK, width = 2, transform = nu
 
 const face = (n) => `var(--face-${n})`;
 
+/** 직사각형 조각 (직육면체 차시의 단계 그림) */
+const box = (x, y, width, height, fill, { stroke = INK, width: line = 2, transform = null, extra = '' } = {}) =>
+  svgEl('rect', { x, y, width, height, rx: 1.5, style: paint(fill, stroke, line, extra), transform });
+
 // ── 단계 카드 그림 (76×57, viewBox 80×60) ─────────────
 const STAGE_THUMBS = {
   /** 판별: 십자 전개도 + ✓ 도장 */
@@ -59,6 +63,33 @@ const STAGE_THUMBS = {
     svgEl('path', { d: 'M16 4v52M30 4v52M44 4v52M58 4v52M2 18h76M2 32h76M2 46h76', style: 'fill:none;stroke:rgb(255 255 255 / 28%);stroke-width:1' }),
     square(16, 18, face(1)), square(30, 18, face(2)), square(30, 32, face(3)),
     square(54, 8, face(6), { transform: 'rotate(-10 61 15)' }),
+  ],
+  // ── 직육면체의 전개도 차시 (크기가 다른 직사각형 면) ──
+  /** 만나는 선분: 같은 무늬로 표시한 두 변 */
+  edge: () => [
+    box(8, 22, 20, 14, face(2)), box(28, 22, 12, 14, face(3)), box(40, 22, 20, 14, face(4)), box(60, 22, 12, 14, face(5)), box(8, 10, 20, 12, face(1)), box(40, 36, 20, 12, face(6)),
+    svgEl('path', { d: 'M8 10h20M40 22h20', style: 'fill:none;stroke:var(--primary);stroke-width:4.5' }),
+  ],
+  /** 알맞은 면 고르기: 빈 자리(+)와 크기가 다른 카드 두 장 */
+  face: () => [
+    box(6, 24, 18, 14, face(2)), box(24, 24, 12, 14, face(3)), box(36, 24, 18, 14, face(4)), box(6, 12, 18, 12, face(1)),
+    box(36, 38, 18, 10, 'var(--primary-soft)', { stroke: 'var(--primary)', extra: 'stroke-dasharray:3 2' }),
+    svgEl('path', { d: 'M45 39.5v7M41.5 43h7', style: 'fill:none;stroke:var(--primary);stroke-width:2;stroke-linecap:round' }),
+    box(58, 8, 16, 11, face(6)), box(60, 26, 12, 17, face(6)),
+  ],
+  /** 길이까지 살펴요: 길이 눈금이 붙은 전개도 + ✓ 도장 */
+  cjudge: () => [
+    box(6, 20, 18, 14, face(2)), box(24, 20, 12, 14, face(3)), box(36, 20, 18, 14, face(4)), box(6, 8, 18, 12, face(1)), box(36, 34, 18, 12, face(6)),
+    svgEl('path', { d: 'M6 4.5h18M6 2.5v4M24 2.5v4M15 2.5v4', style: 'fill:none;stroke:var(--ink);stroke-width:1.6' }),
+    svgEl('circle', { cx: 66, cy: 44, r: 10, style: paint('var(--paper)') }),
+    svgEl('path', { d: 'M61 44l4 4 7-8', style: 'fill:none;stroke:var(--correct);stroke-width:3;stroke-linecap:round;stroke-linejoin:round' }),
+  ],
+  /** 내 맘대로 직육면체 전개도: 재단 매트 위에 놓는 중인 직사각형 조각 */
+  cfree: () => [
+    svgEl('rect', { x: 2, y: 4, width: 76, height: 52, rx: 6, style: paint('var(--mat)') }),
+    svgEl('path', { d: 'M12 4v52M22 4v52M32 4v52M42 4v52M52 4v52M62 4v52M72 4v52M2 14h76M2 24h76M2 34h76M2 44h76', style: 'fill:none;stroke:rgb(255 255 255 / 28%);stroke-width:1' }),
+    box(12, 24, 30, 20, face(1)), box(42, 24, 10, 20, face(3)), box(12, 14, 30, 10, face(5)),
+    box(54, 8, 20, 10, face(6), { transform: 'rotate(-10 64 13)' }),
   ],
 };
 
@@ -141,4 +172,20 @@ export function heroArt(h) {
     view.el,
     h('p', { class: 'hero-sticky' }, '먼저 예측하고', h('br'), '접어서 확인!'),
   );
+}
+
+// ── 직육면체 전개도의 작은 그림 ("내 맘대로 직육면체 전개도"의 찾은 전개도 칸) ─────────────
+/** 직사각형 면들 [{ x, y, w, h }]을 정사각형 그림에 가운데 맞춰 그린다. 크기가 같은 면(짝)은 같은 색 */
+export function miniRects(rects, { cls = 'mini-net' } = {}) {
+  const minX = Math.min(...rects.map((r) => r.x));
+  const minY = Math.min(...rects.map((r) => r.y));
+  const w = Math.max(...rects.map((r) => r.x + r.w)) - minX;
+  const hgt = Math.max(...rects.map((r) => r.y + r.h)) - minY;
+  const size = Math.max(w, hgt);
+  const kinds = [...new Set(rects.map((r) => [Math.min(r.w, r.h), Math.max(r.w, r.h)].join('x')))].sort();
+  const parts = rects.map((r) => svgEl('rect', {
+    x: r.x - minX + (size - w) / 2, y: r.y - minY + (size - hgt) / 2, width: r.w, height: r.h, rx: 0.08,
+    style: paint(face(kinds.indexOf([Math.min(r.w, r.h), Math.max(r.w, r.h)].join('x')) * 2 + 1), INK, 0.14),
+  }));
+  return svgRoot(`-0.3 -0.3 ${size + 0.6} ${size + 0.6}`, cls, parts);
 }

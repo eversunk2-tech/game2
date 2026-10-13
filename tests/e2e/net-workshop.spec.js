@@ -24,6 +24,8 @@ const FILE = 'net-workshop.html';
 /** 게임과 같은 시드 문자열(<seed>:<단계 id>)로 같은 문항을 만들어 정답을 안다 */
 const questionsFor = (stageId, seed = '1') => makeQuestions(STAGES.find((s) => s.id === stageId), createRng(`${seed}:${stageId}`));
 const foldStage = (page) => page.locator('.fold-stage');
+/** 정육면체 차시의 단계(일반 4 + 도전 2). "모든 단계"를 도는 검사는 차시별로 돈다 — 다른 차시가 더해져도 이 파일의 검사가 달라지지 않게(그 차시는 그 차시의 spec이 본다) */
+const CUBE_STAGES = STAGES.filter((s) => s.lesson === 'cube');
 
 /**
  * 화면의 펼친 전개도가 문항과 같은지: 면마다 이름(data-label)과, matrix3d()의 평행이동으로 읽은 칸 위치를 비교한다.
@@ -1821,7 +1823,14 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     // 접힘이 풀린 화면에서는 "방금 접은 모양과 같은 도감 칸"의 파랑 테두리가 보인다
     if (roomy) expect((await dexState(page)).same, `${at} 같은 모양 칸 강조`).toBe(true);
     await fold('목표 전 · 새 전개도(안 되는 모양 뒤가 아님)', CUBE_NETS[1]);
-    await expect(page.locator('.btn-pair .btn')).toHaveCount(2);
+    // 전개도 2가지를 찾으면 끝낼 수 있다(사용자 결정 2026-10-11 — 그 전에는 3가지를 찾아야 [결과 보기]가 나와 여기서 버튼이 둘이었다):
+    // 한 가지 더 찾으라는 안내와 세 버튼 한 줄([펴서 고치기]가 주 버튼, [결과 보기]는 그 옆). 이 장면의 넘침·잘림은 위 fold의 check가 잰다
+    await expect(page.locator('.goal-done')).toHaveText('전개도 2가지를 찾았어요! 한 가지 더 찾으면 별 3개예요.');
+    await expect(page.locator('.btn-trio .btn')).toHaveText(['펴서 고치기', '새로 만들기', '결과 보기']);
+    // 세 버튼이 한 줄: 포인터를 버튼 밖으로 옮기고(올려 둔 버튼은 1px 들뜬다) 버튼의 움직임이 끝난 뒤의 자리를 잰다
+    await page.mouse.move(0, 0);
+    await page.waitForFunction(() => [...document.querySelectorAll('.btn-trio .btn')].every((b) => b.getAnimations().every((a) => a.playState !== 'running')));
+    expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
     await page.locator('.free-fix').click();
     await check('목표 전 · 펴서 고치기(놓는 판, 6장)');
     await fold('목표 달성 순간', CUBE_NETS[2]); // 쪽지와 점수 쪽지(연속 3번)에 달성 문장까지 있는 장면
@@ -1850,7 +1859,7 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[0], 'right');
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[1], 'wrong');
     await fold('2판 목표 뒤 · 접어 본 2×2', VERTEX[2], 'count');
-    // 별 3개를 받은 뒤 다시 하는 판(내 맘대로 전개도는 한 번 마치면 늘 별 3개다): 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
+    // 별 3개를 받은 뒤 다시 하는 판(위에서 전개도 3가지를 넘겨 찾고 마쳐 별 3개다): 새 모양(점수 쪽지가 붙는다)과 접어 본 모양
     await page.goto(FREE());
     await fold('별 3개 판 · 새 겹침', OVERLAP[10], 'skip');
     await expect(page.locator('.bonus-note')).toContainText('다음에 새 전개도를 만들면 +1');
@@ -2783,7 +2792,7 @@ test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × �
     const phone = size.width <= 560;
     const board = phone ? BOARD_SIZES.phone : BOARD_SIZES.wide;
     const put = (shape) => centerOnBoard(shape, board);
-    for (const stage of STAGES) {
+    for (const stage of CUBE_STAGES) {
       const at = `${size.width}×${size.height} ${stage.id}`;
       await page.setViewportSize(size);
       await page.goto(STAGE_URL(stage.id));
@@ -2890,7 +2899,7 @@ test('머리가 두 줄이 되어도(글자가 넓은 기기) 크롬북 화면�
     };
   });
   for (const size of [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]) {
-    for (const stage of STAGES) {
+    for (const stage of CUBE_STAGES) {
       const at = `${size.width}×${size.height} ${stage.id}`;
       await page.setViewportSize(size);
       await page.goto(STAGE_URL(stage.id));

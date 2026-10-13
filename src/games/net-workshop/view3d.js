@@ -16,11 +16,12 @@
  * 그리고 전개도 크기가 조작판 때문에 달라지지 않게 — 그동안은 좌우 돌리기 두 개만 아래 조작 띠에 있다.
  */
 import { icon } from '../../shared/ui/icons.js';
-import { LABELS, foldNet, fullVertices, missingSlots, overlappingPairs } from './fold.js';
+import { LABELS, checkNet, foldNet, fullVertices, missingSlots, overlappingPairs } from './fold.js';
 import {
   add,
   applyDir,
   bounds,
+  centroid,
   dot,
   identity,
   multiply,
@@ -72,6 +73,15 @@ const MAX_UNIT = 116;
 const MIN_UNIT = 30;
 const TAP = 48; // 누르는 곳(빈 자리 버튼) 최소 크기(px)
 const MAX_ZOOM = 1.7; // 다 접은 입체를 이만큼까지 크게 본다
+// 정육면체가 아닌 입체(직육면체 …)의 자동 맞춤: 접은 입체를 감싸는 공(가장 긴 대각선)이 무대에 들어오게 — 어느 쪽으로 돌려도 처음 배율에서 잘리지 않는다.
+// 정육면체의 지금 값(짧은 쪽 ÷ (3.3 × 칸), 대각선 √3)과 같은 비율이다 (spec 17-9)
+const SPAN_PER_DIAGONAL = 3.3 / Math.sqrt(3);
+const MIN_ZOOM = 0.6;
+const MIN_UNIT_CM = 12; // 길이 단위(cm)로 만든 전개도의 1 cm 최소 크기(px). 정육면체는 칸 하나가 면 하나라 MIN_UNIT
+/** 결과 이름표에 쓰는 입체 이름 */
+const SOLID_NAMES = { cube: '정육면체', cuboid: '직육면체' };
+/** 빈 자리가 차지하는 직사각형: 정육면체는 칸 하나, 그 밖에는 자리가 준 rect { x, y, w, h } */
+const slotBox = (s) => s.rect ?? { x: s.cell[0], y: s.cell[1], w: 1, h: 1 };
 const RASTER_MAX = 4; // 선명하게 그리는 배수의 위쪽 끝 (자동 맞춤 1.7 × 학생 배율 2 = 3.4배까지 본다)
 // 한 꼭짓점에 네 면이 모인 전개도는 덩어리에 붙은 경첩만 약 56°까지 접히고 멈춘다.
 // (65°에서는 덩어리 양쪽에 접힌 면이 비스듬해 좁게 보였다 — net-workshop 재검토 2 R3)
@@ -165,7 +175,7 @@ const isTopOrBottom = (normal) => Math.abs(normal[2]) > 0.99;
  *   마주 보는 면 단계는 [★ 면, 정답 면] — 마주 보는 두 면은 한 시점에서 함께 보일 수 없으므로 ★ 면은 [↺][↻]로 돌려 본다.
  *   면 붙이기에서 맞힌 경우는 [붙인 면].
  */
-export function displayNet(net, { focus = [] } = {}) {
+export function displayNet(net, { focus = [], show = [] } = {}) {
   // 돌려주는 값: { net(바닥 면을 고른 전개도), turn(더 돌릴 각도), tilt(다 접었을 때 기울기) }
   const blocked = fullVertices(net);
   if (blocked.length > 0) return displayBlocked(net, blocked);
@@ -183,6 +193,8 @@ export function displayNet(net, { focus = [] } = {}) {
       for (const slot of missing) s += isBottom(slot.normal) ? -100 : seenScore(turnNormal(slot.normal, turn));
       for (const id of focus) if (isTopOrBottom(normalOf(id))) s -= 20;
       if (focus.length > 0) s += seenScore(turnNormal(normalOf(focus[focus.length - 1]), turn));
+      // show: 처음 시점에서 함께 보여야 할 면들(만나는 두 선분이 놓인 면, 길이가 다른 두 변이 놓인 면)
+      for (const id of show) s += 4 * seenScore(turnNormal(normalOf(id), turn));
       if (!best || s > best.score) best = { net: candidate, turn, score: s };
     }
   }
@@ -240,9 +252,15 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   let blocked = []; // 한 꼭짓점에 네 면이 모인 곳
   let layout = null; // { unit, origin: [x, y] } 펼친 상태를 놓는 판의 칸과 같은 자리·크기로 (자유 배치)
   let layoutBox = null; // layout을 맞춘 때의 무대 크기
+  let fitBox = null; // [가로, 세로](전개도 단위): 전개도가 이보다 작아도 이 크기에 맞춰 그린다 — 문항마다 1 cm의 화면 크기가 같게
+  let pad = 0; // 무대 가장자리에 비워 둘 자리(px, 양쪽 합): 테두리 밖에 적는 꼭짓점 이름의 자리
+  let showLengths = false; // 면마다 가로·세로 길이(cm)를 적는다
+  let solidDiagonal = Math.sqrt(3); // 다 접은 입체를 감싸는 상자의 대각선(전개도 단위)
+  let nameEls = []; // 꼭짓점 이름 { el, point } (펼친 전개도에서만 보인다)
   let faceEls = new Map();
   let slotEls = new Map();
   let markEls = [];
+  let tagEls = []; // 띠 이름표(setEdgeMarks): 그릴 때마다 화면에서 바로 서게 돌리고(placeTag), 돌린 방향이 바뀌면 자리를 다시 잡는다
   let marksShown = false; // 다 접힌 뒤의 표시(겹침·빈 자리·이름표)가 보이는 중
   let marksKey = '';
   let marksOk = false;
@@ -285,7 +303,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   // ── 크기 ─────────────────────────────
   function flatPoints() {
     const pts = net ? net.faces.flatMap((f) => f.poly) : [];
-    for (const s of slots) pts.push(s.cell, [s.cell[0] + 1, s.cell[1] + 1]);
+    for (const s of slots) {
+      const b = slotBox(s);
+      pts.push([b.x, b.y], [b.x + b.w, b.y + b.h]);
+    }
     return pts;
   }
 
@@ -297,12 +318,18 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     const width = box.width || 600;
     const height = box.height || 400;
     boxSize = { width, height };
-    const fit = (margin) => Math.floor(Math.min(width / (max[0] - min[0] + margin), height / (max[1] - min[1] + margin)));
+    const spanX = Math.max(max[0] - min[0], fitBox?.[0] ?? 0);
+    const spanY = Math.max(max[1] - min[1], fitBox?.[1] ?? 0);
+    const fit = (margin) => Math.floor(Math.min((width - pad) / (spanX + margin), (height - pad) / (spanY + margin)));
     let size = fit(0.9);
-    // 빈 자리 버튼이 있으면 가장자리 여백을 줄여서라도 48px 이상으로 (좁은 휴대폰)
-    if (slots.length > 0 && size < TAP) size = Math.max(size, Math.min(TAP, fit(0.1)));
-    unit = layout ? layout.unit : Math.max(MIN_UNIT, Math.min(MAX_UNIT, size));
-    zoom = blocked.length > 0 ? 1 : Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
+    // 빈 자리 버튼이 있으면 가장자리 여백을 줄여서라도 48px 이상으로 (좁은 휴대폰). 빈 자리의 짧은 변이 48px이 되는 크기까지
+    const slotSide = slots.reduce((least, s) => Math.min(least, slotBox(s).w, slotBox(s).h), Infinity);
+    if (slots.length > 0 && size * slotSide < TAP) size = Math.max(size, Math.min(Math.ceil(TAP / slotSide), fit(0.1)));
+    const cube = net.kind === 'cube';
+    unit = layout ? layout.unit : Math.max(cube ? MIN_UNIT : MIN_UNIT_CM, Math.min(MAX_UNIT, size));
+    if (blocked.length > 0) zoom = 1;
+    else if (cube) zoom = Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
+    else zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(width, height) / (SPAN_PER_DIAGONAL * solidDiagonal * unit)));
     applyRaster();
   }
 
@@ -344,7 +371,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     if (!net || destroyed) return;
     const folded = foldNet(net, t, { tOf });
     const pts = folded.faces.flatMap((f) => f.points);
-    if (t <= 1e-6) for (const s of slots) pts.push([...s.cell, 0], [s.cell[0] + 1, s.cell[1] + 1, 0]);
+    if (t <= 1e-6) {
+      for (const s of slots) {
+        const b = slotBox(s);
+        pts.push([b.x, b.y, 0], [b.x + b.w, b.y + b.h, 0]);
+      }
+    }
     const { min, max } = bounds(pts);
     let center = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     // 놓는 판에서 이어 접을 때: 펼친 상태는 판의 칸 자리 그대로, 접을수록 무대 가운데로 (면이 튀지 않게)
@@ -372,10 +404,24 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       const back = isBack(f.normal, f.center, center, look);
       faceEl.classList.toggle('is-back', back);
       if (marksShown) faceEl.style.setProperty('--mark-turn', `${uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose)}deg`);
+      if (net.kind !== 'cube') settleInner(faceEl, f, back, pose);
     }
     for (const s of slots) {
       const slotEl = slotEls.get(s.key);
-      slotEl.style.transform = toCssMatrix(placeMatrix(identity(), [s.cell[0], s.cell[1], 0], center));
+      slotEl.style.transform = toCssMatrix(placeMatrix(identity(), [slotBox(s).x, slotBox(s).y, 0], center));
+    }
+    // 꼭짓점 이름: 펼친 전개도의 테두리 밖에 적는다(접히기 시작하면 CSS가 숨긴다). 전개도를 평면에서 돌려도 글자는 바로 선다
+    if (nameEls.length > 0 && t <= 1e-6) {
+      scene.style.setProperty('--name-turn', `${(-turn).toFixed(3)}deg`);
+      for (const n of nameEls) n.el.style.transform = toCssMatrix(placeMatrix(identity(), [n.point[0], n.point[1], 0], center));
+    }
+    // 띠 이름표(선분 이름 · 길이)는 읽어야 하는 표시라 "겹쳐요" · "비어요"와 같은 규칙으로 화면에서 바로 세운다 (common-rules 4절):
+    // 펼친 전개도에서도, 접는 동안에도, 돌려 본 자세에서도. 띠는 면과 함께 그대로 접히고 이름표만 돈다
+    for (const tag of tagEls) {
+      const f = folded.faces.find((x) => x.id === tag.face);
+      if (!f) continue;
+      const turned = uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose);
+      if (turned !== tag.turn) placeTag(tag, turned);
     }
     el.classList.toggle('is-flat', t <= 1e-6);
     for (const m of markEls) m.place(center, folded, look);
@@ -443,7 +489,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   function ghostMark(slot) {
     const markEl = h('div', { class: 'net-ghost', 'aria-hidden': 'true' }, h('span', null, '비어요'));
     const { u, v, normal, center: c } = slot;
-    const origin = sub(sub(c, scaleVec(u, 0.5)), scaleVec(v, 0.5));
+    const [gw, gh] = slot.size ?? [1, 1]; // 자리의 크기(정육면체는 한 칸)
+    const origin = sub(sub(c, scaleVec(u, gw / 2)), scaleVec(v, gh / 2));
     const model = [
       u[0], v[0], normal[0], origin[0],
       u[1], v[1], normal[1], origin[1],
@@ -451,8 +498,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       0, 0, 0, 1,
     ];
     addMark(markEl, (center, folded, look) => {
-      markEl.style.width = `${unit * raster}px`;
-      markEl.style.height = `${unit * raster}px`;
+      markEl.style.width = `${unit * raster * gw}px`;
+      markEl.style.height = `${unit * raster * gh}px`;
       markEl.style.transform = toCssMatrix(placeMatrix(model, [0, 0, 0], center, scaleVec(normal, 0.01)));
       // "비어요" 글자도 면 글자와 같은 규칙으로 바로 세운다 (아래에서 봐도 거꾸로 서지 않게, 안쪽에서 보면 뒤집어서)
       markEl.classList.toggle('is-back', isBack(normal, c, center, look));
@@ -482,12 +529,17 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       faceEl.querySelector('.face-mark').textContent = '✗ 겹쳐요';
     }
     for (const s of missing) ghostMark(s);
-    const ok = pairs.length === 0 && missing.length === 0 && blocked.length === 0 && net.faces.length === 6;
+    // 정육면체는 겹침·빈 자리·막힌 꼭짓점으로, 그 밖의 입체(직육면체: 길이까지 맞아야 한다)는 판정과 같은 checkNet으로 정한다
+    const ok = net.kind === 'cube'
+      ? pairs.length === 0 && missing.length === 0 && blocked.length === 0 && net.faces.length === 6
+      : checkNet(net).ok;
     // 이름표: 정육면체가 되는 전개도는 단계가 준 결과(verdict)가 있으면 그것을 쓴다. 안 되는 전개도의 까닭은 늘 여기서 정한다
     const shownOk = ok && verdict ? Boolean(verdict.ok) : ok;
     badge.hidden = false;
     badge.classList.toggle('is-wrong', !shownOk);
-    const text = ok ? (verdict?.text ?? '정육면체가 됐어요') : blocked.length > 0 ? '네 면이 한 점에 모여 접을 수 없어요' : '정육면체가 안 돼요';
+    const solid = SOLID_NAMES[net.kind] ?? SOLID_NAMES.cube;
+    const stuck = blocked.every((v) => v.faces.length >= 4) ? '네 면이 한 점에 모여 접을 수 없어요' : '면이 한 점을 둘러싸 접을 수 없어요';
+    const text = ok ? (verdict?.text ?? `${solid}가 됐어요`) : blocked.length > 0 ? stuck : `${solid}가 안 돼요`;
     badge.replaceChildren(h('span', { class: 'badge-main' }, icon(shownOk ? 'check' : 'cross'), text));
     // 빈 자리가 겹친 자리의 정반대라 지금 보기(내가 돌리고 기울인 것까지)에서 안 보이면 돌려 보라고 알려 준다
     unseenSlots = hintDone ? [] : missing.filter(slotHidden);
@@ -541,6 +593,22 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       ),
     );
     faceEl.style.setProperty('--face-color', skin?.color ? skin.color(f.label) : faceColor(f.label));
+    if (net.kind !== 'cube') {
+      faceEl.classList.add('is-rect'); // 직사각형 면: 이름 자리(--lx · --ly)와 안쪽 상자(.is-quarter)를 view3d.js가 맞춘다 (cuboid.css)
+      // 면의 가로·세로(칸): 글자를 바로 세우느라 면 안쪽을 90° 돌릴 때 안쪽 상자의 가로·세로를 바꾸는 데 쓴다(.is-quarter)
+      faceEl.style.setProperty('--fw', String(Math.round((max[0] - min[0]) * 1e4) / 1e4));
+      faceEl.style.setProperty('--fh', String(Math.round((max[1] - min[1]) * 1e4) / 1e4));
+    }
+    if (showLengths) {
+      // 길이 이름표: 면마다 위쪽 변에 가로, 왼쪽 변에 세로 길이를 적는다 — 어떤 전개도든(되든 안 되든) 같은 규칙
+      const [w, hgt] = [max[0] - min[0], max[1] - min[1]].map((v) => `${Math.round(v * 100) / 100} cm`);
+      faceEl.setAttribute('aria-label', `${f.label} 면, 가로 ${w}, 세로 ${hgt}`);
+      faceEl.classList.add('has-len');
+      faceEl.append(
+        h('span', { class: 'face-len is-w', 'aria-hidden': 'true' }, w),
+        h('span', { class: 'face-len is-h', 'aria-hidden': 'true' }, hgt),
+      );
+    }
     if (!isAxisRect(f.poly)) {
       const pts = f.poly.map(([x, y]) => `calc(var(--unit) * ${x - min[0]}) calc(var(--unit) * ${y - min[1]})`);
       faceEl.style.clipPath = `polygon(${pts.join(', ')})`;
@@ -549,12 +617,180 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   }
 
   function buildSlot(s) {
-    return h('button', {
+    const slotEl = h('button', {
       type: 'button',
       class: 'net-slot dnd-target',
       'aria-label': s.label ?? '빈 자리',
       dataset: { cell: s.key },
     }, h('span', { class: 'slot-plus', 'aria-hidden': 'true' }, '+'));
+    if (s.rect) {
+      slotEl.style.width = `calc(var(--unit) * ${s.rect.w})`;
+      slotEl.style.height = `calc(var(--unit) * ${s.rect.h})`;
+    }
+    return slotEl;
+  }
+
+  /** 꼭짓점 이름(ㄱㄴㄷ…): 테두리 꼭짓점의 바깥쪽에 적는다. names: [{ name, point: [x, y], out: [dx, dy] }] */
+  function buildName(n) {
+    const nameEl = h('div', { class: 'net-vname', 'aria-hidden': 'true' }, h('span', null, n.name));
+    nameEl.style.setProperty('--ox', String(n.out[0]));
+    nameEl.style.setProperty('--oy', String(n.out[1]));
+    return { el: nameEl, point: n.point };
+  }
+
+  // ── 정육면체가 아닌 입체(면이 직사각형)의 글자 자리 ─────────────────
+  const SPUN_FACES = ['is-overlap', 'is-correct', 'is-placed']; // 다 접힌 뒤 글자를 바로 세우는 면 (style.css .marks-on …)
+  /**
+   * 길이 글자가 있는 면의 이름(가~바)을 가운데에서 옮기는 만큼(칸): 오른쪽 아래 — 왼쪽 가운데의 세로 길이 글자와 위쪽의 가로 길이 글자를 피한다.
+   * 폭이 좁은 면(크기를 바꾼 면의 1 cm 폭)은 옆에 자리가 없어 세로 길이 글자 아래로 내리고, 높이가 낮은 면은 가로 길이 글자의 오른쪽으로 보낸다
+   */
+  const labelShift = (width, height) => (width < 1.5 ? [0, 0.44] : height < 1.5 ? [0.62, 0.08] : [0.34, 0.14]);
+  /** "✗ 겹쳐요"가 켜진 면: 이름을 안쪽 상자의 위로 조금 올려 아래쪽의 "✗ 겹쳐요" 띠와 떨어뜨린다(안쪽 좌표 — 띠와 함께 돈다) */
+  const OVERLAP_SHIFT = [0, -0.14];
+  /**
+   * 정육면체가 아닌 면의 뒷정리 — 정육면체의 면에는 손대지 않는다.
+   * · 글자를 바로 세우느라 면 안쪽(.face-inner)을 90° · 270° 돌리는 면은 안쪽 상자의 가로·세로도 바꾼다(.is-quarter, cuboid.css):
+   *   "✗ 겹쳐요" 띠가 긴 면의 밖으로 나가지 않는다
+   * · 면의 이름을 옮긴다(--lx · --ly, 안쪽 좌표): 길이 글자가 있는 면은 면을 어떻게 돌려 세우든, 종이 안쪽이 보여 뒤집든 늘 같은 자리
+   *   (labelShift)에 있게 면 안쪽의 돌림·뒤집기를 거꾸로 계산해 준다 — 길이 글자와 포개지지 않는다. "✗ 겹쳐요"가 켜진 면은 띠 위로
+   */
+  function settleInner(faceEl, f, back, pose) {
+    const spun = marksShown && (blocked.length > 0 || SPUN_FACES.some((c) => faceEl.classList.contains(c)));
+    const turned = spun ? uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose) : 0;
+    faceEl.classList.toggle('is-quarter', turned % 180 !== 0);
+    let lx = 0;
+    let ly = 0;
+    if (marksShown && faceEl.classList.contains('is-overlap')) [lx, ly] = OVERLAP_SHIFT;
+    else if (showLengths) {
+      const [sx, sy] = labelShift(Number(faceEl.style.getPropertyValue('--fw')) || 1, Number(faceEl.style.getPropertyValue('--fh')) || 1);
+      const a = rad(-turned);
+      lx = (sx * Math.cos(a) - sy * Math.sin(a)) * (back ? -1 : 1);
+      ly = sx * Math.sin(a) + sy * Math.cos(a);
+    }
+    const key = `${lx.toFixed(3)},${ly.toFixed(3)}`;
+    if (faceEl.dataset.shift === key) return;
+    faceEl.dataset.shift = key;
+    faceEl.style.setProperty('--lx', lx.toFixed(3));
+    faceEl.style.setProperty('--ly', ly.toFixed(3));
+  }
+
+  const boxOverlap = (p, q) => Math.max(0, Math.min(p[2], q[2]) - Math.max(p[0], q[0])) * Math.max(0, Math.min(p[3], q[3]) - Math.max(p[1], q[1]));
+
+  /**
+   * 띠 이름표 하나의 자리를 잡는다(면 안 좌표, 칸 단위). turned: 화면에서 바로 서게 돌린 각도(90° 단위).
+   * 변 가운데에서 면 안쪽으로 들어간 자리가 기본이고, 면 이름이나 다른 이름표와 포개지면 변을 따라 옆으로 옮긴다.
+   * 그래도 남은 길이 글자와 포개지면 그 길이 글자를 숨긴다(.is-covered) — 이름표가 그 변의 길이를 말한다.
+   */
+  function placeTag(tag, turned) {
+    tag.turn = turned;
+    const across = Math.abs(Math.sin(rad(turned) - tag.angle)) > 0.7; // 이름표의 긴 쪽이 변을 가로지른다
+    const [major, minor] = tag.size; // 이름표의 긴 쪽 · 짧은 쪽
+    const [w, hgt] = turned % 180 === 0 ? [major, minor] : [minor, major]; // 면 안 좌표에서 차지하는 가로 · 세로
+    const px = 1 / unit; // 화면 1px(배율 1)의 칸 단위
+    const half = (across ? major : minor) / 2; // 이름표가 변에서 안쪽으로 차지하는 깊이의 절반
+    // 변에서 안쪽으로: 이름표가 그 변 밖으로 나가지 않을 만큼 들어가되, 얕은 면에서는 맞은편 변도 넘지 않게(면보다 길면 가운데에)
+    const depth = Math.min(Math.max(17 * px, 0.42, half + 2 * px), Math.max(tag.deep - half, tag.deep / 2));
+    const room = Math.max(0, (tag.len - (across ? minor : major)) / 2); // 변을 따라 옮길 수 있는 만큼(이름표가 변의 끝을 넘지 않게)
+    const others = tagEls.filter((x) => x !== tag && x.face === tag.face && x.rect).map((x) => x.rect);
+    // 옮겨 볼 자리: 변 가운데가 먼저, 그다음 가까운 곳부터(면 이름을 옮긴 쪽의 반대인 왼쪽·위쪽 먼저) 변의 끝까지
+    const toward = (Math.abs(tag.along[0]) > 0.7 ? tag.along[0] : tag.along[1]) > 0 ? -1 : 1;
+    const shifts = [0];
+    for (const step of [0.75, 1.25, 1.75, room]) {
+      const move = Math.min(step, room);
+      if (move > 1e-9 && !shifts.some((v) => Math.abs(Math.abs(v) - move) < 1e-9)) shifts.push(toward * move, -toward * move);
+    }
+    let best = null;
+    for (const move of shifts) {
+      const cx = tag.mid[0] + tag.inward[0] * depth + tag.along[0] * move;
+      const cy = tag.mid[1] + tag.inward[1] * depth + tag.along[1] * move;
+      const rect = [cx - w / 2, cy - hgt / 2, cx + w / 2, cy + hgt / 2];
+      const hard = [tag.label, ...others].filter(Boolean).reduce((sum, box) => sum + boxOverlap(rect, box), 0);
+      const soft = tag.lens.reduce((sum, len) => sum + boxOverlap(rect, len.box), 0);
+      if (!best || hard < best.hard - 1e-9 || (Math.abs(hard - best.hard) <= 1e-9 && soft < best.soft - 1e-9)) best = { cx, cy, rect, hard, soft };
+      if (hard + soft <= 1e-9) break;
+    }
+    tag.rect = best.rect;
+    tag.el.style.left = `calc(var(--unit) * ${best.cx.toFixed(4)})`;
+    tag.el.style.top = `calc(var(--unit) * ${best.cy.toFixed(4)})`;
+    tag.el.style.setProperty('--tag-turn', `${turned}deg`);
+    // 그 면의 남은 길이 글자: 어느 이름표와든 포개지면 숨긴다
+    const mine = tagEls.filter((x) => x.face === tag.face && x.rect);
+    for (const len of tag.lens) len.el.classList.toggle('is-covered', mine.some((x) => boxOverlap(x.rect, len.box) > 1e-9));
+  }
+
+  /**
+   * 면의 변에 띠 무늬와 이름표를 붙인다(만나는 선분 · 길이가 다른 두 변). 새 전개도가 놓일 때까지 남는다.
+   * marks: [{ face(면 id), edge(몇 번째 변), tone('q' 물음 · 'a' · 'b' 같은 무늬끼리 짝), text(이름표 글자, 없어도 됨) }]
+   * 띠는 변을 따라 면 안쪽에 놓이고(면과 함께 접힌다), 이름표는 그 변 안쪽에서 화면 기준으로 바로 선다(render → placeTag).
+   * 길이 이름표(lengths)가 있는 면: 이름표가 붙은 변과 같은 쪽 길이 글자(위·아래 변이면 가로, 왼쪽·오른쪽 변이면 세로)는 숨긴다 —
+   *   띠 이름표가 그 길이를 말하고, 두 글자가 포개지지 않는다 (.has-tag-w · .has-tag-h, cuboid.css)
+   */
+  function setEdgeMarks(marks = []) {
+    tagEls = [];
+    for (const faceEl of faceEls.values()) {
+      for (const old of faceEl.querySelectorAll('.edge-band, .edge-tag')) old.remove();
+      faceEl.classList.remove('has-tag-w', 'has-tag-h');
+      for (const len of faceEl.querySelectorAll('.face-len.is-covered')) len.classList.remove('is-covered');
+    }
+    const px = unit * raster; // 지금 면을 놓은 크기(칸 한 변 px)
+    for (const mark of marks) {
+      const face = net?.faces.find((f) => f.id === mark.face);
+      const faceEl = faceEls.get(mark.face);
+      if (!face || !faceEl) continue;
+      const { min, max } = bounds(face.poly);
+      const size = [max[0] - min[0], max[1] - min[1]]; // 면의 가로 · 세로(칸)
+      let p = face.poly[mark.edge];
+      let q = face.poly[(mark.edge + 1) % face.poly.length];
+      const mid = centroid(face.poly);
+      // 띠의 두께 쪽(변을 따라가는 방향에서 시계 방향 90°)이 면 안쪽을 향하게 변의 방향을 고른다
+      const inward = (a, b) => -(b[1] - a[1]) * (mid[0] - a[0]) + (b[0] - a[0]) * (mid[1] - a[1]);
+      if (inward(p, q) < 0) [p, q] = [q, p];
+      const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      const angle = Math.atan2(q[1] - p[1], q[0] - p[0]);
+      const band = h('span', { class: `edge-band is-${mark.tone ?? 'a'}`, 'aria-hidden': 'true' });
+      band.style.left = `calc(var(--unit) * ${p[0] - min[0]})`;
+      band.style.top = `calc(var(--unit) * ${p[1] - min[1]})`;
+      band.style.width = `calc(var(--unit) * ${len})`;
+      band.style.transform = `rotate(${angle.toFixed(5)}rad)`;
+      faceEl.append(band);
+      if (!mark.text) continue;
+      const tag = h('span', { class: `edge-tag is-${mark.tone ?? 'a'}`, 'aria-hidden': 'true' }, h('span', null, mark.text));
+      faceEl.append(tag);
+      const wide = Math.abs(Math.cos(angle)) > 0.7; // 위·아래 변
+      faceEl.classList.add(wide ? 'has-tag-w' : 'has-tag-h');
+      // 피할 것: 면 이름(늘 같은 자리 — settleInner)과, 같은 쪽이 아니라 남아 있는 길이 글자. 놓인 크기는 한 번만 잰다(칸 단위)
+      const labelEl = faceEl.querySelector('.face-label');
+      let label = null;
+      if (labelEl && labelEl.textContent.trim()) {
+        const side = Math.max(labelEl.offsetWidth, labelEl.offsetHeight) / px || 0.45; // 돌려 세워도 들어가는 정사각형
+        const [sx, sy] = showLengths ? labelShift(size[0], size[1]) : [0, 0];
+        const cx = mid[0] - min[0] + sx;
+        const cy = mid[1] - min[1] + sy;
+        label = [cx - side / 2, cy - side / 2, cx + side / 2, cy + side / 2];
+      }
+      const lens = [...faceEl.querySelectorAll(`.face-len.${wide ? 'is-h' : 'is-w'}`)].map((lenEl) => {
+        const [lw, lh] = [lenEl.offsetWidth / px, lenEl.offsetHeight / px];
+        const [lx, ly] = [lenEl.offsetLeft / px, lenEl.offsetTop / px];
+        // 가로 길이 글자는 가로 가운데 맞춤(translateX(-50%)), 세로 길이 글자는 세로 가운데 맞춤
+        return { el: lenEl, box: wide ? [lx, ly - lh / 2, lx + lw, ly + lh / 2] : [lx - lw / 2, ly, lx + lw / 2, ly + lh] };
+      });
+      tagEls.push({
+        el: tag,
+        face: mark.face,
+        angle,
+        len,
+        deep: wide ? size[1] : size[0], // 그 변에서 맞은편 변까지(면의 깊이)
+        mid: [(p[0] + q[0]) / 2 - min[0], (p[1] + q[1]) / 2 - min[1]], // 변 가운데
+        along: [Math.cos(angle), Math.sin(angle)],
+        inward: [-Math.sin(angle), Math.cos(angle)],
+        size: [tag.offsetWidth / px || 1, tag.offsetHeight / px || 0.45], // 이름표의 긴 쪽 · 짧은 쪽
+        label,
+        lens,
+        turn: null,
+        rect: null,
+      });
+    }
+    if (net && tagEls.length > 0) render(); // 이름표를 지금 자세에 맞게 바로 세워 자리를 잡는다
   }
 
   /**
@@ -562,13 +798,22 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
    * focus: 다 접었을 때 잘 보여야 할 면 id ([★ 면, 정답 면]) — displayNet 참고
    * layout: { unit(칸 한 변 px), origin([x, y] 무대 안에서 칸 (0, 0)의 왼쪽 위 px) } — 놓는 판의 칸 크기·자리를 그대로 써서
    *   판에서 무대로 바뀔 때 면이 튀지 않는다(자유 배치). 무대 크기가 바뀌면 보통 크기로 돌아간다.
+   * 길이가 있는 전개도(직육면체 …)에 쓰는 선택 값 — 주지 않으면 지금까지와 같다:
+   *   slots의 rect: { x, y, w, h } 빈 자리가 칸 하나가 아닐 때 · show: 처음 시점에서 함께 보여야 할 면 id
+   *   fitBox: [가로, 세로] 전개도가 작아도 이 크기에 맞춰 그린다(문항마다 1 cm의 화면 크기가 같게 — 크기로 답이 드러나지 않게)
+   *   pad: 무대 가장자리에 비워 둘 px(양쪽 합) · lengths: 면마다 가로·세로 길이(cm) 이름표 · names: 꼭짓점 이름 [{ name, point, out }]
    */
-  function setNet(nextNet, { slots: nextSlots = [], focus = [], layout: nextLayout = null } = {}) {
+  function setNet(nextNet, {
+    slots: nextSlots = [], focus = [], show = [], layout: nextLayout = null, fitBox: nextFit = null, pad: nextPad = 0, lengths = false, names = [],
+  } = {}) {
     stopAnimation();
     clearMarks();
     marksKey = '';
     layout = nextLayout && nextLayout.unit > 0 && Array.isArray(nextLayout.origin) ? { unit: nextLayout.unit, origin: [...nextLayout.origin] } : null;
-    ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus }));
+    fitBox = Array.isArray(nextFit) ? [...nextFit] : null;
+    pad = Math.max(0, Number(nextPad) || 0);
+    showLengths = Boolean(lengths);
+    ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus, show }));
     slots = nextSlots;
     revealed = false;
     verdict = null;
@@ -584,7 +829,13 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     tOf = stuckTOf(net, blocked); // 2×2 덩어리면 접다가 멈추는 장면
     faceEls = new Map(net.faces.map((f) => [f.id, buildFace(f)]));
     slotEls = new Map(slots.map((s) => [s.key, buildSlot(s)]));
-    scene.replaceChildren(...faceEls.values(), ...slotEls.values());
+    nameEls = names.map(buildName);
+    scene.replaceChildren(...faceEls.values(), ...slotEls.values(), ...nameEls.map((n) => n.el));
+    if (net.kind !== 'cube') {
+      // 자동 맞춤에 쓰는 크기: 다 접은 모습을 감싸는 상자의 대각선
+      const { min, max } = bounds(foldNet(net, 1, { tOf }).faces.flatMap((f) => f.points));
+      solidDiagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
+    }
     el.dataset.fold = 'flat';
     measure();
     layoutBox = layout ? { ...boxSize } : null;
@@ -1009,6 +1260,9 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     },
     faceEl: (id) => faceEls.get(id),
     slotEl: (key) => slotEls.get(key),
+    setEdgeMarks,
+    /** 지금 1칸(1 cm)의 화면 크기(px) */
+    unit: () => unit,
     /** 다 접혀 결과 표시가 나올 때 알림: fn({ ok, hiddenMissing }) */
     onMarks(fn) {
       markListeners.add(fn);

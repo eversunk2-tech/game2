@@ -3,7 +3,8 @@
  *
  * 면 카드 6장(가~바)을 놓는 판에 마음대로 놓고 → [접어 보기] → 놓은 그대로 접힌다. 접기 전에 될지 예상을 묻지 않는다(spec 16-12).
  * 판정·표시는 판별 단계와 같은 fromCells + checkNet + view.reveal().
- * - 내 맘대로 전개도: 서로 다른 전개도 3가지를 찾으면 [결과 보기]. 별은 이번 판에 찾은 서로 다른 전개도 수(안 되는 모양은 별과 무관)
+ * - 내 맘대로 전개도: 서로 다른 전개도 2가지를 찾으면 [결과 보기]로 끝낼 수 있고(별 2개), 3가지를 찾으면 별 3개(사용자 결정 2026-10-11).
+ *   별은 이번 판에 찾은 서로 다른 전개도 수(안 되는 모양은 별과 무관). 힌트·"모두 찾았어요"는 지금처럼 3가지가 기준이다
  * - 도감 주문: 같은 판으로 전개도 도감 11칸을 채운다. 도감은 판을 넘어 이어진다. 6칸부터 [오늘은 여기까지]로 끝낼 수 있고
  *   별은 도감 수(6칸 ★1 · 9칸 ★2 · 11칸 ★3), 11칸을 채우면 [결과 보기]만 남는다
  * - 같은 모양(돌리기·뒤집기 포함)을 이번 판에서 다시 접으면 기록·점수 없음, 떨어진 배치는 접지 않음
@@ -26,6 +27,7 @@ import {
   BOARD_SIZES,
   DEX_STOP_MIN,
   FREE_EXPECTED,
+  FREE_FINISH,
   FREE_FOLD_NOTES,
   FREE_GOAL,
   FREE_REPLAY_NOTE,
@@ -43,6 +45,7 @@ import {
   dexStats,
   freeFeedback,
   freeHighlights,
+  freeStarNote,
   freeStars,
   freeStats,
   freeSummary,
@@ -78,6 +81,8 @@ export function playFree(stage, ctx) {
   const playXp = () => ctx.reward.peek?.().xp ?? 0;
   let mode = 'edit';
   let goalReached = session.done(); // 도감 주문에 이미 11칸인 학생이 들어오면 처음부터 채운 상태다
+  /** 내 맘대로 전개도: 끝낼 수 있는 가지 수(2가지)를 채웠나 — 3가지(goalReached) 전에도 [결과 보기]가 나온다 */
+  const canFinish = () => !dexMode && session.found().size >= FREE_FINISH;
 
   // ── 매트: 놓는 판 ↔ 3D 무대(+ 접기 조작 띠, 보는 방향·크기 조작판) ─────────────────
   const view = createNetView({ h, sfx: ctx.sfx });
@@ -299,7 +304,7 @@ export function playFree(stage, ctx) {
     editSection.hidden = false;
     sticky.hidden = hintLevel === 0;
     legend.hidden = !sticky.hidden;
-    finishTool.hidden = dexMode || !goalReached;
+    finishTool.hidden = dexMode || !(goalReached || canFinish());
     board.setEnabled(true);
     if (!keep) board.clearAll();
     renderDex();
@@ -313,6 +318,8 @@ export function playFree(stage, ctx) {
     board.el.hidden = true;
     legend.hidden = true;
     sticky.hidden = true;
+    // 매트 띠의 [결과 보기]는 놓는 판에서만 쓴다(띠째 숨는다). 접은 장면의 문서는 3가지를 찾기 전·후가 지금까지와 글자까지 같게 둔다
+    finishTool.hidden = dexMode || !goalReached;
     editTools.hidden = true;
     editSection.hidden = true;
     view.el.hidden = false;
@@ -328,6 +335,7 @@ export function playFree(stage, ctx) {
     if (!boardReadiness(st.cells, labels.length).ready) return;
     const layout = board.layout(); // 판을 숨기기 전에 칸 크기·자리를 잰다
     const dexBefore = dexCount();
+    const couldFinish = canFinish();
     const step = session.fold(st.cells, st.labels);
     // 도감·노트 등록이 먼저다: 모양은 접는 순간 "접어 본 모양"이 되고(등록 점수와 함께 바로 저장), 만들기 성공 점수는 그때 실제로
     // 새로 들어간 모양에만 준다. 처음 접는 모양의 기록은 "이 기기에서 한 번만 점수"(scored: 'once' — 별 3개 뒤에도 받고 바로 저장),
@@ -387,7 +395,7 @@ export function playFree(stage, ctx) {
     const justReached = step.done && !goalReached;
     if (step.done) goalReached = true;
     if (goalReached) setHintReady(false);
-    showButtons({ justReached });
+    showButtons({ justReached, justCan: canFinish() && !couldFinish });
 
     // 까닭 고르기 (안 되는 모양을 접었을 때, 선택)
     pickSlot.replaceChildren();
@@ -500,7 +508,7 @@ export function playFree(stage, ctx) {
     else buttonsSlot.replaceChildren(h('p', { class: 'dex-rule' }, icon('star'), `도감 ${DEX_STOP_MIN}칸을 채우면 별 1개를 받고 끝낼 수 있어요.`));
   }
 
-  function showButtons({ justReached }) {
+  function showButtons({ justReached, justCan = false }) {
     const fix = actionButton('btn-primary free-fix', 'unfold', '펴서 고치기', backToBoard(true));
     const fresh = actionButton('free-new', 'trash', '새로 만들기', backToBoard(false));
     const result = actionButton('btn-primary free-finish', 'play', '결과 보기', () => finish(), { after: true });
@@ -518,6 +526,14 @@ export function playFree(stage, ctx) {
       fix.classList.remove('btn-primary');
       buttonsSlot.replaceChildren(h('div', { class: 'btn-trio' }, result, fix, fresh));
       result.focus({ preventScroll: true });
+      return;
+    }
+    if (canFinish()) {
+      // 내 맘대로 전개도: 2가지를 찾았으면 끝낼 수 있다. 한 가지 더 찾으면 별 3개라 [펴서 고치기]가 주 버튼이고 [결과 보기]는 그 옆에 둔다
+      const can = justCan ? h('p', { class: 'goal-done' }, icon('check'), `전개도 ${FREE_FINISH}가지를 찾았어요! 한 가지 더 찾으면 별 3개예요.`) : null;
+      result.classList.remove('btn-primary');
+      buttonsSlot.replaceChildren(...[can, h('div', { class: 'btn-trio' }, fix, fresh, result)].filter(Boolean));
+      fix.focus({ preventScroll: true });
       return;
     }
     if (dexMode && dexCount() >= DEX_STOP_MIN) {
@@ -542,7 +558,9 @@ export function playFree(stage, ctx) {
       });
       return;
     }
-    ctx.finish({ stars: freeStars(sum.found), highlights: freeHighlights(sum, { earned, explainCount }), stats: freeStats(sum), practiceNote: FREE_REPLAY_NOTE });
+    if (!canFinish()) return;
+    const stars = freeStars(sum.found);
+    ctx.finish({ stars, starNote: freeStarNote(stars), highlights: freeHighlights(sum, { earned, explainCount }), stats: freeStats(sum), practiceNote: FREE_REPLAY_NOTE });
   }
 
   // Ctrl+Z: 되돌리기 (놓는 중일 때. 누른 버튼이 꺼져 초점이 문서로 가도 되게 문서에서 받는다)

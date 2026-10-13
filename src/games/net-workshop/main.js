@@ -5,6 +5,7 @@
  */
 import meta from './game.json' with { type: 'json' };
 import { createGameApp } from '../../shared/ui/app.js';
+import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
 import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
 import { playDice } from './play-dice.js';
@@ -16,6 +17,7 @@ import { heroArt, miniNet, stageThumb } from './thumbs.js';
 import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, playBlockStage } from './blocks/index.js'; // 쌓기나무 영역(6학년)
 
 const SCREENS = { judge: playJudge, opposite: playPick, complete: playPlace, free: playFree, dex: playFree, dice: playDice };
+Object.assign(SCREENS, CUBOID_SCREENS); // 직육면체의 전개도 차시: edge · face · cjudge · cfree (cuboid-main.js)
 
 // ── 게임 도장 6개 (spec 16-3). 엔진 기본 6개와 합쳐 도장판 12칸. 판정은 학습 기록·도감·누적 횟수로(순수 함수) ──
 // 직접 만드는 단계(내 맘대로 전개도·도감 주문)는 접기 전에 될지 묻지 않는다(spec 16-12): 기록의 맞음 = 정육면체가 되는 전개도를 만듦
@@ -101,6 +103,7 @@ const COLLECTIONS = [
     desc: '접어 봤더니 정육면체가 안 된 모양이 까닭별로 모여요(면이 겹치는 모양 16 · 네 면이 한 점에 모이는 모양 8).',
     items: NOTE_ITEMS.map((n) => ({ id: n.name, name: noteItemName(n), thumb: () => miniNet(n.cells, { invalid: true }) })),
   },
+  ...CUBOID_COLLECTIONS, // 직육면체 차시에서 찾은 전개도(화면에 보이지 않는 모음, cuboid-main.js)
 ];
 
 createGameApp({

@@ -21,6 +21,7 @@ import {
   collectItem,
   collectionChips,
   collectionStatus,
+  collectionXp,
   normalizeCollectionState,
   normalizeCollections,
 } from '../core/collection.js';
@@ -475,6 +476,11 @@ export function createGameApp({
   const chipsOf = (defs = collections) => collectionChips(collectionState, defs);
   /** label 도감의 글자: "노트 2 / 24" (sep: 숫자 사이 글자) */
   const sideText = (c, sep = ' / ') => `${c.label} ${c.count}${sep}${c.total}`;
+  /**
+   * 한 차시만 열었을 때(?lesson=) 화면 머리의 칩과 처음 화면 내 공방 카드에서 빼는 도감: 다른 차시(lessons에 있는 차시)에 딸린 도감.
+   * 이 차시에는 없는 도감이라 무엇을 채우는 것인지 알 수 없다. 차시를 고르지 않은 화면과 차시가 없는 게임에서는 빼는 것이 없다.
+   */
+  const offLesson = (def) => Boolean(plan.current && def.lesson && def.lesson !== plan.current.id && lessons?.some((l) => l.id === def.lesson));
 
   function titleScreen() {
     const eyebrow = plan.current ? plan.current.title : game.subtitle ?? defaultSubtitle(game);
@@ -504,7 +510,7 @@ export function createGameApp({
         rewardsOn && workshopCard({
           rank: rewardStore.rank(),
           stars: { total: progress.totalStars(), max: progress.maxStars },
-          collection: chipsOf().main,
+          collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
           badges: { count: earnedCount(), total: badgeDefs.length },
         }),
       ),
@@ -628,6 +634,8 @@ export function createGameApp({
   function collectionChip(lessonId, cls = 'chip') {
     const shown = (c) => plan.groups?.some((g) => g.lesson.id === c.lesson);
     const defs = collections.filter((c) => (lessonId === null ? !shown(c) : c.lesson === lessonId));
+    // 한 차시만 열었을 때: 다른 차시의 도감은 화면 머리에 넣지 않는다 (offLesson)
+    if (lessonId === null) for (let i = defs.length - 1; i >= 0; i -= 1) if (offLesson(defs[i])) defs.splice(i, 1);
     if (defs.length === 0) return null;
     const { main, side } = chipsOf(defs);
     return [
@@ -827,7 +835,8 @@ export function createGameApp({
           foundThisVisit.add(`${id}:${r.item.id}`);
           if (rewardsOn) {
             // 새로 찾음 점수(기본 +5, 도감 정의의 xp)는 칸과 함께 바로 저장한다(같은 칸으로 다시 받을 수 없다)
-            const gain = discoverXp(collections.find((c) => c.id === id)?.xp);
+            // 도감 정의에 xpAfter가 있으면 그만큼 찬 뒤의 칸은 그 점수 — 몇 번째인지는 방금 등록한 뒤의 칸 수(r.count)로 센다
+            const gain = discoverXp(collectionXp(collections.find((c) => c.id === id), r.count));
             const xp = finished ? gain : play.discovered(gain);
             rewardStore.addXp(xp);
             if (!finished) savedXp += xp;
@@ -836,7 +845,8 @@ export function createGameApp({
             updateMeta();
           }
           sfx.play('discover');
-          feedback.announce(`새로 찾았어요: ${r.item.name} (${r.count} / ${r.total})`);
+          // 화면에 보이지 않는 모음(quiet)은 안내하지 않는다 — 무엇을 찾았는지는 게임이 제 말로 알린다
+          if (!collections.find((c) => c.id === id)?.quiet) feedback.announce(`새로 찾았어요: ${r.item.name} (${r.count} / ${r.total})`);
         }
         return { isNew: r.isNew, count: r.count, total: r.total };
       },
@@ -1094,7 +1104,7 @@ export function createGameApp({
         ),
       ),
       h('p', { class: 'muted collection-note' }, '여러 가지를 새로 찾으면 칸이 채워져요. 아직 못 찾은 칸은 ?로 보여요.'),
-      collections.map((def) => collectionSection(def, collectionStatus(collectionState, def), (itemId) => foundThisVisit.has(`${def.id}:${itemId}`))),
+      collections.filter((def) => !def.quiet).map((def) => collectionSection(def, collectionStatus(collectionState, def), (itemId) => foundThisVisit.has(`${def.id}:${itemId}`))),
     );
   }
 
