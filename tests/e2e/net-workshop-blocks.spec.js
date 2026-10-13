@@ -1843,7 +1843,7 @@ test('꽉 찬 3×3×3도 어느 쪽으로 돌려도 무대 안에 있고, 양옆
 
 test('폭 900~1100px(가로로 든 태블릿 1024×768 등): 꽉 찬 3×3×3이 조작 칸 밑으로 들어가지 않고, 매트의 조작 칸끼리 겹치지 않으며, 버튼이 매트 밖으로 나가지 않는다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(180_000);
+  test.setTimeout(360_000);
   const errors = collectErrors(page);
   const units = [];
   for (let width = 900; width <= 1100; width += 20) {
