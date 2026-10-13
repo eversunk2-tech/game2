@@ -192,6 +192,9 @@ test('플레이 머리 높이는 판을 하는 동안 바뀌지 않는다: 연�
       timer: rect('.timer-toggle'), xp: rect('.meta-xp'), stage: rect('.test-stage'),
     };
   });
+  // [시간 재기] 버튼은 포인터가 올라가면 1px 들뜨고, 떼면 0.12초에 걸쳐 가라앉는다. 느린 기기(CI)에서는 그 도중에 재게 되어 위 자리가 0.5px쯤 어긋났다.
+  // 버튼과 그 안(.timer-label)의 움직임이 모두 끝난 뒤에 잰다
+  const timerSettled = () => page.waitForFunction(() => document.querySelector('.timer-toggle').getAnimations({ subtree: true }).every((a) => a.playState === 'finished'));
   for (const size of sizes) {
     for (const stage of ['a1', 'ch1']) {
       const at = `${size.width}×${size.height} ${stage}`;
@@ -228,7 +231,7 @@ test('플레이 머리 높이는 판을 하는 동안 바뀌지 않는다: 연�
         await expect(btn(page, '시간 재기'), at).toHaveAttribute('aria-pressed', 'true');
         await expect(page.locator('.timer-clock'), at).toBeVisible();
         await expect(page.locator('.timer-clock'), at).toHaveText(/^\d+:\d\d$/);
-        await page.waitForFunction(() => document.querySelector('.timer-label').getAnimations().every((a) => a.playState === 'finished'));
+        await timerSettled();
         expect(await spot(), `${at} 시간 재기를 켬`).toEqual(start);
         const on = await box();
         expect(on.clock[0] >= on.cell[0] && on.clock[2] <= on.cell[2] && on.clock[1] >= on.cell[1] && on.clock[3] <= on.cell[3], `${at}: 시계가 버튼 칸 안에 있다 ${JSON.stringify(on)}`).toBe(true);
@@ -237,10 +240,12 @@ test('플레이 머리 높이는 판을 하는 동안 바뀌지 않는다: 연�
         await btn(page, '시간 재기').click();
         await page.mouse.move(0, 0);
         await expect(page.locator('.timer-clock'), at).toBeHidden();
+        await timerSettled();
         expect(await spot(), `${at} 시간 재기를 끔`).toEqual(start);
         await btn(page, '시간 재기').click();
         await page.mouse.move(0, 0);
         await expect(page.locator('.timer-clock'), at).toBeVisible();
+        await timerSettled(); // 아래 '연속 1'을 잴 때 이 누르기의 움직임이 남지 않게
       }
       // 연속 1 → 2(칸이 나타남) → … → 10(두 자리 수) → 틀림(칸이 사라짐) → 다시 2
       const widths = new Set();

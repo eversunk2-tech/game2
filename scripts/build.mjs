@@ -8,7 +8,7 @@
  * esbuild로 묶어 그 자리에 <style>, <script>로 넣는다. 그림 파일은 CSS url()로 쓰면
  * data: 주소로 들어간다(docs/engine.md 7절).
  * 제목 글꼴(Do Hyeon)은 파일마다 쓰인 글자만 잘라 data: 주소 @font-face로 넣는다(scripts/lib/font.mjs).
- * 게임 파일 하나는 MAX_FILE_BYTES(400 KB)를 넘지 않아야 한다.
+ * 파일 크기에는 상한이 없다(2026-10-09 사용자 결정). 크기는 로그에 찍기만 한다.
  */
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -19,8 +19,6 @@ import { loadGames } from './lib/games.mjs';
 import { renderHub } from './lib/hub.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-/** 게임 파일 크기 상한: 학교망에서도 사진 한 장보다 작게 */
-export const MAX_FILE_BYTES = 400 * 1024;
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
 
 const ASSET_LOADERS = {
@@ -129,7 +127,7 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
   await rm(outDir, { recursive: true, force: true });
   await mkdir(outDir, { recursive: true });
 
-  /** 글꼴을 넣고, 바깥 참조·크기를 검사한 뒤 쓴다. */
+  /** 글꼴을 넣고, 바깥 참조를 검사한 뒤 쓴다. 크기는 로그에 찍기만 한다(상한 없음). */
   const files = [];
   async function emit(name, html, label) {
     const font = await displayFontFace(html);
@@ -139,9 +137,6 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
       throw new Error(`${label}: 파일 하나로 열리지 않아요. 바깥 파일 참조:\n  ${problems.join('\n  ')}`);
     }
     const bytes = Buffer.byteLength(out);
-    if (bytes > MAX_FILE_BYTES) {
-      throw new Error(`${label}: 파일이 ${kb(bytes)}로 상한 ${kb(MAX_FILE_BYTES)}를 넘어요. 그림·글자를 줄여 주세요.`);
-    }
     const file = path.join(outDir, name);
     await writeFile(file, out);
     const missing = font.missing.length ? `, 제목 글꼴에 없는 글자 ${font.missing.join('')}` : '';
