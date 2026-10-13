@@ -299,6 +299,7 @@ test('플레이 머리: 이번 판 솜씨 점수와 연속(2 이상일 때만), 
 });
 
 test('다시 하기 점수: 별 3개 단계를 다시 하면 연습 점수 0(칭호 칩 그대로), 새로 찾음 +5는 그대로, 별 3개가 안 된 단계는 점수가 있다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const NOTE = '별 3개를 받은 단계라 연습 점수는 없어요. 새로 찾으면 점수를 받아요.';
   await page.goto(URL);
@@ -372,6 +373,7 @@ test('다시 하기 점수: 별 3개 단계를 다시 하면 연습 점수 0(칭
 });
 
 test("한 번만 점수 답(scored: 'once'): 별 3개 단계에서도 점수를 받고 그 자리에서 저장된다. 중간에 나가도 남고, 마칠 때 다시 더하지 않는다. 표시 없는 답은 그대로", async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(ONCE_URL);
   await page.evaluate(() => {
@@ -465,6 +467,7 @@ test("한 번만 점수 답(scored: 'once'): 별 3개 단계에서도 점수를 
 });
 
 test('도전 주문서: 차시의 일반 단계를 모두 마치면 열리고, 다음 단계를 막지 않으며, 별 합계에 넣지 않는다. 시간 재기는 켜는 학생만', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(`${URL}?sound=off`);
   await btn(page, '시작하기').click();
@@ -523,6 +526,7 @@ test('도전 주문서: 차시의 일반 단계를 모두 마치면 열리고, �
 
 
 test('결과 화면의 기록 칸: 시간 재기를 켜지 않은 도전 주문서는 걸린 시간이 없고, 게임이 stats를 주면 정답률·맞힘/시도·"다시 살펴볼 점" 대신 그 칸을 보인다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(`${URL}?sound=off&unlock=all`);
   await btn(page, '시작하기').click();
@@ -577,6 +581,7 @@ test('결과 화면의 기록 칸: 시간 재기를 켜지 않은 도전 주문�
 });
 
 test('도감: 처음 찾으면 새로(+5), 같은 칸은 한 번만. 도감 화면은 찾은 칸 그림·못 찾은 칸 ?, 지우면 0', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(`${URL}?stage=a1&sound=off`);
   await btn(page, '세모 찾기').click();
@@ -669,6 +674,7 @@ test('rewards: { off: true }면 점수·칭호·도장을 모두 숨긴다 (도�
 });
 
 test('결과 연출 중에도 가로 스크롤이 없다: 도장이 크게 시작해 줄어드는 2초 동안 프레임마다 잰다 (태블릿 820×1180에서 25px 넘쳤다, N1-7)', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1000, height: 700 }]
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
@@ -811,6 +817,7 @@ const centerOf = async (locator) => {
 };
 
 test('끌어다 놓기: 끄는 카드가 스크롤 상자 밖에서도 잘리지 않고 놓을 때까지 보인다(복제는 body 아래 맨 위, 모양·크기 같음, 원래 자리는 흐림). 놓으면 들어가고, 놓을 수 없는 곳·받지 않는 상자·Esc·취소에서는 제자리로 돌아가며 남는 것이 없다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   // 창에 남아 있는 리스너 수(움직임·취소·터치 움직임·키·가려짐). pointerup은 Playwright도 누를 때마다 붙였다 떼므로 세지 않는다
   await page.addInitScript(() => {

@@ -61,11 +61,17 @@ async function answerJudge(page, q) {
   await expect(page.locator('.reason')).toContainText('맞아요!');
 }
 
-/** 지금 보이는 알림(토스트)이 조작 버튼(머리의 소리·단계 선택, 답 버튼, 접기 도구, 보기 조작판, 다음 버튼, 면 카드, 놓는 판의 칸)과 겹치지 않는다 */
+/**
+ * 지금 보이는 알림(토스트)이 조작 버튼(머리의 소리·단계 선택, 답 버튼, 접기 도구, 보기 조작판, 다음 버튼, 면 카드, 놓는 판의 칸)과 겹치지 않는다.
+ * 알림은 1.5초 + 글자당 0.08초 뒤에 스스로 사라진다. "보이는지"와 "자리 읽기"를 따로 하면 느린 기기에서 그 사이에 사라지므로 한 번에 한다:
+ * 알림이 보이고 뜨는 움직임(0.2초, 8px)이 끝난 그 차례에 자리를 읽는다. 알림이 없으면(뜨지 않았거나 벌써 사라졌으면) 통과가 아니라 실패다
+ */
 async function expectToastClear(page) {
-  await expect(page.locator('.toast')).toBeVisible();
-  const hits = await page.evaluate(() => {
-    const t = document.querySelector('.toast').getBoundingClientRect();
+  const seen = await page.waitForFunction(() => {
+    const toast = document.querySelector('.toast');
+    if (!toast || toast.getClientRects().length === 0 || getComputedStyle(toast).visibility !== 'visible') return null;
+    if (!toast.getAnimations({ subtree: true }).every((a) => a.playState === 'finished')) return null;
+    const t = toast.getBoundingClientRect();
     const controls = '.topbar button, .play-header button, .answer-btn, .fold-toggle, .btn-icon, .fold-range, .hint-btn, .next-btn, .face-card, '
       + '.cell, .tray-card, .free-fold, .reason-chip, .reason-skip, .mat-tools button, .view-pad button, .free-buttons button, .net-slot';
     const out = [];
@@ -76,9 +82,10 @@ async function expectToastClear(page) {
       const h = Math.min(t.bottom, b.bottom) - Math.max(t.top, b.top);
       if (w > 0 && h > 0) out.push(`${el.className} ${Math.round(w)}×${Math.round(h)}`);
     }
-    return out;
-  });
-  expect(hits).toEqual([]);
+    return { hits: out };
+  }, null, { timeout: 5000 }).catch(() => null);
+  expect(seen, '알림(.toast)이 보이지 않는다: 뜨지 않았거나 벌써 사라졌다').not.toBeNull();
+  expect((await seen.jsonValue()).hits).toEqual([]);
 }
 
 /**
@@ -165,6 +172,15 @@ async function noScroll(page) {
   expect(await hasHorizontalScroll(page)).toBe(false);
 }
 
+/**
+ * 보기 조작판·접기 도구의 버튼이 움직임을 마칠 때까지 기다린다. 방금 누른 버튼은 눌림(3px)·들뜸(1px)이 0.12초에 걸쳐 바뀌는데,
+ * 그 도중에 재면 소수 자리로 옮겨진 48px 버튼의 높이가 47.99997로 나온다(느린 기기에서 "48px보다 작은 버튼 1개").
+ * 자리·크기를 바꾸는 움직임(transform)만 기다린다 — 그림자만 바뀌는 [↻] 강조(0.9초 × 4번, 돌릴 때마다 다시 켜질 수 있다)와 바탕색은 재는 값과 무관하다
+ */
+const padSettled = (page) => page.waitForFunction(() => [...document.querySelectorAll('.view-pad, .fold-tools')]
+  .flatMap((el) => el.getAnimations({ subtree: true }))
+  .every((a) => a.playState === 'finished' || !a.effect.getKeyframes().some((k) => 'transform' in k)));
+
 test('?lesson=cube: 그 차시 4단계만 보이고 첫 단계만 열림, 판별 5문항을 끝까지 하면 다음 단계가 열린다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off'));
@@ -208,6 +224,7 @@ test('?lesson=cube: 그 차시 4단계만 보이고 첫 단계만 열림, 판별
 });
 
 test('판별 까닭 고르기: 틀린 까닭을 고르면 바른 까닭을 보여 주고 점수가 없으며, 넘어가도 접어서 까닭을 보인다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
   const questions = questionsFor('cube-judge');
@@ -240,6 +257,7 @@ test('판별 까닭 고르기: 틀린 까닭을 고르면 바른 까닭을 보�
 });
 
 test('판별에서 겹치는 전개도에 "돼요"를 고르면 까닭과 겹친 면·빈 자리를 보여 주고, 학습 기록에 tag가 남는다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off&stage=cube-judge'));
   for (const q of questionsFor('cube-judge')) {
@@ -273,6 +291,7 @@ test('판별에서 겹치는 전개도에 "돼요"를 고르면 까닭과 겹친
 });
 
 test('답하기 전에는 접기가 잠기고, 답한 뒤 [접어 보기]·[펴기]·막대로 접는다', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off&stage=cube-judge'));
   const q = questionsFor('cube-judge')[0];
   const toggle = page.locator('.fold-toggle');
@@ -370,6 +389,7 @@ test('마주 보는 면: 틀린 면은 제자리에서 흔들리고, 다시 눌�
 });
 
 test('마주 보는 면: 틀리면 이웃한 면이라는 까닭과 [반만 접어 보기] 힌트', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-opposite'));
   const q = questionsFor('cube-opposite')[0];
   const wrong = q.net.faces.find((f) => f.id !== q.star && f.id !== q.answer);
@@ -408,6 +428,7 @@ test('태블릿에서 면 카드를 터치로 끌어 알맞은 자리에 놓으�
 });
 
 test('면 붙이기: 틀린 자리는 접어서 겹침을 보여 주고 다시 하게 하며, 다 하면 4단계 "내 맘대로 전개도"로 이어진다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cube&unlock=all&seed=1&sound=off&stage=cube-complete'));
   const questions = questionsFor('cube-complete');
@@ -464,6 +485,7 @@ test('키보드로 면 카드를 고르면 첫 빈 자리로 초점이 가고, T
 
 test('실제 크롬북 보이는 높이(1366×680)에서도 세 단계 주요 장면에 세로 스크롤이 없다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '크롬북 화면 크기에서 확인');
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1366, height: 680 });
   const url = (stageId) => fileUrl(FILE, `?lesson=cube&unlock=all&seed=1&sound=off&stage=${stageId}`);
 
@@ -502,7 +524,7 @@ test('실제 크롬북 보이는 높이(1366×680)에서도 세 단계 주요 �
 
 test('휴대폰(390×844): 빈 자리 버튼은 48px 이상, 알림은 매트(무대의 면·빈 자리·접기 도구) 밖 바로 밑에 뜬다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치 기기 설정(태블릿 프로젝트)에서 휴대폰 크기로 확인');
-  test.setTimeout(90_000); // 시드 여러 개를 차례로 본다
+  test.setTimeout(120_000); // 시드 여러 개를 차례로 본다
   await page.setViewportSize({ width: 390, height: 844 });
   for (let seed = 1; seed <= 12; seed += 1) {
     await page.goto(fileUrl(FILE, `?unlock=all&seed=${seed}&sound=off&stage=cube-complete`));
@@ -583,6 +605,7 @@ for (const stageId of ['cube-judge', 'cube-opposite', 'cube-complete']) {
 }
 
 test('빈 자리가 지금 시점에서 안 보이면 이름표에 "↻ 돌려 보면 빈 자리가 보여요"와 [↻] 강조', async ({ page }) => {
+  test.setTimeout(90_000);
   // 시드 4: 3번(같은 쪽 날개)은 빈 자리가 겹친 자리의 정반대라 처음 시점에서 안 보인다
   await page.goto(fileUrl(FILE, '?unlock=all&seed=4&sound=off&stage=cube-judge'));
   let hiddenCount = 0;
@@ -627,6 +650,7 @@ test('빈 자리가 지금 시점에서 안 보이면 이름표에 "↻ 돌려 �
 });
 
 test('알림(토스트)이 조작 버튼을 가리지 않는다 (크롬북 1366×768·1366×680, 태블릿, 휴대폰)', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
@@ -694,6 +718,7 @@ test.describe('엔진 차시 묶음', () => {
   });
 
   test('차시마다 묶어 보이고 첫 단계가 열리며, "다음 단계"는 같은 차시 안에서만', async ({ page }) => {
+    test.setTimeout(90_000);
     const errors = collectErrors(page);
     await page.goto('http://lesson.test/lesson.html');
     await page.getByRole('button', { name: '시작하기' }).click();
@@ -795,6 +820,7 @@ async function expectBuildResult(page, stats) {
 const storedXpOf = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('edu:net-workshop:rewards'))?.xp ?? 0);
 
 test('자유 배치: 칸을 눌러 십자 → [접어 보기] → 접혀 도감에, 같은 십자를 돌려 놓으면 기록 없음, 한 줄 5칸 → 까닭 고르기 → 겹침, 서로 다른 전개도 3가지 → 결과', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await expect(page.locator('.order-kind')).toHaveText('설계 주문');
@@ -813,11 +839,13 @@ test('자유 배치: 칸을 눌러 십자 → [접어 보기] → 접혀 도감�
   await expect(page.locator('.mat-status')).toContainText('6 / 6');
   await expect(page.locator('.free-fold')).toBeEnabled();
   await expect(page.locator('.free-note')).toHaveText('놓은 그대로 접혀요. 새 전개도를 찾으면 도감에 들어가요.');
-  await foldIt(page);
+  await page.locator('.free-fold').click();
+  // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초 뒤 스스로 사라진다: 접히기(1.3초)를 기다리기 전에 본다
+  await expect(page.locator('.toast-correct')).toHaveText('처음 찾은 전개도예요!');
+  await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
   await expect(page.locator('.stage-badge')).toHaveText('정육면체가 됐어요');
   await expect(page.locator('.reason')).toHaveText('새 전개도 발견처음 찾은 전개도예요. 1-4-1 모양도 정육면체의 전개도예요.');
   await expect(page.locator('.reason')).toHaveClass(/is-correct/);
-  await expect(page.locator('.toast-correct')).toHaveText('처음 찾은 전개도예요!');
   await expect(page.locator('.found-stamp')).toContainText('도감 1 / 11');
   await expect(page.locator('.dex-count')).toHaveText('1 / 11');
   await expect(page.locator('.dex-slot[data-net="1-4-1e"]')).toHaveClass(/is-new/);
@@ -1001,6 +1029,7 @@ function keyboardHelpers(page) {
 
 test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로 6장 놓기, 들어 옮기기, Delete, Tab으로 [접어 보기], 결과까지', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   const { goTo, toBoard, focusByTab, tabTo, placeByKeys } = keyboardHelpers(page);
@@ -1062,6 +1091,7 @@ test('자유 배치 키보드만: Tab으로 판에 들어가 방향키·Enter로
 
 test('자유 배치 터치(태블릿): 카드를 칸으로 끌기, 놓인 면을 다른 칸으로 끌기, 카드 칸으로 끌어 빼기', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치 끌기는 태블릿 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   const cdp = await page.context().newCDPSession(page);
@@ -1095,6 +1125,7 @@ test('자유 배치 터치(태블릿): 카드를 칸으로 끌기, 놓인 면을
 });
 
 test('자유 배치 힌트: 안 되는 모양을 연달아 2번 접으면 [힌트] → 글 → 그림자(아직 못 찾은 전개도, 누를 때만)', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await expect(page.locator('.tool-hint')).toBeHidden();
@@ -1129,7 +1160,7 @@ test('자유 배치 힌트: 안 되는 모양을 연달아 2번 접으면 [힌�
 });
 
 test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 뒤·까닭 고르기·힌트·목표 달성)', async ({ page }, testInfo) => {
-  test.setTimeout(120_000); // 두 크기를 이어서 본다
+  test.setTimeout(150_000); // 두 크기를 이어서 본다
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }];
@@ -1205,6 +1236,7 @@ test('자유 배치: 세로·가로 스크롤 없음 (놓기·떨어짐·접힌 
 });
 
 test('자유 배치: 알림이 조작(칸·카드·접어 보기·접기 도구·다음 버튼)을 가리지 않는다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
     : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
@@ -1240,7 +1272,7 @@ test('자유 배치: 알림이 조작(칸·카드·접어 보기·접기 도구�
 // ── N1-1: 까닭을 고르기 전에는 정답 까닭이 보이지 않는다 ─────────────
 test('자유 배치 까닭 고르기: 안 되는 모양 24가지 모두, 고르기 전에는 무대·글자·속성 어디에도 까닭이 없고 고른 뒤(맞든 틀리든·넘어가도) 보인다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '24가지 전수는 크롬북 화면에서 한 번 (다른 크기는 아래 검사)');
-  test.setTimeout(180_000);
+  test.setTimeout(270_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   let dots = 0;
@@ -1324,7 +1356,7 @@ for (const mode of ['보통', '움직임 줄이기', 'fx=low']) {
     if (mode === '움직임 줄이기') test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
     test('크롬북·태블릿·휴대폰 크기에서 겹치는 모양과 2×2 모양: 고르기 전에는 까닭이 없고, 스크롤·알림 가림도 없다', async ({ page }, testInfo) => {
-      test.setTimeout(60_000); // 두 크기 × 세 모양을 접는 움직임까지 기다려 20초쯤 걸린다
+      test.setTimeout(90_000); // 두 크기 × 세 모양을 접는 움직임까지 기다려 20초쯤 걸린다
       const sizes = testInfo.project.name === 'chromebook'
         ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
         : [{ width: 820, height: 1180 }, { width: 390, height: 844 }];
@@ -1365,7 +1397,7 @@ for (const mode of ['보통', '움직임 줄이기', 'fx=low']) {
 
 // ── N1-2: 점수는 이 기기에서 그 모양을 처음 접을 때만 (spec 16-8) ─────────────
 test('자유 배치 점수: 처음 접는 모양만 점수(전개도 만들기 +2 · 도감 +5, 노트 +1), 다른 판에서 다시 접으면 0점 — 다시 해도, 새로 고쳐도', async ({ page }) => {
-  test.setTimeout(120_000); // 세 판을 이어서 한다
+  test.setTimeout(150_000); // 세 판을 이어서 한다
   const errors = collectErrors(page);
   await page.goto(FREE());
   const xp = page.locator('.meta-xp b');
@@ -1452,6 +1484,7 @@ test('자유 배치 점수: 처음 접는 모양만 점수(전개도 만들기 +
 
 // ── N1c-1 (spec 16-9): 처음 접는 모양의 점수는 별과 상관없이 ─────────────
 test('자유 배치 점수와 별 3개 다시 하기: 별 3개를 받은 단계를 다시 하는 판에서도 처음 접는 모양은 만들기·다시 일어서기·까닭 설명 점수를 받고, 접어 본 모양은 0점', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await page.evaluate(() => localStorage.setItem('edu:net-workshop:stars', JSON.stringify({ 'cube-free': 3 })));
@@ -1601,6 +1634,7 @@ test('자유 배치 점수: 판 중간에 [← 단계 선택]·새로 고침으�
 });
 
 test('자유 배치 점수: 탭 두 개를 섞어 써도 저장되는 것은 늘 한 탭의 점수와 도감 한 쌍이라, 한 모양의 점수를 두 번 받지 못한다', async ({ page, context }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const storedShapes = (p) => p.evaluate(() => {
     const c = JSON.parse(localStorage.getItem('edu:net-workshop:collections')) ?? {};
@@ -1870,6 +1904,7 @@ test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않�
 
 test('자유 배치 도감 칸: 화면 높이가 바뀌면 다시 재서 접고 펴고, 장면이 바뀔 때 접혔다 펴졌다 깜빡이지 않는다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '오른쪽 판 높이가 정해진 넓은 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 1366, height: 680 });
   await page.goto(FREE());
@@ -1972,6 +2007,7 @@ test('자유 배치 ?fx=low: 새 전개도를 찾아도 색종이 0개', async (
 });
 
 test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감이 남고, "기록 모두 지우기"면 점수·도장·도감이 0', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   await expect(page.locator('.rank-chip')).toContainText('견습생');
@@ -2271,7 +2307,7 @@ test('주사위 주문: 눈 카드를 놓고 [접어 보기] → 합이 7이 아
 });
 
 test('주사위 주문 별(spec 16-13): 한 번 틀리고 고치면 별 2개(18점)와 "한 번도 틀리지 않으면 별 3개!", 다시 해서 한 번도 안 틀리면 별 3개(+6), 그 뒤로는 0점. 화면 = 저장', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(DICE());
   const xp = page.locator('.meta-xp b');
@@ -2328,7 +2364,7 @@ test('주사위 주문 별(spec 16-13): 한 번 틀리고 고치면 별 2개(18�
 });
 
 test('주사위 주문 시간 재기: 켜지 않으면 학생이 하는 화면(플레이·결과·단계 지도)에 시간이 보이지 않고, 켠 학생만 걸린 시간과 내 기록이 보인다. 학습 기록에는 다른 단계처럼 걸린 시간이 남는다(spec 16-13)', async ({ page }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(DICE());
   const toggle = page.getByRole('button', { name: '시간 재기' });
@@ -2492,6 +2528,7 @@ test('주사위 주문 정답 노출 0: 접기 전 화면은 눈을 어떻게 �
 
 test('주사위 주문 키보드만: Tab으로 판에 들어가 방향키·Enter로 눈 카드를 놓고, Tab으로 [접어 보기], 두 개를 만들어 결과까지', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(DICE());
   const { toBoard, focusByTab, tabTo, placeByKeys } = keyboardHelpers(page);
@@ -2523,6 +2560,7 @@ test('주사위 주문 키보드만: Tab으로 판에 들어가 방향키·Enter
 
 test('주사위 주문 터치(태블릿): 눈 카드를 칸으로 끌어 놓고, 놓인 눈을 다른 칸으로 끌어 옮기고, 탭으로 접는다. 끄는 눈 카드는 놓을 때까지 보인다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치 끌기는 태블릿 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(DICE());
   const cdp = await page.context().newCDPSession(page);
@@ -2572,6 +2610,7 @@ test('주사위 주문 터치(태블릿): 눈 카드를 칸으로 끌어 놓고,
 
 test('터치로 카드를 휙 끌어 놓거나 접은 입체를 휙 돌린 바로 뒤의 첫 탭이 먹힌다: 끄는(돌리는) 동안의 touchmove를 쓴 것으로 알려 브라우저의 관성 스크롤이 생기지 않는다 — 크롬북·안드로이드의 크롬은 관성이 도는 동안의 첫 탭을 삼킨다', async ({ page, browser }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(FREE());
   const cdp = await page.context().newCDPSession(page);
@@ -2675,19 +2714,22 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     await placeShape(page, cross);
     await check('6장을 놓음');
     expect(await foldDrift(), at).toEqual({ drift: 0, pips: 0, count: 6, scene: FLAT_SCENE });
+    // 알림은 [접어 보기]를 누르는 순간 뜨고 2.4~2.7초 뒤 스스로 사라진다: 접히기(1.3초)를 기다리거나 긴 재기를 하기 전에 본다.
+    // 조작 버튼들은 누르는 순간 놓인다 — 다 접힌 뒤 달라지는 것은 접기 버튼의 글자([접어 보기] → [펴기])에 따른 너비와 옆 막대의 왼쪽 끝뿐이다(같은 줄 안)
+    await expectToastClear(page);
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     await expect(page.locator('.view-pad')).toBeVisible();
     await check('합이 틀림');
-    await expectToastClear(page);
     await page.locator('.free-fix').click();
     await check('펴서 고치기(이미 접어 본 놓기)');
     // 2) 정육면체가 안 되는 모양 둘(겹침 · 네 면이 한 점에: 까닭 문장이 가장 길다) → 힌트
     for (const shape of [SHAPES.line5, SHAPES.block]) {
       await fresh(page);
       await placeShape(page, put(shape));
-      await foldIt(page);
-      await check('정육면체가 안 됨');
+      await page.locator('.free-fold').click();
       await expectToastClear(page);
+      await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+      await check('정육면체가 안 됨');
     }
     await fresh(page);
     await page.locator('.tool-hint').click();
@@ -2701,10 +2743,11 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     }), `${at} 힌트 글`).toBe(true);
     // 3) 첫 번째 주사위 완성 → 같은 모양(막힘) → 두 번째 완성
     await placeShape(page, diceOrder(cross));
-    await foldIt(page);
+    await page.locator('.free-fold').click();
+    await expectToastClear(page);
+    await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     await expect(page.locator('.found-stamp')).toBeVisible();
     await check('첫 번째 완성');
-    await expectToastClear(page);
     const overlaps = await page.evaluate(() => {
       const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
       const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
@@ -3020,7 +3063,7 @@ for (const mode of ['움직임 줄이기', 'fx=low']) {
 }
 
 test('도감 주문 이어 하기: 내 맘대로 전개도에서 찾은 도감이 이어지고, 새로 고쳐도 남고, 여러 번에 나눠 11칸 — 6칸부터 [오늘은 여기까지](별 1개), 9칸 별 2개, 11칸이면 [결과 보기]만 남는다', async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(180_000);
   const errors = collectErrors(page);
   const xp = page.locator('.meta-xp b');
   const SAME_SHAPE_NOTE = '전에 접어 본 모양이라 점수는 없어요.';
@@ -3609,6 +3652,7 @@ test('보기 조작판: 답하기 전에는 보이지 않고 좌우 돌리기 �
 });
 
 test('보기: 펴면 늘 위에서 본 처음 크기로 돌아가고 다시 접으면 내가 보던 방향·크기 그대로, 다음 문제는 처음 보기에서 시작한다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
   const questions = questionsFor('cube-judge');
@@ -3724,6 +3768,7 @@ test('답하기 전 정답 노출 0: 판별·마주 보는 면·면 붙이기에
 });
 
 test('답하기 전 힌트(반만 접어 보기) 동안에도 새 조작은 잠겨 있고, 면 붙이기에서 [펴고 다시 하기] 뒤에도 다시 잠긴다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const mouse = testInfo.project.name === 'chromebook';
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-opposite'));
@@ -3917,6 +3962,7 @@ test('답하기 전 펼친 전개도를 좌우로 돌려도(V1-2) 빈 자리·�
 });
 
 test('답하기 전 조작 띠는 V1 이전과 같은 자리·막대 길이이고(네 크기, 휴대폰은 띠 두 줄), 답하는 순간 조작판이 나타나도 매트·무대·접기 버튼은 움직이지 않는다. 초점도 사라지지 않는다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 768 }, { width: 1366, height: 680 }]
@@ -4167,6 +4213,7 @@ test('마우스: 누르기와 끌기를 가른다 — 맞히기 전에는 끌어
 
 test('마우스 휠: 답한 뒤 접은 입체 위에서는 크게·작게(페이지 스크롤 0, Ctrl+휠 포함), 답하기 전·무대 밖에서는 페이지 스크롤 그대로', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '마우스 휠은 크롬북(마우스) 설정에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 390, height: 600 }); // 세로 스크롤이 생기는 작은 창
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
@@ -4502,6 +4549,7 @@ test('터치(CDP): 답한 뒤 한 손가락 끌기는 돌리기(페이지 스크
 });
 
 test('두 손가락에서 한 손가락이 되면 남은 손가락으로 튀지 않고 이어 돌리고, 셋째 손가락·문턱 전에 무대 밖에서 뗀 포인터는 남지 않는다 (포인터 이벤트)', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
   await answerAndFold(page, questionsFor('cube-judge')[0]);
@@ -4566,7 +4614,7 @@ test('두 손가락에서 한 손가락이 되면 남은 손가락으로 튀지 
 // ── 17-18: 접는 도중에도 같은 정도로 돈다 · 0을 지나는 움직임 ─────────────
 test('접는 도중에도 같은 정도로 돈다(spec 17-18): 접는 정도 1 · 10 · 20 · 60%에서 오른쪽 100px = 50°, 위로 880px(440°)을 10px마다 5°씩 튀는 걸음 없이 돌고 720px에서 제자리, 좌우 버튼 12번·위아래 버튼 24번이면 제자리(한 번 = 30°·15°), 배율 단계도 그대로', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '마우스 끌기는 크롬북 화면에서 확인 (터치는 아래 테스트)');
-  test.setTimeout(120_000);
+  test.setTimeout(180_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-judge'));
   await answerAndFold(page, questionsFor('cube-judge')[0]);
@@ -4640,7 +4688,7 @@ test('접는 도중에도 같은 정도로 돈다(spec 17-18): 접는 정도 1 �
 
 test('접는 도중 터치로도 같은 정도로 돈다(spec 17-18): 접는 정도 10 · 20%에서 한 손가락으로 위로 200px씩 세 번(300°)·대각선, 좌우 버튼 12번 제자리 (태블릿·휴대폰)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 설정(태블릿·휴대폰 크기)에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(120_000);
   const errors = collectErrors(page);
   for (const size of [{ width: 820, height: 1180 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(size);
@@ -4960,6 +5008,7 @@ test('배치(네 크기): 조작판·접기 도구는 48px 이상이고 이름�
       };
     });
     // 처음 보기
+    await padSettled(page);
     const m = await measure();
     expect(m.pad, at).toEqual(phone ? [198, 100] : [152, 152]); // 십자 48px × 3칸(사이 4px) · 휴대폰은 아래 띠 4칸 × 2줄
     expect({ small: m.small, padInMat: m.padInMat, buttonsOverlap: m.buttonsOverlap, padOnBadge: m.padOnBadge, padOnTools: m.padOnTools, padOnSolid: m.padOnSolid, badgeOnSolid: m.badgeOnSolid, solidInStage: m.solidInStage, covered: m.covered, scrollX: m.scrollX }, at)
@@ -4977,6 +5026,7 @@ test('배치(네 크기): 조작판·접기 도구는 48px 이상이고 이름�
     // 2배 · 옆에서 · 아래에서 · 돌려서: 버튼·막대·이름표가 가려지지 않고 스크롤이 생기지 않는다
     for (const step of [['크게 보기', 3], ['아래쪽으로 돌려 보기', 3], ['오른쪽으로 돌려 보기', 2], ['아래쪽으로 돌려 보기', 6], ['왼쪽으로 돌려 보기', 5]]) {
       await pressPad(page, ...step);
+      await padSettled(page); // 방금 누른 버튼의 눌림·들뜸이 끝난 뒤에 잰다
       const z = await measure();
       expect({ covered: z.covered, scrollX: z.scrollX, padOnBadge: z.padOnBadge, padOnTools: z.padOnTools, small: z.small }, `${at} ${step.join(' ×')}`)
         .toEqual({ covered: [], scrollX: 0, padOnBadge: false, padOnTools: false, small: 0 });
@@ -5393,6 +5443,7 @@ test('자유 배치: 판 → 무대 이어 접기 어긋남 0px (네 크기) —
     await expect(page.locator('.view-pad')).toBeVisible();
     await expect(page.locator('.found-stamp')).toBeVisible();
     // 조작판·도장·이름표·조작 띠가 서로 겹치지 않고, 오른쪽 판 안쪽은 넘치지 않는다
+    await padSettled(page);
     const overlaps = await page.evaluate(() => {
       const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
       const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
@@ -5435,6 +5486,7 @@ for (const mode of ['움직임 줄이기', 'fx=low']) {
     if (mode === '움직임 줄이기') test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
     test('0을 지날 때 잇는 움직임 없이 바로 바뀐다(spec 17-18): 다 펴면 그 차례에 처음 모습, 조금만 접어도 그 차례에 내 자세 — 프레임 요청 0번. 접는 도중에도 같은 정도로 돈다', async ({ page }) => {
+      test.setTimeout(90_000);
       const errors = collectErrors(page);
       await page.addInitScript(FRAME_RECORDER);
       await page.goto(fileUrl(FILE, `?unlock=all&seed=1&sound=off&stage=cube-judge${mode === 'fx=low' ? '&fx=low' : ''}`));
@@ -5483,6 +5535,7 @@ for (const mode of ['움직임 줄이기', 'fx=low']) {
     });
 
     test('끌기·버튼·휠은 바로 반응하고, 접기는 지금처럼(움직임 줄이기면 3장면, 그동안 requestAnimationFrame 0번), 나간 뒤 남는 프레임 요청·포인터 리스너가 없다', async ({ page }, testInfo) => {
+      test.setTimeout(90_000);
       const errors = collectErrors(page);
       const mouse = testInfo.project.name === 'chromebook';
       // 프레임 요청 횟수와, 창에 남아 있는 포인터 리스너(움직임·취소) 수를 센다. pointerup은 Playwright도 누를 때마다 창에 붙였다 떼므로 세지 않는다
