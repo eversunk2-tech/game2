@@ -69,6 +69,18 @@ async function clearBoard(page, testInfo) {
 /** 돌아가는 움직임(0.2초)이 끝날 때까지 기다린다 — 시간으로 기다리지 않는다(느린 CI에서도 흔들리지 않게) */
 const settled = (page) => expect(stageEl(page)).not.toHaveClass(/is-easing/);
 
+/**
+ * 화면의 움직임이 모두 끝날 때까지 기다린다 — 요소의 크기·자리·겹침·넘침·여유를 재기 전에 부른다(정해 둔 시간으로 기다리지 않는다).
+ * 누른 직후에는 답 버튼이 튀거나(fx-correct: 0.35초 동안 1.08배까지) 흔들리고(fx-wrong: 0.4초 동안 좌우 8px), 버튼의 들뜸·눌림이 가라앉고(0.12초),
+ * 알림이 올라오는(0.2초) 도중이라, 그때 재면 같은 화면도 재는 순간에 따라 값이 달라진다(빠른 기기에서는 움직이기 전에, 느린 기기에서는 도중에 잰다).
+ * 세는 것: 돌고 있는 CSS 애니메이션·전환 가운데 끝이 있는 것 + 쌓기나무 무대의 돌아가는 움직임(.is-easing).
+ * 끝없이 되풀이하는 것·멈춰 둔 것은 세지 않는다(끝나지 않는 기다림이 되지 않게).
+ */
+const calm = (page) => page.waitForFunction(() => {
+  const moving = document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
+  return !moving && !document.querySelector('.blk-stage.is-easing');
+});
+
 /** 지금 쌓기(map)에 한 개를 더 쌓아도 여전히 그림과 다른 자리를 찾아 그 칸을 눌러 쌓는다 → 새 높이 지도 */
 async function addWrongBlock(page, testInfo, q, map) {
   for (let y = 0; y < 3; y += 1) {
@@ -193,6 +205,7 @@ async function expectNoOverlap(page, label = '') {
 /** 지금 보이는 알림(토스트)이 매트·판의 버튼과 겹치지 않는다 */
 async function expectToastClear(page, label = '') {
   await expect(page.locator('.toast')).toBeVisible();
+  await calm(page);
   const hits = await page.evaluate(() => {
     const t = document.querySelector('.toast').getBoundingClientRect();
     const out = [];
@@ -1096,6 +1109,7 @@ test('정답 노출 0 (이쪽에서 보면?): 답하기 전에는 입체가 없�
     expect(new Set(await page.locator('.blk-option').evaluateAll((els) => els.map((el) => `${el.className}|${el.disabled}`))).size).toBe(1);
     // 보기 그림 넷은 크기가 같고, 답하기 전에는 크게 보인다(크롬북: 2×2, 태블릿: 한 줄에 넷)
     await expect(page.locator('.blk-options')).not.toHaveClass(/is-answered/);
+    await calm(page);
     const before = await page.locator('.blk-option .blk-flat').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width)));
     expect(new Set(before).size).toBe(1);
     expect(await page.locator('.blk-option').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().left))).size)).toBe(isTouch(testInfo) ? 4 : 2);
@@ -1103,6 +1117,8 @@ test('정답 노출 0 (이쪽에서 보면?): 답하기 전에는 입체가 없�
     await expect(page.locator('.blk-stage')).toHaveCount(1);
     // 답한 뒤: 보기를 한 줄로 줄여 까닭 쪽지에 자리를 낸다(답한 뒤의 보기는 "이 그림 쪽에서 보기" 버튼이다)
     await expect(page.locator('.blk-options')).toHaveClass(/is-answered/);
+    // 고른 보기는 0.35초 동안 튄다(그 안의 그림도 1.08배까지 커진다): 움직임이 끝난 뒤의 크기·자리를 잰다
+    await calm(page);
     const after = await page.locator('.blk-option .blk-flat').evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().width)));
     expect(new Set(after).size).toBe(1);
     expect(after[0]).toBeLessThan(before[0]);
@@ -1111,6 +1127,12 @@ test('정답 노출 0 (이쪽에서 보면?): 답하기 전에는 입체가 없�
     await expect(stageEl(page)).toHaveAttribute('data-facing', VIEW_OF[q.dir]);
     await expect(page.locator('.blk-map')).toBeHidden();
     await expect(page.locator('.view-pad')).toBeVisible();
+    // 입체가 문항의 조형물과 같다. 그 방향에서 똑바로 본 모습에서는 다른 조형물 바로 뒤에 가려진 것이 그려지지 않으므로
+    // (돌아가는 0.2초 동안에만 셋이 모두 보인다 — 그 도중에 재면 재는 순간에 따라 결과가 달라진다),
+    // 돌아가는 움직임이 끝난 뒤 처음 보기(위에서 비스듬히: 모든 자리의 맨 위가 보인다)로 돌려 놓고 견준다
+    await settled(page);
+    await press(testInfo, page.locator('.view-home'));
+    await settled(page);
     expect(await drawnMap(page)).toEqual(q.h);
     // 답한 뒤에는 보기 그림을 누르면 무대가 그 그림 쪽으로 돈다
     const other = q.options.findIndex((o) => o.dir !== q.dir);
@@ -1582,6 +1604,7 @@ for (const size of SIZES) {
     });
     let first = null;
     const scene = async (label) => {
+      await calm(page); // 누른 직후의 움직임(버튼·알림·무대)이 끝난 뒤에 잰다
       await noScroll(page, label);
       await expectFits(page, label);
       await expectNoOverlap(page, label);
@@ -1622,8 +1645,9 @@ for (const size of SIZES) {
         const wrong = id === 'blocks-where' ? OPPOSITE[q.dir] : id === 'blocks-scene' ? (q.expected % 4) + 1 : q.options.find((n) => n !== q.expected);
         await press(testInfo, page.locator(`.blk-choice[data-answer="${i === 0 ? wrong : right}"]`));
         await expect(page.locator('.reason')).toBeVisible();
-        await scene(`${id} 문항 ${i + 1} 답한 뒤`);
+        // 알림은 몇 초 뒤 저절로 사라진다: 느린 기기에서도 떠 있는 동안 재도록 장면보다 먼저 잰다
         if (i === 0) await expectToastClear(page, `${id} 틀린 알림`);
+        await scene(`${id} 문항 ${i + 1} 답한 뒤`);
         await press(testInfo, page.locator('.next-btn'));
         if (i + 1 < stageOf(id).count) await scene(`${id} 문항 ${i + 2}`);
       }
@@ -1635,8 +1659,8 @@ for (const size of SIZES) {
     const [c1, c2] = questionsFor('blocks-copy');
     await padBuild(page, testInfo, mirrorMap(c1.target));
     await press(testInfo, page.locator('.blk-check'));
-    await scene('copy 틀림 1');
     await expectToastClear(page, 'copy 틀린 알림');
+    await scene('copy 틀림 1');
     await press(testInfo, page.locator('.blk-check'));
     await scene('copy 같은 쌓기를 또 확인');
     await addWrongBlock(page, testInfo, c1, mirrorMap(c1.target));
@@ -1703,6 +1727,7 @@ test('글자가 커져도(110%) 크롬북 1366×680에서 작업 지시서가 �
     await expect.poll(() => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))).toBeGreaterThan(17);
   };
   const fits = async (label) => {
+    await calm(page); // 누른 직후의 움직임(버튼·알림·무대)이 끝난 뒤에 잰다
     const m = await page.evaluate(() => {
       const panel = document.querySelector('.blk-panel');
       const cut = [...panel.querySelectorAll('button')].filter((b) => b.getClientRects().length > 0 && b.getBoundingClientRect().bottom > panel.getBoundingClientRect().bottom + 0.5).length;
@@ -1828,6 +1853,7 @@ test('폭 900~1100px(가로로 든 태블릿 1024×768 등): 꽉 찬 3×3×3이 
       await settled(page);
       expect(await blocksOutside(page), `${width}px [${key}]`).toEqual([]);
     }
+    await calm(page);
     await expectNoOverlap(page, `${width}px`);
     await expectFits(page, `${width}px`);
     expect(await hasHorizontalScroll(page), `${width}px 가로 스크롤`).toBe(false);
