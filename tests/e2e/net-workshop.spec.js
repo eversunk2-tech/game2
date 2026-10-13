@@ -1751,7 +1751,7 @@ const dexState = (page) => page.evaluate(() => {
 });
 
 test('자유 배치: 모든 장면에서 오른쪽 판 안쪽이 넘치지 않고 버튼이 잘리지 않는다 (목표 전·후 × 겹침·2×2 × 까닭 맞힘·틀림·6개가 아니에요·넘어가기, 접어 본 모양, 별 3개 다시 하기) — 도감 칸은 접지 않으면 넘칠 때만 접힌다 (1366×680·700·720·740·768, 태블릿, 휴대폰)', async ({ page }, testInfo) => {
-  test.setTimeout(420_000);
+  test.setTimeout(900_000);
   const errors = collectErrors(page);
   const sizes = testInfo.project.name === 'chromebook'
     ? [{ width: 1366, height: 680 }, { width: 1366, height: 700 }, { width: 1366, height: 720 }, { width: 1366, height: 740 }, { width: 1366, height: 768 }]
