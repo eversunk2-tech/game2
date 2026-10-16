@@ -5,6 +5,7 @@
 import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST, makeBlockQuestions } from './blocks-logic.js';
 import { createBlockPicture } from './block-view.js';
 import { playBlocks } from './play-blocks.js';
+import { VIEW_STAGE_KINDS, playViews } from './play-views.js'; // 3·4차시 화면
 
 // 단계 카드 그림: 작은 멈춘 그림 (조형물은 색·무늬)
 const SCENE_LOOK = { yellow: { token: '--face-1', mark: 'plain' }, blue: { token: '--face-2', mark: 'slash' }, pink: { token: '--face-4', mark: 'dot' } };
@@ -16,6 +17,13 @@ const THUMBS = {
   copy: { map: [[2, 1, 0], [1, 0, 0], [0, 0, 0]] },
   count: { map: [[1, 2, 1], [0, 3, 0], [0, 0, 0]] },
   hidden: { map: [[0, 3, 1], [0, 1, 0], [0, 0, 0]] },
+  // 3·4차시
+  flip: { map: [[1, 3, 2], [0, 1, 0], [0, 0, 0]] },
+  draw: { map: [[1, 2, 0], [0, 3, 1], [0, 0, 0]] },
+  build: { map: [[2, 1, 1], [1, 0, 0], [0, 0, 0]] },
+  write: { map: [[1, 2, 0], [2, 3, 1], [0, 1, 0]] },
+  fromnum: { map: [[3, 1, 0], [2, 1, 0], [1, 0, 0]] },
+  numviews: { map: [[2, 0, 0], [1, 3, 1], [0, 1, 0]] },
 };
 function thumbOf(kind) {
   const spec = THUMBS[kind];
@@ -36,5 +44,5 @@ export const BLOCK_STAGES = STAGE_LIST.map((stage) => ({ ...stage, thumb: thumbO
 export function playBlockStage(stage, ctx) {
   // 문항을 가장 먼저 만든다: 같은 ?seed=면 같은 문항 (e2e 테스트도 이것으로 정답을 안다)
   const questions = makeBlockQuestions(stage, ctx.rng);
-  return playBlocks(stage, ctx, questions);
+  return VIEW_STAGE_KINDS.includes(stage.kind) ? playViews(stage, ctx, questions) : playBlocks(stage, ctx, questions);
 }

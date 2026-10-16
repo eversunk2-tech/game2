@@ -245,6 +245,12 @@
   .blk-clue .reason-chips { gap: 6px; }
 }
 
+/* 판이 매트 옆에 있는 두 칸 배치(1001px 이상) 전체: 답이 끝난 뒤(숨겨진 쌓기나무 · 위, 앞, 옆을 보고 쌓기)에는 작업 지시서의 주어진 그림을 접는다 —
+   그림은 매트의 카드·무대에 그대로 있고, 까닭·쪽지·[다음 문제]에 자리가 난다. 1366×768에서 글꼴 흉내 + 글자 110%면 20px 넘치던 장면(review-blocks S1b-4) */
+@media (min-width: 1001px) {
+  .blk-given.is-done { display: none; }
+}
+
 /* 폭 1001~1279px(가로로 든 태블릿 1024×768 등): 판을 옆에 두되 조금 좁혀(300~372px) 매트에 자리를 준다 —
    매트 양옆의 조작 칸(210px씩)을 빼고도 쌓기나무가 들어갈 가운데 자리가 남게. 1280px부터는 전개도 무대와 같은 372px */
 @media (min-width: 1001px) and (max-width: 1279px) {
@@ -308,3 +314,115 @@
 @media (prefers-reduced-motion: reduce) {
   .blk-mode[aria-pressed="true"] { transform: none; }
 }
+
+/* ══ S2: 3·4차시 (위·앞·옆에서 본 모양, 수 쓰기) ══════════════════ */
+/* 작업 지시서에 모눈 그림이 더 들어가는 화면: 폭 1001~1279px에서 판의 폭을 340px로 고정(단계 안에서는 바뀌지 않는다) */
+@media (min-width: 1001px) and (max-width: 1279px) {
+  .workbench.blk-bench.blk-wide { grid-template-columns: minmax(0, 1fr) 340px; }
+  .blk-wide .blk-panel.net-panel { padding-left: 16px; padding-right: 16px; }
+}
+
+/* ── 반듯한 모눈 그림(위·앞·옆에서 본 모양, 수를 쓴 위에서 본 모양) ── */
+.blk-grid-pic { display: block; max-width: 100%; height: auto; }
+.blk-grid-cell { fill: var(--paper); stroke: var(--line); stroke-width: 1.5; }
+.blk-grid-cell.is-on { fill: var(--face-1); stroke: var(--ink); stroke-width: 2; }
+.blk-grid-pic.is-numbers .blk-grid-cell.is-on { fill: var(--butter-soft); }
+.blk-grid-num { fill: var(--ink); font-family: var(--font-display); font-weight: 700; font-size: var(--cell-font, 16px); text-anchor: middle; dominant-baseline: central; }
+.blk-grid-hint { fill: var(--primary); }
+.blk-grid-diff { fill: rgb(178 63 20 / 12%); stroke: var(--wrong); stroke-width: 2.5; stroke-dasharray: 5 3; }
+.blk-grid-x { font-size: var(--cell-font, 16px); }
+.blk-grid-mark { fill: none; stroke: var(--primary); stroke-width: 3; stroke-dasharray: 5 3; }
+/* 위·앞·옆 그림 셋을 한 줄로 (위, 앞, 옆을 보고 쌓기) */
+.blk-views { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 6px; }
+.blk-view-fig { padding: 4px 6px 3px; }
+
+/* ── 모눈 칠하기 ─────────────────────────── */
+/* 앞·옆 두 장이 한 줄에(모눈 148px × 2 + 6px — 판 안쪽 폭 300px 이상이면) */
+.blk-paints { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 8px 6px; }
+.blk-paint { display: inline-grid; grid-template: "title" auto "grid" auto "foot" auto / auto; gap: 2px 4px; align-items: center; justify-items: center; }
+.blk-paint.is-top { grid-template: "title title" auto "grid side" auto "foot ." auto / auto auto; }
+.blk-paint-title { grid-area: title; font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); line-height: 1.4; white-space: nowrap; }
+.blk-pgrid { grid-area: grid; display: flex; flex-direction: column; gap: 2px; }
+.blk-pgrid-row { display: flex; gap: 2px; }
+.blk-paint-side { grid-area: side; }
+.blk-paint-front { grid-area: foot; }
+.blk-paint-side, .blk-paint-front { font-size: var(--fs-xs); font-weight: 800; line-height: 1.2; color: var(--ink-2); }
+/* 앞·옆에서 본 모양의 바닥 선 */
+.blk-paint-ground { grid-area: foot; justify-self: stretch; height: 3px; border-radius: 2px; background: var(--ink); }
+.blk-pcell {
+  position: relative;
+  width: var(--tap);
+  height: var(--tap);
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--line);
+  border-radius: 4px;
+  background: var(--paper);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+/* 칠한 칸: 색 + 잉크 테두리 + 안쪽 그림자(색만으로 구분하지 않는다) */
+.blk-pcell.is-on { border-color: var(--ink); background: var(--face-1); box-shadow: inset 0 -4px 0 rgb(30 33 64 / 22%); }
+.blk-pcell:disabled { cursor: default; }
+.blk-pcell:focus-visible { z-index: 1; }
+/* 다른 칸: 벽돌색 점선 + ✗ (더 칠한 칸은 빗금도) */
+.blk-pcell.is-diff { border: 2.5px dashed var(--wrong); }
+.blk-pcell.is-diff::after { content: '✗'; position: absolute; inset: 0; display: grid; place-items: center; color: var(--wrong); font-family: var(--font); font-size: 1.35rem; font-weight: 900; text-shadow: 0 0 3px var(--paper); }
+.blk-pcell.is-extra { background-image: repeating-linear-gradient(135deg, rgb(178 63 20 / 30%) 0 3px, transparent 3px 9px); }
+/* 매트 왼쪽(위에서 본 판 자리)의 칠하기 상자 */
+.blk-padbox.blk-paintbox { display: block; padding: 4px 8px 4px; }
+
+/* ── 수 쓰기 (위에서 본 판 자리) ─────────────── */
+.blk-numbox { grid-template: "title title" auto "grid side" auto "front ." auto "steps steps" auto / auto auto; }
+.blk-ncell {
+  width: var(--tap);
+  height: var(--tap);
+  margin: 0;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.45rem;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  position: relative;
+}
+.blk-ncell.is-off { border: 2px dashed var(--line); background: var(--paper-3); cursor: default; }
+.blk-ncell.is-on { background: var(--butter-soft); }
+/* 고른 칸: 굵은 파랑 테두리(올리기·내리기가 바꾸는 칸) */
+.blk-ncell.is-chosen { box-shadow: 0 0 0 3px var(--primary); }
+.blk-ncell:disabled { cursor: default; }
+.blk-ncell.is-diff { border: 2.5px dashed var(--wrong); }
+.blk-ncell.is-diff::after { content: '✗'; position: absolute; right: 1px; top: -3px; color: var(--wrong); font-family: var(--font); font-size: 0.95rem; font-weight: 900; }
+.blk-nsteps { grid-area: steps; display: flex; gap: 4px; margin-top: 4px; }
+.blk-nsteps .btn { min-height: var(--tap); padding: 4px 8px; gap: 2px; font-size: 0.95rem; }
+
+/* ── 무대에 겹친 내 그림 · 세어 보이기 ──────────── */
+.blk-over { fill: rgb(39 71 200 / 14%); stroke: var(--primary); stroke-width: 3; stroke-linejoin: round; }
+.blk-over.is-extra { fill: rgb(178 63 20 / 16%); stroke: var(--wrong); stroke-dasharray: 7 4; }
+.blk-over.is-missing { fill: none; stroke: var(--wrong); stroke-dasharray: 7 4; }
+.blk-over-hatch { fill: none; stroke: var(--wrong); stroke-width: 2; stroke-linecap: round; }
+.blk-face.is-counted { stroke: var(--primary); stroke-width: 3.5; }
+.blk-chip.blk-tally rect { fill: var(--primary-soft); stroke: var(--primary); }
+
+/* ── 방향 버튼 다섯(앞과 뒤, 오른쪽과 왼쪽): 두 줄 ── */
+.blk-dirs.is-five { flex-wrap: wrap; width: 196px; }
+.blk-dirs.is-five .blk-dir { padding: 4px 10px; }
+
+/* ── 보기 셋(모눈 그림) · 보기 넷(입체 그림) ───────── */
+.blk-options.blk-options-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.blk-options-3 .answer-btn.blk-option { min-height: 112px; }
+.blk-options.blk-pictures .answer-btn.blk-option { min-height: 104px; }
+.blk-options.blk-pictures .blk-picture { width: 92px; }
+.blk-options.blk-pictures.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.blk-options.blk-pictures.is-answered .answer-btn.blk-option { min-height: 0; }
+.blk-options.blk-pictures.is-answered .blk-picture { width: 56px; }
+/* 수를 쓴 위에서 본 모양을 매트 가운데에 크게(수만 보고 알아내기 — 답하기 전) */
+.blk-plan-card .blk-figure { padding: 10px 14px 8px; }
+.blk-plan-card .blk-grid-pic { width: 216px; }

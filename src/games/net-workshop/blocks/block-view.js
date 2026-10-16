@@ -221,6 +221,16 @@ export function markPath(mark, pts) {
   return '';
 }
 
+/** 칸 하나에 빗금 세 줄(화면 점 넷: 아래 왼쪽부터 시계 반대 방향) → path d */
+export function hatchPath(pts) {
+  const at = (u, v) => [pts[0][0] + u * (pts[1][0] - pts[0][0]) + v * (pts[3][0] - pts[0][0]), pts[0][1] + u * (pts[1][1] - pts[0][1]) + v * (pts[3][1] - pts[0][1])];
+  return [[0, 0.5, 0.5, 0], [0, 1, 1, 0], [0.5, 1, 1, 0.5]].map(([u0, v0, u1, v1]) => {
+    const a = at(u0 + 0.06, v0 - 0.06);
+    const b = at(u1 - 0.06, v1 + 0.06);
+    return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+  }).join('');
+}
+
 // ── 보는 방향을 말로 ───────────────────────
 export const SIDE_NAMES = Object.freeze({ top: '위', front: '앞', side: '옆', back: '뒤', left: '왼쪽' });
 const seenFrom = (name) => `${name}에서 본 모습이에요.`;
@@ -265,7 +275,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let mode = 'add';
   let apart = false;
   let hover = null; // 마우스가 올라가 있거나 손가락이 누르고 있는 곳(hit)
-  let marks = { hidden: [], diff: [], goal: null, layers: false };
+  let marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [] };
+  let overlay = []; // 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다 [{ dir: 'top' | 'front' | 'side', cells: [{ r, c, state }] }]
   let size = { w: 0, h: 0, unit: 40 };
   let raf = 0;
   let mixing = null; // { t0, p }
@@ -309,6 +320,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const order = [];
     const hiddenSet = new Set(marks.hidden.map((c) => c.join(',')));
     const diffSet = new Set(marks.diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
+    const countedSet = new Set(marks.counted.map((c) => c.join(',')));
     for (const s of shapes) {
       const key = s.kind === 'tile' ? `t${s.x},${s.y}` : `f${s.x},${s.y},${s.z},${s.face}`;
       let node = shapeEls.get(key);
@@ -327,7 +339,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
         cls = `blk-tile${(s.x + s.y) % 2 ? ' is-odd' : ''}${d[2] < 0 ? ' is-under' : ''}${goal ? ' is-goal' : ''}`;
       } else {
         const cell = `${s.x},${s.y},${s.z}`;
-        cls = `blk-face blk-${s.face}${hiddenSet.has(cell) ? ' is-hidden-cube' : ''}${diffSet.has(`${cell},${s.face}`) ? ' is-diff' : ''}`;
+        cls = `blk-face blk-${s.face}${hiddenSet.has(cell) ? ' is-hidden-cube' : ''}${diffSet.has(`${cell},${s.face}`) ? ' is-diff' : ''}${countedSet.has(cell) ? ' is-counted' : ''}`;
       }
       if (node.getAttribute('class') !== cls) node.setAttribute('class', cls);
       used.add(key);
@@ -407,6 +419,36 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       svgEl('text', { x: 0, y: 0 }, document.createTextNode(text)));
   };
 
+  /**
+   * 내가 그린 2D 그림을 무대에 겹친다(그 방향에서 보고 있을 때만 — 돌아가는 도중·끌어 돌린 뒤에는 그리지 않는다).
+   * 칸 하나 = 그 방향의 판 바깥 면(앞: 판의 앞 가장자리, 옆: 오른쪽 가장자리, 위: 3층 위) 위의 네모. 원근 없는 그리기라 쌓기나무의 네모와 겹친다.
+   * state: ok(내가 칠했고 맞음 — 반투명 테두리) · extra(내가 칠했는데 없음 — 빗금 + ✗) · missing(있는데 안 칠함 — 점선 + ✗)
+   */
+  function overlayNodes(pose, at, k) {
+    const facing = el.dataset.facing;
+    const layer = overlay.find((o) => o.dir === facing);
+    if (!layer) return [];
+    const out = [];
+    const corners = (r, c) => {
+      if (facing === 'front') return [[c, -0.02, r], [c + 1, -0.02, r], [c + 1, -0.02, r + 1], [c, -0.02, r + 1]];
+      if (facing === 'side') return [[COLS + 0.02, c, r], [COLS + 0.02, c + 1, r], [COLS + 0.02, c + 1, r + 1], [COLS + 0.02, c, r + 1]];
+      return [[c, r, MAX_H + 0.02], [c + 1, r, MAX_H + 0.02], [c + 1, r + 1, MAX_H + 0.02], [c, r + 1, MAX_H + 0.02]];
+    };
+    let first = null;
+    for (const cell of layer.cells) {
+      const pts = corners(cell.r, cell.c).map(at);
+      out.push(svgEl('polygon', { class: `blk-over is-${cell.state}`, points: points(pts) }));
+      if (cell.state === 'extra') out.push(svgEl('path', { class: 'blk-over-hatch', d: hatchPath(pts) }));
+      if (cell.state !== 'ok') {
+        const c = centerOf(pts);
+        out.push(svgEl('text', { class: 'blk-x', x: c[0].toFixed(1), y: c[1].toFixed(1) }, document.createTextNode('✗')));
+        if (!first || c[1] < first[1]) first = c;
+      }
+    }
+    if (first) out.push(chip('여기가 달라요', [clamp(first[0], 70, size.w - 70), Math.max(16, first[1] - k * 0.75)], 'blk-hid blk-over-chip'));
+    return out;
+  }
+
   /** 판 가장자리 글자(앞·옆, 가~라)와 화살표, 층별 개수, "숨어 있었어요", 다른 곳 ✗ */
   function renderMarks(pose, d, at, k) {
     const nodes = [];
@@ -450,8 +492,14 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (marks.hidden.length && !frozen) {
       const [x, y, z] = marks.hidden[0];
       const spot = at([x + 0.5, y + 0.5, z + 0.5 + liftOf(z, apart)]);
-      nodes.push(chip('숨어 있었어요', [spot[0], spot[1] - k * 0.75], 'blk-hid'));
+      nodes.push(chip(marks.hiddenText ?? '숨어 있었어요', [spot[0], spot[1] - k * 0.75], 'blk-hid'));
     }
+    // 자리마다 센 수(수 쓰기를 맞힌 뒤): 그 자리의 맨 위 쌓기나무의 윗면 가운데에
+    for (const t of marks.tally) {
+      const spot = at([t.x + 0.5, t.y + 0.5, t.z + 1 + liftOf(t.z, apart)]);
+      nodes.push(chip(String(t.n), spot, 'blk-tally'));
+    }
+    if (!frozen && !mixing && overlay.length) nodes.push(...overlayNodes(pose, at, k));
     for (const f of marks.diff) {
       const lift = liftOf(f.z, apart);
       const c = centerOf(FACE_CORNERS[f.face].map(([dx, dy, dz]) => at([f.x + dx, f.y + dy, f.z + dz + lift])));
@@ -742,6 +790,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (!POSES[name] || (!force && !canView())) return false;
     moveTo({ ...view, roll: rollTo(name) });
     el.dataset.facing = name;
+    if (overlay.length) render(); // 움직임 없이 바로 돈 때(움직임 줄이기): 그 방향의 겹친 그림을 바로 그린다
     emit('facing', name);
     if (!quiet) say(name === 'home' ? HOME_WORD : seenFrom(names[name] ?? SIDE_NAMES[name]));
     return true;
@@ -853,9 +902,17 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       render();
     },
     isApart: () => apart,
-    /** 표시: hidden(숨어 있던 쌓기나무 [x, y, z]들) · diff(다른 면들) · goal(놓을 자리 [x, y]) · layers(벌렸을 때 층별 개수) */
+    /**
+     * 표시: hidden(숨어 있던 쌓기나무 [x, y, z]들 — 첫 쌓기나무에 hiddenText 글자, 없으면 "숨어 있었어요") · diff(다른 면들) · goal(놓을 자리 [x, y])
+     * · layers(벌렸을 때 층별 개수) · counted(센 쌓기나무 [x, y, z]들 — 굵은 테두리) · tally(자리마다 센 수 [{ x, y, z(맨 위 층), n }])
+     */
     setMarks(next = {}) {
-      marks = { hidden: [], diff: [], goal: null, layers: false, ...next };
+      marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [], ...next };
+      render();
+    },
+    /** 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다: [{ dir, cells: [{ r, c, state }] }] (빈 목록이면 지운다) */
+    setOverlay(list = []) {
+      overlay = list;
       render();
     },
     step,
