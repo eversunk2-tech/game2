@@ -378,7 +378,7 @@ test('정답 노출 0 (앞과 뒤 · 그리기): 답하기 전에는 멈춘 그�
 });
 
 test('그림의 "앞"·"옆" 표시 (review-blocks-s2 S2-1): 그리기의 답하기 전 그림에는 앞(왼쪽 아래)·옆(오른쪽 아래) 글자와 화살표가 보이고, 수만 보고 고르는 보기 그림에도 늘 같은 자리에 있다', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 5초
   const errors = collectErrors(page);
   // 그리기 1번 문항, 답하기 전: 무대 안에 "앞"·"옆"이 보이고, 앞은 쌓기나무 그림의 왼쪽 아래, 옆은 오른쪽 아래
   await open(page, 'blocks-draw');
@@ -1132,7 +1132,7 @@ test('폭 901~1000px의 낮은 가로 화면(960×768): 판이 아래로 가는 
 
 test('폭 901~1000px의 낮은 가로 화면(960×768)에서 칠하는 단계: 처음부터 세로 스크롤이 없어 모눈을 칠하고 [확인하기]를 누르는 데 화면을 움직이지 않는다 (review-blocks-s2 S2-3ⓐ)', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 5초
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 960, height: 768 });
   /** 모눈 칸과 [확인하기]가 모두 화면 안(0~768px)에 있고 48px이다 */
@@ -1177,7 +1177,7 @@ test('폭 901~1000px의 낮은 가로 화면(960×768)에서 칠하는 단계: �
 
 test('폭 1001~1279px(1024×768): 3·4차시도 판의 폭과 쌓기나무 크기가 1·2차시와 같다 (review-blocks-s2 S2-3ⓑ)', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(60_000);
+  test.setTimeout(60_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 1024, height: 768 });
   const measure = () => page.evaluate(() => ({ panel: Math.round(document.querySelector('.blk-panel').getBoundingClientRect().width), unit: document.querySelector('.blk-stage')?.style.getPropertyValue('--blk-unit') ?? null }));
@@ -1200,7 +1200,7 @@ test('폭 1001~1279px(1024×768): 3·4차시도 판의 폭과 쌓기나무 크�
 
 test('낮은 화면(1366×680)에서 답하기 전 그림의 이름표가 쌓기나무를 가리지 않는다: 뒷줄이 3층인 모양 (review-blocks-s2 S2-6)', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 1366, height: 680 });
   /** 이름표 상자 안에 들어온 쌓기나무 면의 깊이(px): 면(다각형)마다 이름표 안의 점이 다각형 안에 있는지 본다 */
