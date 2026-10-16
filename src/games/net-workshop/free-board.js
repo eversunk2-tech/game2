@@ -557,11 +557,11 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
     else if (message) ctx.feedback.announce(message);
   }
 
-  function commit(next, message, touched = null) {
+  function commit(next, message, touched = null, { keepHeld = false } = {}) {
     history.push(snapshot());
     if (history.length > MAX_UNDO) history.shift();
     placed = next;
-    held = null;
+    if (!keepHeld) held = null;
     if (touched !== undefined) last = touched && next.has(touched) ? touched : null;
     for (const label of placed.keys()) cardTurn.delete(label); // 놓으면 카드의 돌린 방향은 면의 크기가 된다
     hidePreview();
@@ -669,10 +669,12 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
     }
     const next = snapshot();
     next.set(label, rect);
-    const keep = held;
-    commit(next, `${josa(nameOf(label), '을/를')} 돌렸어요. ${adapter.sizeName(rect.w, rect.h)}.`, label);
-    held = keep; // 든 채로 돌려도 계속 들고 있다
-    if (held) showPreview(held, cursor);
+    // 든 채로 돌려도 계속 들고 있다(손잡이도 그대로 — 손잡이에 있던 초점이 남는다)
+    commit(next, `${josa(nameOf(label), '을/를')} 돌렸어요. ${adapter.sizeName(rect.w, rect.h)}.`, label, { keepHeld: true });
+    if (held) {
+      if (held === label) cursor = [rect.x, rect.y];
+      showPreview(held, cursor);
+    }
     render();
     return true;
   }
@@ -1071,6 +1073,7 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
 
   let afterTimer = null;
   const onClickAfter = () => {
+    placeHandles(); // 고르자마자 손잡이가 생긴다(키보드로 카드를 고르고 바로 Tab을 눌러도 손잡이로 간다)
     clearTimeout(afterTimer);
     afterTimer = setTimeout(() => {
       if (!held && !root.classList.contains('has-selection')) hidePreview();
@@ -1108,7 +1111,8 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
     window.addEventListener('touchmove', onHandleTouch, { passive: false });
   }
   function onHandleTouch(event) {
-    if (turning?.active && event.cancelable) event.preventDefault(); // 돌리는 동안 화면이 쓸리지 않게(끈 뒤 첫 누르기가 먹히게)
+    // 손잡이를 누른 동안의 touchmove는 "우리가 썼다"고 알린다: 화면이 쓸리지도, 뗀 뒤 관성 스크롤이 돌지도 않게(끈 뒤 첫 누르기가 먹히게)
+    if (turning && event.cancelable) event.preventDefault();
   }
   function onHandleMove(event) {
     if (!turning || event.pointerId !== turning.id) return;

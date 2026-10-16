@@ -1071,6 +1071,7 @@ test('자유 배치: 되돌리기·모두 빼기, 카드 누르고 칸 누르기
   // 놓인 면 들어 올려 옮기기
   await cellOf(page, [3, 2]).click();
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveClass(/is-held/);
+  await expect(page.locator('.turn-handle')).toHaveCount(0); // 정사각형 면만 있는 판에는 돌리기 손잡이가 없다(직육면체 판의 손잡이, spec 16-16)
   await cellOf(page, [4, 3]).click();
   await expect(cellOf(page, [4, 3]).locator('.tile-face')).toHaveAttribute('data-label', '다');
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveCount(0);

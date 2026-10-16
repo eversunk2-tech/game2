@@ -286,7 +286,7 @@ const BAD = {
 const VALID_STRIP = [...STRIP, TOP, { label: '바', x: 3, y: 5, w: 2, h: 1 }]; // 옆면 한 줄 + 위·아래: 전개도
 
 // ── 차시와 단계 지도 ─────────────────────────────
-test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도전 주문서·도감 칩 없음), 만나는 선분 5문항을 끝까지 하면 다음 단계가 열린다', async ({ page }) => {
+test('?lesson=cuboid: 그 차시 4단계 + 도전 주문서 하나(직육면체 도감 주문 — spec 16-16, 잠김)가 보이고 첫 단계만 열림(도감 칩 없음), 만나는 선분 5문항을 끝까지 하면 다음 단계가 열린다', async ({ page }) => {
   test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=cuboid&seed=1&sound=off'));
@@ -298,7 +298,11 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
   await expect(page.locator('.lesson-group h3')).toHaveText(['직육면체의 전개도']);
   const cards = page.locator('.stage-path .stage-card');
   await expect(cards).toHaveCount(4);
-  await expect(page.locator('.challenge-card')).toHaveCount(0);
+  // 도전 주문서(spec 16-16): 일반 단계 뒤에 따로, 차시를 마치기 전에는 잠김 — 전에는 이 차시에 도전 주문서가 없었다
+  await expect(page.locator('.challenge-card')).toHaveCount(1);
+  await expect(page.locator('.challenge-card .stage-title')).toHaveText('직육면체 도감 주문');
+  await expect(page.locator('.challenge-card')).toBeDisabled();
+  await expect(page.locator('.challenge-card')).toContainText('차시를 마치면 열려요');
   await expect(cards.locator('.stage-title')).toHaveText(['만나는 선분', '알맞은 면 고르기', '길이까지 살펴요', '내 맘대로 직육면체 전개도']);
   await expect(cards.nth(0)).toBeEnabled();
   for (const i of [1, 2, 3]) await expect(cards.nth(i)).toBeDisabled();
@@ -346,7 +350,8 @@ test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이
   await expect(page.getByRole('tab')).toHaveText(['정육면체의 전개도', '직육면체의 전개도']);
   await page.getByRole('tab', { name: '직육면체의 전개도' }).click();
   await expect(cuboid.locator('h3')).toHaveText('직육면체의 전개도');
-  await expect(cuboid.locator('.stage-card')).toHaveCount(4);
+  await expect(cuboid.locator('.stage-card')).toHaveCount(5); // 일반 4 + 도전 주문서 1(직육면체 도감 주문, spec 16-16)
+  await expect(cuboid.locator('.challenge-card')).toHaveCount(1);
   await expect(cuboid.locator('.collection-chip')).toHaveCount(0);
   await expect(cuboid.locator('.stage-card').nth(0)).toBeEnabled();
   await expect(cuboid.locator('.stage-card').nth(1)).toBeDisabled();
@@ -823,7 +828,8 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   await foldIt(page);
   await expect(page.locator('.meta-xp b')).toHaveText('+0');
   expect(await storedXpOf(page)).toBe(30);
-  // 학습 기록·결과 복사·도감 화면에는 이 모음이 보이지 않는다(정육면체 차시의 도감 칩 그대로). 기록을 지우면 찾은 전개도도 지워진다
+  // 학습 기록·도감 화면에는 이 모음이 보이지 않는다(정육면체 차시의 도감 칩 그대로). 기록을 지우면 찾은 전개도도 지워진다.
+  // 결과 복사 문장에는 끝에 "직육면체 전개도 n/54"가 붙는다(spec 16-16 — 학습 기록 글에도 도감 수. 찾은 것이 없으면 붙지 않는다)
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
   await page.getByRole('button', { name: '학습 기록' }).click();
   await expect(page.locator('.btn-collection')).toContainText('도감 0 / '); // 도감 수에 찾은 직육면체 전개도(3가지)가 들어가지 않는다
@@ -836,7 +842,7 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   await expectToasted(page, 'info', '결과를 복사했어요');
   const copied = await page.evaluate(() => window.copied.split('\n').at(-1));
   expect(copied).toMatch(/^칭호: 견습생\(30점\) · 도장 \d+개 · 도감 0\//);
-  expect(copied).not.toMatch(/직육면체|54/);
+  expect(copied).toMatch(/ · 직육면체 전개도 3\/54$/);
   await page.locator('.btn-collection').click();
   await expect(page.locator('[data-collection="cube-nets"]')).toHaveCount(1);
   await expect(page.locator('[data-collection="cuboid-nets"]')).toHaveCount(0);
@@ -1296,7 +1302,7 @@ test('머리 높이는 판을 하는 동안 바뀌지 않는다(네 크기 × �
         if (n >= 2 && !phone) await expect(streak, `${at} ${label}`).toHaveText(`연속 ${n}`);
         else await expect(streak, `${at} ${label}`).toBeHidden();
       };
-      if (stage.kind === 'cfree') {
+      if (stage.kind === 'cfree' || stage.kind === 'cdex') { // 직육면체 도감 주문(도전)도 같은 판이다
         const board = phone ? CUBOID_BOARDS.phone : CUBOID_BOARDS.wide;
         for (const [i, id] of ['123-10', '123-25'].entries()) {
           if (i > 0) await fresh(page);

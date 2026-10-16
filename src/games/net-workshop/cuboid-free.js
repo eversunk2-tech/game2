@@ -122,11 +122,18 @@ export function playCuboidFree(stage, ctx) {
   const status = h('p', { class: 'mat-status', 'aria-hidden': 'true' }, icon('grid'), h('span', null, '놓은 면'), statusCount, statusExtra);
   const editTools = h('div', { class: 'mat-tools edit-tools' }, clearBtn, undoBtn, turnBtn, hintBtn, finishTool, status);
 
-  // 상자 보기: 크기를 고르는 동안 매트에 그 직육면체(끌어서 돌려 본다 — 답을 알려 주는 것이 아니라 언제든 돌려도 된다)
-  const boxView = createNetView({ h });
-  boxView.el.setAttribute('aria-label', '고른 상자. 끌거나 방향키로 돌려 보고, 더하기·빼기 키로 크게·작게 볼 수 있어요.');
+  // 상자 보기: 크기를 고르는 동안 매트에 그 직육면체(끌어서 돌려 본다 — 답을 알려 주는 것이 아니라 언제든 돌려도 된다).
+  // 고르는 동안에만 만든다: 접는 무대(.fold-stage)가 문서에 늘 하나이게
+  let boxView = null;
   const boxCaption = h('p', { class: 'box-caption', 'aria-hidden': 'true' });
-  const boxStage = h('div', { class: 'box-stage', hidden: true }, boxView.el, boxCaption);
+  const boxStage = h('div', { class: 'box-stage', hidden: true }, boxCaption);
+  function closeBoxView() {
+    boxStage.hidden = true;
+    if (!boxView) return;
+    boxView.destroy();
+    boxView.el.remove();
+    boxView = null;
+  }
 
   // 도감 보기(도감 주문): 매트 위에 54칸
   const dexBoardCount = h('span', { class: 'dex-board-count' });
@@ -405,7 +412,7 @@ export function playCuboidFree(stage, ctx) {
     tools.el.hidden = true;
     tools.pad.hidden = true;
     stamp.hidden = true;
-    boxStage.hidden = true;
+    closeBoxView();
     resultSection.hidden = true;
     chooseSection.hidden = true;
     showStop();
@@ -441,6 +448,10 @@ export function playCuboidFree(stage, ctx) {
   // ── 상자 크기 정하기 ─────────────────────────────
   /** 매트의 상자: 그 크기로 접은 직육면체 + 가로·세로·높이 이름표 */
   function showBox(dims) {
+    if (!boxView) {
+      boxView = createNetView({ h });
+      boxStage.prepend(boxView.el);
+    }
     // 윗면 · 앞면 · 오른쪽 옆면이 처음 시점에서 보이게: 세 이름표가 그 세 면이 만나는 꼭짓점에 모인다
     boxView.setNet(boxSolidNet(dims), { show: ['f0', 'f2', 'f5'] });
     boxView.setT(1);
@@ -803,6 +814,6 @@ export function playCuboidFree(stage, ctx) {
     board.destroy();
     tools.destroy();
     view.destroy();
-    boxView.destroy();
+    closeBoxView();
   };
 }
