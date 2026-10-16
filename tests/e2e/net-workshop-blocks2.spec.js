@@ -320,7 +320,7 @@ test('4차시(?lesson=blocks-number): 자리마다 몇 개? → 수를 보고 �
 // ── 정답 노출 ─────────────────────────────
 test('정답 노출 0 (앞과 뒤 · 그리기): 답하기 전에는 멈춘 그림(보이는 면만, 자리 값 없음)이고 돌릴 수 없다. 문항이 달라도 화면의 틀이 같고, 정답 자리는 여러 곳', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(120_000);
+  test.setTimeout(180_000); // CPU 4배 느리게 한 실행에서 40초
   const errors = collectErrors(page);
   const frames = new Set();
   const spots = new Set();
@@ -452,6 +452,15 @@ test('앞과 뒤: 틀리면 까닭(좌우로 뒤집혀요)과 함께 주어진 �
   const qs = questionsFor('blocks-flip');
   for (const [i, q] of qs.entries()) {
     const wrong = q.options.findIndex((o) => o.role !== 'answer') + 1;
+    // 잠깐만 보이는 상태(주어진 쪽을 본 모습)를 놓치지 않게, 무대가 본 방향을 모두 적어 둔다
+    await stageEl(page).evaluate((el) => {
+      window.__facings = [];
+      window.__facingObserver?.disconnect();
+      window.__facingObserver = new MutationObserver(() => {
+        if (el.dataset.facing && window.__facings.at(-1) !== el.dataset.facing) window.__facings.push(el.dataset.facing);
+      });
+      window.__facingObserver.observe(el, { attributes: true, attributeFilter: ['data-facing'] });
+    });
     await press(testInfo, page.locator(`.blk-choice[data-answer="${i === 0 ? wrong : q.expected}"]`));
     if (i === 0) {
       await expect(page.locator('.reason')).toContainText('좌우로 뒤집혀요.');
@@ -460,6 +469,7 @@ test('앞과 뒤: 틀리면 까닭(좌우로 뒤집혀요)과 함께 주어진 �
     }
     // 주어진 쪽에서 본 뒤 반대쪽으로 돈다
     await expect(stageEl(page)).toHaveAttribute('data-facing', q.ask === 'back' ? 'back' : 'left', { timeout: 5000 });
+    expect(await page.evaluate(() => window.__facings)).toEqual([q.given, q.ask]);
     // 방향 버튼 다섯: 위·앞·뒤·오른쪽·왼쪽
     expect(await page.locator('.blk-dir').evaluateAll((els) => els.map((el) => el.textContent.trim()))).toEqual(['위', '앞', '뒤', '오른쪽', '왼쪽']);
     await press(testInfo, page.locator('.blk-dir[data-dir="side"]'));
@@ -1003,6 +1013,55 @@ test('글자가 커져도(110%) 크롬북 1366×680에서 작업 지시서가 �
   expect(errors).toEqual([]);
 });
 
+test('숨겨진 쌓기나무(1·2차시)를 1366×768에서 글자 110%로: 답이 끝난 뒤 위에서 본 모양 그림을 접어 작업 지시서가 넘치지 않는다 (review-blocks S1b-4)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  for (const seed of [1, 2]) {
+    await open(page, 'blocks-hidden', { seed });
+    await page.addStyleTag({ content: 'html { font-size: 110% !important; }' });
+    for (const q of questionsFor('blocks-hidden', seed)) {
+      await padBuild(page, testInfo, q.target);
+      await check(testInfo, page);
+      await expect(page.locator('.blk-given')).toBeVisible();
+      await press(testInfo, page.locator(`.blk-choice[data-answer="${q.expected === 'yes' ? 'no' : 'yes'}"]`));
+      if (q.many) {
+        await press(testInfo, cell(page, q.spot[0], q.spot[1]));
+        await check(testInfo, page);
+      }
+      // 답이 끝났다: 주어진 그림(위에서 본 모양)은 접히고(매트의 카드에는 그림이 그대로) 판은 넘치지 않는다
+      await expect(page.locator('.next-btn')).toBeVisible();
+      await expect(page.locator('.blk-given')).toBeHidden();
+      await expect(page.locator('.blk-card .blk-picture')).toBeVisible();
+      await calm(page);
+      expect(await page.evaluate(() => {
+        const panel = document.querySelector('.blk-panel');
+        return [panel.scrollHeight - panel.clientHeight, Math.max(0, document.documentElement.scrollHeight - window.innerHeight)];
+      }), `seed ${seed}`).toEqual([0, 0]);
+      await next(testInfo, page);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test('폭 901~1000px의 낮은 가로 화면(960×768): 판이 아래로 가는 배치에서 매트를 낮춰, 쌓는 동안에는 세로 스크롤이 없다 (review-blocks S1b-3)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 960, height: 768 });
+  for (const id of ['blocks-copy', 'blocks-fromnum', 'blocks-write']) {
+    await open(page, id);
+    await calm(page);
+    await noScroll(page, id);
+    // 매트는 440px까지만, 쌓기나무 한 변은 40px 이상(조작 칸 자리를 빼고도)
+    const m = await page.evaluate(() => ({ mat: document.querySelector('.blk-mat').getBoundingClientRect().height, unit: parseFloat(document.querySelector('.blk-stage').style.getPropertyValue('--blk-unit')) }));
+    expect(m.mat).toBeLessThanOrEqual(440);
+    expect(m.unit).toBeGreaterThanOrEqual(40);
+    await expectNoOverlap(page, id);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('휴대폰(390×844): 3·4차시 화면에 가로 스크롤이 없고, 칠하기 칸·수 쓰기 칸이 48px이며 [확인하기]가 한 화면에 들어온다', async ({ page }, testInfo) => {
   test.skip(!isTouch(testInfo), '터치 기기에서 확인');
   test.setTimeout(90_000);
@@ -1028,6 +1087,7 @@ test('휴대폰(390×844): 3·4차시 화면에 가로 스크롤이 없고, 칠�
 // ── 접근성·정리 ───────────────────────────
 test('접근성: 모눈·수 쓰기 판의 이름과 칸 이름, 주어진 그림의 글 이름, 알림(칠한 칸·쓴 수), 단계를 나가면 남는 것이 없다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-draw');
   const [q] = questionsFor('blocks-draw');

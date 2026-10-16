@@ -527,6 +527,26 @@ test('blocks-write · blocks-fromnum 문제 만들기와 채점 (시드 300개):
   assert.equal(sumSentence([[1, 2, 0], [0, 3, 0], [0, 0, 0]]), '1 + 2 + 3 = 6, 모두 6개예요.');
 });
 
+test('수 쓰기의 정답: 높이 지도 262,144개 전부에서 "자리마다 쌓인 개수"를 쓰면 맞고, 한 자리만 달라도 틀린다(칸의 집합으로 따로 센 값과 견줌)', () => {
+  for (let i = 0; i < ALL.length; i += 1) {
+    const h = ALL[i];
+    if (count(h) === 0) continue;
+    const v = voxels(h);
+    // 독립 계산: 자리마다 쌓기나무의 수 = 그 자리의 칸 수
+    const numbers = R.map((y) => R.map((x) => R.filter((z) => v[x][y][z]).length));
+    const q = { top: indepCells(h, 'top'), target: h, expected: mapKey(h) };
+    assert.equal(judgeNumbers(q, numbers).correct, true);
+    if (i % 5 !== 0) continue;
+    for (const [x, y] of R.flatMap((yy) => R.map((xx) => [xx, yy])).filter(([xx, yy]) => h[yy][xx] > 0)) {
+      const other = numbers.map((row) => [...row]);
+      other[y][x] = (other[y][x] % 3) + 1;
+      const r = judgeNumbers(q, other);
+      assert.equal(r.correct, false);
+      assert.deepEqual(r.wrong, [[x, y]]);
+    }
+  }
+});
+
 // ── 수만 보고 알아내기 ────────────────────
 test('blocks-numviews (시드 1,000개): 칠하기 둘(앞 · 옆)과 고르기 하나. 고르기의 보기 넷은 그림이 서로 다르고, 자리와 개수로는 정답을 가릴 수 없다', () => {
   const pos = [0, 0, 0, 0];
