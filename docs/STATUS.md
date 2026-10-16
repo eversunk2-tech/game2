@@ -16,7 +16,9 @@
 
 ## 2. 진행 중인 일: 동시 진행 2차 (2026-10-16 시작)
 
-**2026-10-16 밤 현재**: c3 Review 통과 → `main`에 올림(`0c4e626`, 끌기 안내가 가끔 숨던 문제·머무는 시간 검사). B0a Review 통과 → **이 컴퓨터의 `main`에만 합침(올리지 않음)** — 옛 처음 화면을 전제로 한 쌓기나무 검사 1개(두 기기)가 실패하므로, 인트로(B0c)가 그 검사들까지 고친 뒤 S2·B0c와 함께 올린다. S2 Build 끝(`b32cc5d`) → Review 중. **M3 Build 시작**(`.worktrees/cuboid`, `main` `55c7053`에서 — [build-brief-m3.md](games/net-workshop/build-brief-m3.md), 포트 5301, scratchpad `build-m3/`). B0c는 S2가 통과해 합쳐진 뒤 `.worktrees/b0`에서 시작([build-brief-b0c.md](games/net-workshop/build-brief-b0c.md) — 덧붙임: 처음 화면을 거치는 검사 모두 고치기, 차시 하나뿐인 영역의 칩 빼기).
+**2026-10-16 밤 일시정지**: S2 Review(독립 계산 스크립트를 쓰던 참 — `review-blocks-s2.md`는 아직 없음, 처음부터 다시)와 M3 Build(막 시작 — 고친 파일 없음, 처음부터)를 멈췄다. 남은 실행·서버 없음. c3의 배포는 성공, GitHub CI는 도는 중이었다(다시 할 때 확인).
+
+**그 직전 상태**: c3 Review 통과 → `main`에 올림(`0c4e626`, 끌기 안내가 가끔 숨던 문제·머무는 시간 검사). B0a Review 통과 → **이 컴퓨터의 `main`에만 합침(올리지 않음)** — 옛 처음 화면을 전제로 한 쌓기나무 검사 1개(두 기기)가 실패하므로, 인트로(B0c)가 그 검사들까지 고친 뒤 S2·B0c와 함께 올린다. S2 Build 끝(`b32cc5d`) → Review 중. **M3 Build 시작**(`.worktrees/cuboid`, `main` `55c7053`에서 — [build-brief-m3.md](games/net-workshop/build-brief-m3.md), 포트 5301, scratchpad `build-m3/`). B0c는 S2가 통과해 합쳐진 뒤 `.worktrees/b0`에서 시작([build-brief-b0c.md](games/net-workshop/build-brief-b0c.md) — 덧붙임: 처음 화면을 거치는 검사 모두 고치기, 차시 하나뿐인 영역의 칩 빼기).
 
 검사 손질 `c2`·`M2c`는 둘 다 Review를 통과해 `main`에 합쳐 올렸다(`4e7b216`, 2026-10-16 — 배포 성공 · **GitHub CI 통과**. 합친 `main`에서 단위 252 · 보통 305 통과 1 실패 · 글꼴 흉내 306 통과 0 실패. 보통의 1건은 오래된 정육면체 검사 "마주 보는 면: 틀린 면은 제자리에서 흔들리고…"가 한 번 실패한 것 — 혼자 40번은 모두 통과, `c3`의 C3-5가 원인을 찾는다).
 
