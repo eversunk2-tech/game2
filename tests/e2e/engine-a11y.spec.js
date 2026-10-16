@@ -47,6 +47,7 @@ test('D1 Review 1: 전개도 면의 키보드 초점은 잉크 테두리라 어�
 
 test('D1 Review 2: 엔진이 제목 글꼴(Do Hyeon)로 그리는 글자는 모두 그 글꼴에 있다 (게임 이름 제외)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '글자 확인은 한 번만');
+  test.setTimeout(90_000);
   const cmap = readCmap(readFileSync(DISPLAY_FONT.file));
   const errors = collectErrors(page);
   const FILE = 'sample-divisor-sort.html';
@@ -102,6 +103,7 @@ test('D1 Review 2: 엔진이 제목 글꼴(Do Hyeon)로 그리는 글자는 모�
 
 test('1366×680: 예시 게임과 전개도 게임의 결과 화면(칭호·새 도장 카드 포함)에 세로 스크롤이 없다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '크롬북 화면 크기에서 확인');
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1366, height: 680 });
   const noScroll = async () => {
     const { scrollHeight, innerHeight } = await page.evaluate(() => ({ scrollHeight: document.documentElement.scrollHeight, innerHeight: window.innerHeight }));

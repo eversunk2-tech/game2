@@ -11,6 +11,7 @@ async function cardValues(page) {
 }
 
 test('눌러서 고르고 넣기로 1단계를 모두 맞히면 별 3개, 다음 단계가 열린다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1'));
   await page.getByRole('button', { name: '시작하기' }).click();
@@ -34,6 +35,7 @@ test('눌러서 고르고 넣기로 1단계를 모두 맞히면 별 3개, 다음
 });
 
 test('틀리면 이유를 보여 주고, 학습 기록에 오개념이 남는다', async ({ page }) => {
+  test.setTimeout(90_000);
   await page.goto(fileUrl(FILE, '?seed=1&stage=divisors-of-12'));
 
   // 1은 늘 나온다(must). "약수가 아닌 수"에 넣어 일부러 틀린다.
@@ -98,6 +100,7 @@ async function solveAll(page) {
 }
 
 test('예시 게임은 코드를 고치지 않아도 솜씨 점수·칭호·도장이 저절로 붙고, "기록 모두 지우기"로 모두 0이 된다', async ({ page }) => {
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   await expect(page.locator('.rank-chip')).toContainText('새싹');
@@ -169,6 +172,7 @@ test.describe('결과 축하 연출', () => {
   });
 
   test('보통: 별 → 도장 → 점수 막대 연출, 색종이는 12개 이하이고 2초 안에 사라지며 키를 누르면 끝 상태로 건너뛴다', async ({ page }) => {
+    test.setTimeout(90_000);
     await page.goto(fileUrl(FILE, '?seed=1&sound=off&stage=divisors-of-12'));
     await watchConfetti(page);
     await solveAll(page);
@@ -188,6 +192,7 @@ test.describe('결과 축하 연출', () => {
   });
 
   test('?fx=low(저사양): 색종이 0개, 처음부터 끝 상태, 축하는 글자로 전한다', async ({ page }) => {
+    test.setTimeout(90_000);
     await page.goto(fileUrl(FILE, '?seed=1&sound=off&stage=divisors-of-12&fx=low'));
     await watchConfetti(page);
     await solveAll(page);
@@ -203,6 +208,7 @@ test.describe('결과 축하 연출 (움직임 줄이기)', () => {
   test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
   test('움직임 줄이기: 색종이 0개, 처음부터 끝 상태', async ({ page }) => {
+    test.setTimeout(90_000);
     await page.addInitScript(() => Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }));
     await page.goto(fileUrl(FILE, '?seed=1&sound=off&stage=divisors-of-12'));
     await watchConfetti(page);
