@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { AREA_KEY, areaLabel, areaLine, areaOfLesson, lessonNumberInArea, planAreas, startAreaId } from '../../src/shared/core/areas.js';
+import { AREA_KEY, areaLabel, areaLine, areaOfLesson, gradeCardLabel, planAreas, planGrades, startAreaId, startGrade } from '../../src/shared/core/areas.js';
 import { lessonChipText } from '../../src/shared/ui/app.js';
 import { loadGames } from '../../scripts/lib/games.mjs';
 
@@ -22,14 +22,15 @@ test('영역을 쓰지 않으면 null (지금과 같다)', () => {
   assert.equal(planAreas([], groupsOf(['cube']), LESSONS), null);
 });
 
-test('보이는 영역: 차시가 없는 영역(6학년 전개도)은 빠지고, 영역에 적힌 없는 차시(three·number)는 조용히 건너뛴다', () => {
+test('영역마다 그 영역의 차시: 차시가 없는 영역(6학년 전개도)은 "준비 중"(ready: false), 영역에 적힌 없는 차시(three·number)는 조용히 건너뛴다', () => {
   const plan = planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS);
-  assert.deepEqual(plan.map((e) => e.area.id), ['net5', 'blocks']);
-  assert.deepEqual(plan.map((e) => e.groups.map((g) => g.lesson.id)), [['cube', 'cuboid'], ['look', 'top']]);
-  // 차시가 만들어지면 저절로 보인다: 영역에 미리 적어 둔 차시가 생기면 그 영역에 들어간다
-  const later = planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']).concat([{ lesson: { id: 'three', title: '세 방향' }, stages: [{ id: 'three-1' }] }]),
-    [...LESSONS, { id: 'three', title: '세 방향' }]);
+  assert.deepEqual(plan.map((e) => [e.area.id, e.ready]), [['net5', true], ['net6', false], ['blocks', true]]);
+  assert.deepEqual(plan.map((e) => e.groups.map((g) => g.lesson.id)), [['cube', 'cuboid'], [], ['look', 'top']]);
+  // 차시가 만들어지면 저절로 들어간다: 영역에 미리 적어 둔 차시가 생기면 그 영역에 들어가고, 준비 중이던 영역은 열린다
+  const later = planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']).concat([{ lesson: { id: 'three', title: '세 방향' }, stages: [{ id: 'three-1' }] }, { lesson: { id: 'prism', title: '각기둥' }, stages: [{ id: 'prism-1' }] }]),
+    [...LESSONS, { id: 'three', title: '세 방향' }, { id: 'prism', title: '각기둥' }]);
   assert.deepEqual(later.find((e) => e.area.id === 'blocks').groups.map((g) => g.lesson.id), ['look', 'top', 'three']);
+  assert.equal(later.find((e) => e.area.id === 'net6').ready, true);
   // 영역 안의 차례는 영역의 lessons 순서
   const swapped = planAreas([{ id: 'a', title: 'A', lessons: ['cuboid', 'cube'] }, { id: 'b', title: 'B', lessons: ['look', 'top'] }], groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS);
   assert.deepEqual(swapped[0].groups.map((g) => g.lesson.id), ['cuboid', 'cube']);
@@ -46,23 +47,66 @@ test('영역 정의의 실수는 오류: id·title 없음, id 겹침, 두 영역
   assert.throws(() => planAreas([{ id: 'a', title: 'A' }], groups, LESSONS), /lessons/);
   assert.throws(() => planAreas([{ id: 'a', title: 'A', lessons: ['cube', 'cuboid', 'look', 'top'], art: '그림' }], groups, LESSONS), /art/);
   assert.throws(() => planAreas('net5', groups, LESSONS), /배열/);
+  // 학년: 하나라도 주면 모두, 학년 숫자만
+  assert.throws(() => planAreas([{ id: 'a', title: 'A', grade: 5, lessons: ['cube', 'cuboid'] }, { id: 'b', title: 'B', lessons: ['look', 'top'] }], groups, LESSONS), /모든 영역에 grade/);
+  assert.throws(() => planAreas([{ id: 'a', title: 'A', grade: '5', lessons: ['cube', 'cuboid', 'look', 'top'] }], groups, LESSONS), /grade는 학년 숫자/);
 });
 
-test('차시가 든 영역과 영역 안의 차례 ("n차시")', () => {
+// 학년(2026-10-16 사용자 수정 요청): 5학년 — 정육면체 · 직육면체 / 6학년 — 각기둥(차시 없음) · 쌓기나무 · 원기둥(차시 없음)
+const GRADED = [
+  { id: 'cube', grade: 5, title: '정육면체의 전개도', note: '5학년 2학기', lessons: ['cube'] },
+  { id: 'cuboid', grade: 5, title: '직육면체의 전개도', note: '5학년 2학기', lessons: ['cuboid'] },
+  { id: 'prism', grade: 6, title: '각기둥의 전개도', lessons: ['prism'] },
+  { id: 'blocks', grade: 6, title: '쌓기나무', note: '6학년 2학기 · 공간과 입체', lessons: ['look', 'top', 'three'] },
+  { id: 'cylinder', grade: 6, title: '원기둥의 전개도', lessons: ['cylinder'] },
+];
+const GRADE_DEFS = [{ grade: 5, title: '5학년', note: '정육면체, 직육면체 전개도 탐구' }, { grade: 6, title: '6학년', note: '각기둥의 전개도, 쌓기나무 탐구, 원기둥의 전개도 탐구' }];
+
+test('학년: 영역에 grade가 없으면 null, 있으면 학년마다 그 학년의 영역(준비 중 포함). 제목이 없으면 "n학년", 차례는 grades 정의 순서', () => {
+  const groups = groupsOf(['cube', 'cuboid', 'look', 'top']);
+  assert.equal(planGrades(planAreas(AREAS, groups, LESSONS), GRADE_DEFS), null);
+  assert.equal(planGrades(null, GRADE_DEFS), null);
+  const plan = planAreas(GRADED, groups, LESSONS);
+  const grades = planGrades(plan, GRADE_DEFS);
+  assert.deepEqual(grades.map((g) => [g.grade, g.title, g.note, g.ready]), [[5, '5학년', '정육면체, 직육면체 전개도 탐구', true], [6, '6학년', '각기둥의 전개도, 쌓기나무 탐구, 원기둥의 전개도 탐구', true]]);
+  assert.deepEqual(grades.map((g) => g.areas.map((e) => `${e.area.id}${e.ready ? '' : '(준비 중)'}`)), [['cube', 'cuboid'], ['prism(준비 중)', 'blocks', 'cylinder(준비 중)']]);
+  const noDefs = planGrades(plan);
+  assert.deepEqual(noDefs.map((g) => [g.grade, g.title, g.note]), [[5, '5학년', ''], [6, '6학년', '']]);
+  const reversed = planGrades(plan, [...GRADE_DEFS].reverse());
+  assert.deepEqual(reversed.map((g) => g.grade), [6, 5]);
+  assert.throws(() => planGrades(plan, [{ title: '5학년' }]), /grade/);
+  assert.throws(() => planGrades(plan, '5'), /배열/);
+});
+
+test('"여기부터!" 학년·영역: 지난 영역이 열린 영역이면 그 학년·그 영역, 학년 화면에서는 그 학년 안의 영역만. 처음·옛 값·준비 중이면 첫 학년·첫 열린 영역', () => {
+  const plan = planAreas(GRADED, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS);
+  const grades = planGrades(plan, GRADE_DEFS);
+  const six = grades.find((g) => g.grade === 6);
+  const five = grades.find((g) => g.grade === 5);
+  assert.equal(startGrade(grades, 'blocks'), 6);
+  assert.equal(startGrade(grades, 'cuboid'), 5);
+  for (const saved of [null, 'prism', 'zzz', 3, { id: 'blocks' }]) assert.equal(startGrade(grades, saved), 5);
+  assert.equal(startAreaId(plan, 'blocks', six.areas), 'blocks');
+  assert.equal(startAreaId(plan, 'cuboid', six.areas), 'blocks'); // 다른 학년의 영역이면 이 학년의 첫 열린 영역(각기둥은 준비 중이라 건너뜀)
+  assert.equal(startAreaId(plan, 'cuboid', five.areas), 'cuboid');
+  assert.equal(startAreaId(plan, 'prism'), 'cube'); // 준비 중인 영역은 "여기부터!"가 되지 않는다
+  assert.equal(startAreaId(plan, null, [plan[2], plan[4]]), null); // 열린 영역이 없으면 없음
+  assert.equal(startGrade(null, 'cube'), null);
+  assert.equal(gradeCardLabel(five, { stars: 3, maxStars: 24, here: true }), '5학년, 정육면체, 직육면체 전개도 탐구, 모은 별 3 / 24, 여기부터');
+  assert.equal(gradeCardLabel(six, { stars: 0, maxStars: 18 }), '6학년, 각기둥의 전개도, 쌓기나무 탐구, 원기둥의 전개도 탐구, 모은 별 0 / 18');
+  assert.equal(areaLabel(GRADED[2], { lessons: 0, stars: 0, maxStars: 0, ready: false }), '각기둥의 전개도, 준비 중');
+  assert.equal(areaLine(GRADED[2]), '6학년'); // 한 줄이 없으면 학년
+});
+
+test('차시가 든 영역', () => {
   const plan = planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS);
   assert.equal(areaOfLesson(plan, 'top').area.id, 'blocks');
   assert.equal(areaOfLesson(plan, 'cuboid').area.id, 'net5');
   assert.equal(areaOfLesson(plan, 'prism'), null);
   assert.equal(areaOfLesson(null, 'cube'), null);
-  assert.equal(lessonNumberInArea(plan, 'cube'), 1);
-  assert.equal(lessonNumberInArea(plan, 'cuboid'), 2);
-  assert.equal(lessonNumberInArea(plan, 'look'), 1);
-  assert.equal(lessonNumberInArea(plan, 'top'), 2);
-  assert.equal(lessonNumberInArea(plan, 'zzz'), null);
-  assert.equal(lessonNumberInArea(null, 'cube'), null);
 });
 
-test('"여기부터!" 영역: 저장된 지난 영역이 보이는 영역이면 그것, 아니면(처음·옛 저장 값·없는 영역·깨진 값) 첫 영역', () => {
+test('"여기부터!" 영역: 저장된 지난 영역이 열린 영역이면 그것, 아니면(처음·옛 저장 값·없는 영역·준비 중·깨진 값) 첫 열린 영역', () => {
   const plan = planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS);
   assert.equal(AREA_KEY, 'area');
   assert.equal(startAreaId(plan, 'blocks'), 'blocks');
@@ -81,7 +125,7 @@ test('영역 카드의 한 줄과 화면 읽기 이름', () => {
   assert.equal(areaLabel(AREAS[2], { lessons: 2, stars: 7, maxStars: 18, here: true }), '쌓기나무, 6학년 2학기 · 공간과 입체, 차시 2개, 모은 별 7 / 18, 여기부터');
 });
 
-test('차시 칩: 영역의 단계 지도는 chip을 쓰지 않고 영역 안의 차례 "n차시", 그 밖(한 차시 주소·영역 없는 게임)은 지금처럼 chip', () => {
+test('차시 칩: 영역의 단계 지도는 chip을 쓰지 않고 영역 안의 차례 "n차시", 그 밖(한 차시 주소·영역 없는 게임)은 지금처럼 chip 또는 차시 순서', () => {
   const lesson = { id: 'look', title: '어느 방향', chip: '쌓기나무 1차시' };
   assert.equal(lessonChipText(lesson, 1, { useChip: false }), '1차시');
   assert.equal(lessonChipText(lesson, 3), '쌓기나무 1차시');

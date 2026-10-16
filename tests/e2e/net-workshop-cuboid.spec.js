@@ -271,26 +271,27 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
 test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이고 첫 단계가 처음부터 열려 있다. 정육면체 차시의 카드·도감 칩은 그대로다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
-  await page.getByRole('button', { name: /^5학년 전개도/ }).click(); // 영역 카드 (B0a: [시작하기] 자리) — 두 차시는 "5학년 전개도" 영역에 있다
+  // B0a: 학년 카드 → 학년 화면 — 두 차시는 5학년의 영역 "정육면체의 전개도"·"직육면체의 전개도"로 나뉘어 이 차례로 보인다
+  await page.getByRole('button', { name: /^5학년/ }).click();
+  expect(await page.locator('.area-card').evaluateAll((els) => els.map((el) => el.dataset.area))).toEqual(['cube', 'cuboid']);
+  await page.getByRole('button', { name: /^정육면체의 전개도/ }).click();
   // 두 차시의 묶음만 본다(data-lesson) — 다른 차시가 더해져도 이 검사가 달라지지 않게 전체 차시 목록·전체 별 수에 기대지 않는다
   const cube = page.locator('.lesson-group[data-lesson="cube"]');
   const cuboid = page.locator('.lesson-group[data-lesson="cuboid"]');
   await expect(cube.locator('h3')).toHaveText('정육면체의 전개도');
-  await expect(cuboid.locator('h3')).toHaveText('직육면체의 전개도');
-  // 직육면체 차시는 정육면체 차시 다음에 온다(두 묶음의 앞뒤)
-  expect(await page.evaluate(() => {
-    const [a, b] = ['cube', 'cuboid'].map((id) => document.querySelector(`.lesson-group[data-lesson="${id}"]`));
-    return Boolean(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-  })).toBe(true);
   await expect(cube.locator('.stage-card')).toHaveCount(6);
   await expect(cube.locator('.collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
+  // 영역 탭의 차례도 정육면체 → 직육면체
+  await expect(page.getByRole('tab')).toHaveText(['정육면체의 전개도', '직육면체의 전개도']);
+  await page.getByRole('tab', { name: '직육면체의 전개도' }).click();
+  await expect(cuboid.locator('h3')).toHaveText('직육면체의 전개도');
   await expect(cuboid.locator('.stage-card')).toHaveCount(4);
   await expect(cuboid.locator('.collection-chip')).toHaveCount(0);
   await expect(cuboid.locator('.stage-card').nth(0)).toBeEnabled();
   await expect(cuboid.locator('.stage-card').nth(1)).toBeDisabled();
-  // 모은 별: 모든 차시의 일반 단계 × 3 (두 차시만 있으면 24) — 숫자는 고정하지 않는다
+  // 모은 별: 그 영역의 일반 단계 × 3 (직육면체 차시 하나면 12) — 숫자는 고정하지 않는다
   const starTotal = (await page.locator('.star-total').textContent()).match(/^모은 별 0 \/ (\d+)$/);
-  expect(Number(starTotal?.[1])).toBeGreaterThanOrEqual(24);
+  expect(Number(starTotal?.[1])).toBeGreaterThanOrEqual(12);
   expect(Number(starTotal[1]) % 3).toBe(0);
   await cuboid.locator('.stage-card').first().click();
   await expect(page.getByRole('heading', { name: '만나는 선분' })).toBeVisible();
@@ -1689,8 +1690,12 @@ test('한 차시만 열었을 때의 도감 칩: ?lesson=cube는 지금까지처
   // 차시를 고르지 않은 화면: 정육면체 차시의 도감은 그 차시 머리에, 내 공방 카드에는 도감 칩이 그대로 있다
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   await expect(page.locator('.workshop-meta')).toContainText('도감 0 / ');
-  await page.getByRole('button', { name: /^5학년 전개도/ }).click(); // 영역 카드 (B0a: [시작하기] 자리)
+  // B0a: 학년 카드 → 영역 카드 → 영역의 단계 지도 (정육면체·직육면체는 5학년의 두 영역)
+  await page.getByRole('button', { name: /^5학년/ }).click();
+  await page.getByRole('button', { name: /^정육면체의 전개도/ }).click();
   await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
+  await page.getByRole('tab', { name: '직육면체의 전개도' }).click();
+  await expect(page.locator('.lesson-group[data-lesson="cuboid"]')).toHaveCount(1);
   await expect(page.locator('.lesson-group[data-lesson="cuboid"] .collection-chip')).toHaveCount(0);
 });
 

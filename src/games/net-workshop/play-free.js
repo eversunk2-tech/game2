@@ -305,6 +305,7 @@ export function playFree(stage, ctx) {
     sticky.hidden = hintLevel === 0;
     legend.hidden = !sticky.hidden;
     finishTool.hidden = dexMode || !(goalReached || canFinish());
+    if (!finishTool.hidden) finishTool.classList.toggle('btn-primary', goalReached); // 2가지면 보통 버튼, 3가지부터 주 버튼 — "한 가지 더"로 이끈다 (spec 16-15)
     board.setEnabled(true);
     if (!keep) board.clearAll();
     renderDex();

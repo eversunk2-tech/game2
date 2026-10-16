@@ -17,7 +17,17 @@ import {
   formatReport,
   summarize,
 } from '../core/learning-log.js';
-import { AREA_KEY, areaLabel, areaLine, areaOfLesson, lessonNumberInArea, planAreas, startAreaId } from '../core/areas.js';
+import {
+  AREA_KEY,
+  areaLabel,
+  areaLine,
+  areaOfLesson,
+  gradeCardLabel,
+  planAreas,
+  planGrades,
+  startAreaId,
+  startGrade,
+} from '../core/areas.js';
 import {
   collectItem,
   collectionChips,
@@ -64,6 +74,7 @@ import {
  *   ?seed=<값>    모두 같은 문제 순서로 시작
  *   ?lesson=<id>  그 차시 묶음의 단계만 보이기 (게임이 lessons를 쓸 때)
  *   ?area=<id>    그 영역의 단계 지도로 바로 (게임이 areas를 쓸 때. ?lesson=이 함께 오면 ?lesson=이 이긴다)
+ *   ?grade=<n>    그 학년 화면으로 바로 (영역에 학년이 있을 때. ?lesson= > ?area= > ?grade=)
  *   ?fx=low       효과 줄이기: 색종이·화면 움직임 끔 (느린 기기. CPU 코어 2개 이하면 자동)
  */
 export function readUrlOptions(search = globalThis.location?.search ?? '') {
@@ -73,6 +84,7 @@ export function readUrlOptions(search = globalThis.location?.search ?? '') {
     stageId: params.get('stage'),
     lessonId: params.get('lesson'),
     areaId: params.get('area'),
+    gradeId: params.get('grade'),
     sound: params.get('sound') !== 'off',
     seed: params.get('seed'),
     fx: params.get('fx'),
@@ -318,6 +330,7 @@ export function createGameApp({
   howTo = [],
   lessons = null,
   areas = null,
+  grades: gradeDefs = null,
   heroArt = null,
   rewards: rewardOptions = null,
   collections: collectionDefs = null,
@@ -361,7 +374,10 @@ export function createGameApp({
   const areaPlan = planAreas(areas, Array.isArray(lessons) && lessons.length ? planLessons(allStages, lessons, null).groups : [], lessons);
   const areaMode = Boolean(areaPlan && !plan.current);
   const lessonArea = plan.current ? areaOfLesson(areaPlan, plan.current.id) : null;
+  // 학년(영역에 grade가 있을 때): 처음 화면에 학년 카드 → 학년 화면(그 학년의 영역 카드) → 영역의 단계 지도
+  const gradePlan = planGrades(areaPlan, gradeDefs);
   let currentArea = null; // 영역의 단계 지도에서 보는 영역 id (areaMode)
+  let currentGrade = null; // 학년 화면에서 보는 학년
 
   const storage = createStorage(game.id);
   const progress = createProgress({ stageIds, storage, unlockAll: options.unlockAll, openIds: plan.openIds, optionalIds });
@@ -525,7 +541,7 @@ export function createGameApp({
         // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다)
         areaMode
           ? [
-            areaCards(),
+            gradePlan ? gradeCards() : areaCards(areaPlan, startAreaId(areaPlan, storage.get(AREA_KEY, null))),
             h('div', { class: 'hero-foot' },
               card,
               h('div', { class: 'actions hero-more' },
@@ -570,7 +586,7 @@ export function createGameApp({
     const lines = entry ? howToLines(entry) : howToLines(lessonArea);
     let go = button('시작하기', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true });
     if (entry) go = button('단계 선택', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true });
-    else if (areaMode) go = null; // 영역을 고르기 전: 처음 화면의 영역 카드에서 고른다
+    else if (areaMode) go = null; // 영역을 고르기 전: 처음 화면의 학년·영역 카드에서 고른다
     return h('section', { class: 'screen screen-howto' },
       h('h2', null, '놀이 방법'),
       h('ol', { class: 'sheet howto-list' }, lines.map((step, i) => h('li', null,
@@ -584,45 +600,61 @@ export function createGameApp({
     );
   }
 
-  // ── 영역 (areaMode): 처음 화면의 영역 카드 · 단계 지도의 영역 탭 ─────────────
+  // ── 영역 (areaMode): 처음 화면의 학년·영역 카드 · 학년 화면 · 단계 지도의 영역 탭 ─────────────
   const areaEntry = (id) => areaPlan?.find((entry) => entry.area.id === id) ?? null;
+  const gradeEntry = (grade) => gradePlan?.find((g) => g.grade === grade) ?? null;
+  /** 그 영역이 든 학년 (학년이 없으면 null) */
+  const gradeOfArea = (id) => gradePlan?.find((g) => g.areas.some((entry) => entry.area.id === id)) ?? null;
   /** 영역의 일반 단계 id (모은 별은 일반 단계만 센다 — 도전 주문서는 빼는 것이 엔진 규칙) */
   const areaStageIds = (entry) => entry.groups.flatMap((g) => regularOf(g.stages)).map((s) => s.id);
-  function areaStars(entry) {
-    const ids = areaStageIds(entry);
+  function starsOf(ids) {
     return { stars: ids.reduce((sum, id) => sum + progress.getStars(id), 0), max: ids.length * MAX_STARS };
   }
-  function areaArt(entry) {
-    if (typeof entry.area.art !== 'function') return null;
+  const areaStars = (entry) => starsOf(areaStageIds(entry));
+  const gradeStars = (g) => starsOf(g.areas.flatMap(areaStageIds));
+  const savedArea = () => storage.get(AREA_KEY, null);
+  function artOf(make) {
+    if (typeof make !== 'function') return null;
     try {
-      return entry.area.art(h);
+      return make(h);
     } catch (error) {
       console.error(error);
       return null;
     }
   }
-  /** 영역의 단계 지도를 연다 */
+  const areaArt = (entry) => artOf(entry.area.art);
+  /** 영역의 단계 지도를 연다 (학년이 있으면 그 영역의 학년도 정한다) */
   function openArea(id) {
     currentArea = id;
+    if (gradePlan) currentGrade = gradeOfArea(id)?.grade ?? currentGrade;
     show(stageSelectScreen());
   }
+  /** 학년 화면을 연다 */
+  function openGrade(grade) {
+    currentGrade = grade;
+    show(gradeScreen());
+  }
+  const flagEl = () => h('span', { class: 'flag', 'aria-hidden': 'true' }, '여기부터!');
 
-  /** 처음 화면의 영역 카드: 작은 그림 · 영역 이름 · 학년·단원 한 줄 · 차시 수 · 그 영역의 모은 별. 지난번에 하던 영역(처음이면 첫 영역)에 "여기부터!" */
-  function areaCards() {
-    const here = startAreaId(areaPlan, storage.get(AREA_KEY, null));
-    return h('ul', { class: 'area-cards', 'aria-label': '영역' }, areaPlan.map((entry) => {
-      const { area } = entry;
+  /**
+   * 영역 카드: 작은 그림 · 영역 이름 · 학년·단원 한 줄 · 차시 수 · 그 영역의 모은 별. here(영역 id)에 "여기부터!".
+   * 차시가 아직 없는 영역은 "준비 중" 카드 — 누를 수 없고(disabled) 자물쇠 + 글자 "준비 중"(색만으로 구분하지 않는다)
+   */
+  function areaCards(entries, here) {
+    return h('ul', { class: 'area-cards', 'aria-label': '영역' }, entries.map((entry) => {
+      const { area, ready } = entry;
       const { stars, max } = areaStars(entry);
-      const isHere = area.id === here;
+      const isHere = ready && area.id === here;
       const art = areaArt(entry);
       const line = areaLine(area);
       return h('li', null,
-        isHere && h('span', { class: 'flag', 'aria-hidden': 'true' }, '여기부터!'),
+        isHere && flagEl(),
         h('button', {
           type: 'button',
-          class: `area-card${isHere ? ' is-now' : ''}`,
+          class: `area-card${isHere ? ' is-now' : ''}${ready ? '' : ' is-soon'}`,
           dataset: { area: area.id },
-          'aria-label': areaLabel(area, { lessons: entry.groups.length, stars, maxStars: max, here: isHere }),
+          disabled: !ready,
+          'aria-label': areaLabel(area, { lessons: entry.groups.length, stars, maxStars: max, here: isHere, ready }),
           onclick: () => {
             sfx.play('click');
             openArea(area.id);
@@ -631,13 +663,65 @@ export function createGameApp({
           art && h('span', { class: 'area-art', 'aria-hidden': 'true' }, art),
           h('span', { class: 'area-title' }, area.title),
           line && h('span', { class: 'area-line' }, line),
-          h('span', { class: 'area-meta' },
-            h('span', { class: 'chip' }, icon('book'), `차시 ${entry.groups.length}개`),
-            h('span', { class: 'chip' }, starIcon(true), `별 ${stars} / ${max}`),
-          ),
+          h('span', { class: 'area-meta' }, ready
+            ? [
+              h('span', { class: 'chip' }, icon('book'), `차시 ${entry.groups.length}개`),
+              h('span', { class: 'chip' }, starIcon(true), `별 ${stars} / ${max}`),
+            ]
+            : h('span', { class: 'chip chip-soon' }, icon('lock'), '준비 중')),
         ),
       );
     }));
+  }
+
+  /** 처음 화면의 학년 카드: 작은 그림 · "5학년" · 학년 설명 · 그 학년의 모은 별. 지난번에 하던 학년(처음이면 첫 학년)에 "여기부터!" */
+  function gradeCards() {
+    const here = startGrade(gradePlan, savedArea());
+    return h('ul', { class: 'area-cards grade-cards', 'aria-label': '학년' }, gradePlan.map((g) => {
+      const { stars, max } = gradeStars(g);
+      const isHere = g.grade === here;
+      const art = artOf(g.art);
+      return h('li', null,
+        isHere && flagEl(),
+        h('button', {
+          type: 'button',
+          class: `area-card grade-card${isHere ? ' is-now' : ''}${g.ready ? '' : ' is-soon'}`,
+          dataset: { grade: String(g.grade) },
+          disabled: !g.ready,
+          'aria-label': g.ready ? gradeCardLabel(g, { stars, maxStars: max, here: isHere }) : `${g.title}, 준비 중`,
+          onclick: () => {
+            sfx.play('click');
+            openGrade(g.grade);
+          },
+        },
+          art && h('span', { class: 'area-art', 'aria-hidden': 'true' }, art),
+          h('span', { class: 'area-title' }, g.title),
+          g.note && h('span', { class: 'area-line' }, g.note),
+          h('span', { class: 'area-meta' }, g.ready
+            ? h('span', { class: 'chip' }, starIcon(true), `별 ${stars} / ${max}`)
+            : h('span', { class: 'chip chip-soon' }, icon('lock'), '준비 중')),
+        ),
+      );
+    }));
+  }
+
+  /** 학년 화면: [← 학년 고르기] · 학년 이름과 설명 · 그 학년의 모은 별 · 그 학년의 영역 카드(준비 중 포함). 지난 영역(그 학년이면)에 "여기부터!" */
+  function gradeScreen() {
+    const g = gradeEntry(currentGrade) ?? gradeEntry(startGrade(gradePlan, savedArea()));
+    currentGrade = g.grade;
+    const { stars, max } = gradeStars(g);
+    return h('section', { class: 'screen screen-grade', dataset: { grade: String(g.grade) } },
+      h('div', { class: 'screen-head grade-head' },
+        h('div', { class: 'grade-title' },
+          button('← 학년 고르기', () => show(titleScreen()), 'btn btn-small btn-back'),
+          h('h2', null, g.title),
+        ),
+        h('p', { class: 'chip chip-ink chip-lg star-total' }, starIcon(true), `모은 별 ${stars} / ${max}`),
+      ),
+      g.note && h('p', { class: 'grade-note' }, g.note),
+      h('p', { class: 'grade-guide' }, '공부할 영역을 골라요.'),
+      areaCards(g.areas, startAreaId(areaPlan, savedArea(), g.areas)),
+    );
   }
 
   const STATE_TEXT = { done: ['check', '마쳤어요'], now: ['flag', '지금 할 곳'] };
@@ -775,8 +859,8 @@ export function createGameApp({
         ),
       ),
       plan.groups
-        // 차시 칩: 차시 정의의 chip, 없으면 "n차시"(영역이 있는 게임을 ?lesson=으로 열었으면 n은 그 영역 안의 차례)
-        ? plan.groups.map((g) => lessonGroup(g, lessonChipText(g.lesson, lessonNumberInArea(areaPlan, g.lesson.id) ?? g.number)))
+        // 차시 칩: 차시 정의의 chip, 없으면 차시 순서대로 "n차시" (영역이 있는 게임을 ?lesson=으로 열어도 지금과 같다)
+        ? plan.groups.map((g) => lessonGroup(g, lessonChipText(g.lesson, g.number)))
         : h('section', { class: 'sheet stage-board' }, stagePath(regularOf(stages)), challengeRow(challengesOf(stages))),
       h('div', { class: 'actions actions-start' }, button('처음 화면', () => show(titleScreen()), 'btn', 'home')),
     );
@@ -787,12 +871,15 @@ export function createGameApp({
    * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다). 모은 별·도감 칩은 그 영역의 것
    */
   function areaStageScreen() {
-    if (!areaEntry(currentArea)) currentArea = startAreaId(areaPlan, storage.get(AREA_KEY, null));
+    if (!areaEntry(currentArea)?.ready) currentArea = startAreaId(areaPlan, savedArea());
+    // 탭은 열린 영역만 — 학년이 있으면 같은 학년의 영역끼리
+    const grade = gradeOfArea(currentArea);
+    const tabEntries = (grade ? grade.areas : areaPlan).filter((entry) => entry.ready);
     const headChips = h('div', { class: 'head-chips' });
     const panel = h('div', { class: 'area-panel', id: 'area-panel', role: 'tabpanel' });
     const howToButton = button('놀이 방법', () => show(howToScreen(areaEntry(currentArea))), 'btn', 'info');
-    const ids = areaPlan.map((entry) => entry.area.id);
-    const tabs = areaPlan.map((entry) => {
+    const ids = tabEntries.map((entry) => entry.area.id);
+    const tabs = tabEntries.map((entry) => {
       const art = areaArt(entry);
       return h('button', {
         type: 'button',
@@ -842,7 +929,11 @@ export function createGameApp({
       h('div', { class: 'screen-head' }, h('h2', null, '단계를 골라요'), headChips),
       h('div', { class: 'area-tabs', role: 'tablist', 'aria-label': '영역' }, tabs),
       panel,
-      h('div', { class: 'actions actions-start' }, button('처음 화면', () => show(titleScreen()), 'btn', 'home'), howToButton),
+      h('div', { class: 'actions actions-start' },
+        grade && button('← 영역 고르기', () => openGrade(grade.grade), 'btn'),
+        button('처음 화면', () => show(titleScreen()), 'btn', 'home'),
+        howToButton,
+      ),
     );
   }
 
@@ -884,7 +975,10 @@ export function createGameApp({
     // 영역: 이 단계가 든 영역을 "지난번에 하던 영역"으로 기억하고(처음 화면의 "여기부터!"), 단계 지도로 돌아가면 그 영역의 지도
     const stageArea = areaOfLesson(areaPlan, stage.lesson);
     if (stageArea) {
-      if (areaMode) currentArea = stageArea.area.id;
+      if (areaMode) {
+        currentArea = stageArea.area.id;
+        if (gradePlan) currentGrade = gradeOfArea(currentArea)?.grade ?? currentGrade;
+      }
       storage.set(AREA_KEY, stageArea.area.id);
     }
     const area = h('div', { class: 'play-area' });
@@ -1402,7 +1496,8 @@ export function createGameApp({
       renderRankChip();
       const direct = options.stageId ? stages.find((s) => s.id === options.stageId) : null;
       if (direct && progress.isUnlocked(direct.id)) startStage(direct);
-      else if (areaMode && areaEntry(options.areaId)) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는 id면 처음 화면)
+      else if (areaMode && areaEntry(options.areaId)?.ready) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는·준비 중 영역이면 아래로)
+      else if (areaMode && gradeEntry(Number(options.gradeId))?.ready) openGrade(Number(options.gradeId)); // ?grade=<n>: 그 학년 화면으로
       else show(titleScreen());
     },
     progress,

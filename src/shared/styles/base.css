@@ -640,6 +640,20 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .area-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
 .area-meta .chip { padding: 1px 10px; white-space: nowrap; }
 .area-meta .icon { width: 1.05em; height: 1.05em; }
+/* 차시가 아직 없는 영역: "준비 중" 카드 — 누를 수 없다. 점선 테두리 + 회색 종이 + 자물쇠와 글자(색만으로 구분하지 않는다, 잠긴 단계 카드와 같은 모습) */
+.area-card[disabled] { cursor: not-allowed; background: var(--paper-3); border-style: dashed; box-shadow: none; transform: none; }
+.area-card[disabled] .area-art { opacity: 0.55; }
+.chip-soon { background: var(--paper-2); color: var(--ink-2); }
+/* 학년 카드(처음 화면): 영역 카드와 같은 모습에 학년 이름을 크게 */
+.grade-card .area-title { font-size: 1.6rem; }
+/* 학년 화면: [← 학년 고르기] + 학년 이름 · 설명 · 그 학년의 영역 카드 */
+.grade-title { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.grade-note { font-size: var(--fs-md); font-weight: 700; color: var(--ink-2); margin-top: -6px; }
+.grade-guide { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg); }
+.screen-grade .area-cards { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 22px 18px; margin-top: 8px; }
+.screen-grade .area-card { padding: 18px 22px 18px; gap: 10px 16px; }
+.screen-grade .area-art { width: 76px; height: 76px; }
+.screen-grade .area-title { font-size: 1.5rem; }
 /* 내 공방 카드 + 그 옆에 [놀이 방법]·[학습 기록]을 세로로. 좁으면 버튼이 카드 아래 한 줄로 */
 .hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; width: 100%; }
 .hero-foot .workshop-card { flex: 1 1 300px; margin-top: 0; }

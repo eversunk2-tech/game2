@@ -264,6 +264,7 @@ export function playCuboidFree(stage, ctx) {
     sticky.hidden = hintLevel === 0;
     legend.hidden = !sticky.hidden;
     finishTool.hidden = !reached;
+    if (reached) finishTool.classList.toggle('btn-primary', session.found().size >= CUBOID_FREE_FULL); // 2가지면 보통 버튼, 3가지부터 주 버튼 (spec 16-15)
     board.setEnabled(true);
     if (!keep) board.clearAll();
     renderFound();

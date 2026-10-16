@@ -190,7 +190,7 @@ export function miniRects(rects, { cls = 'mini-net' } = {}) {
   return svgRoot(`-0.3 -0.3 ${size + 0.6} ${size + 0.6}`, cls, parts);
 }
 
-// ── 영역 카드·탭 그림 (처음 화면의 영역 카드 64×64, 단계 지도의 영역 탭 42×34) ─────────────
+// ── 학년 카드·영역 카드·탭 그림 (카드 56×56, 단계 지도의 영역 탭 42×34) ─────────────
 /** 쌓기나무 하나의 보이는 세 면(윗면·앞면·옆면)을 비스듬한 평행 투영으로. 앞면·옆면은 잉크를 옅게 덮어 그늘(쌓기나무 무대와 같은 차례: 윗면 밝게 · 앞 · 옆 어둡게) */
 function isoCubes(cubes, { edge = 14, fill = face(1) } = {}) {
   const a = edge * Math.cos(Math.PI / 6);
@@ -218,8 +218,44 @@ function isoCubes(cubes, { edge = 14, fill = face(1) } = {}) {
 }
 
 const AREA_ARTS = {
-  /** 5학년 전개도: 색종이 면 6장의 십자 전개도(정육면체) + 옆에 직육면체 조각 한 장 */
-  net5: () => ({
+  /** 정육면체의 전개도: 색종이 면 6장의 십자 전개도 */
+  cube: () => ({
+    viewBox: '0 0 64 64',
+    parts: [
+      square(19, 9, face(1), { size: 13 }), square(6, 22, face(2), { size: 13 }), square(19, 22, face(3), { size: 13 }),
+      square(32, 22, face(4), { size: 13 }), square(45, 22, face(5), { size: 13 }), square(19, 35, face(6), { size: 13 }),
+    ],
+  }),
+  /** 직육면체의 전개도: 크기가 다른 직사각형 면 6장(마주 보는 면은 같은 색) */
+  cuboid: () => ({
+    viewBox: '0 0 64 64',
+    parts: [
+      box(3, 26, 18, 12, face(2)), box(21, 26, 10, 12, face(3)), box(31, 26, 18, 12, face(2)), box(49, 26, 10, 12, face(3)),
+      box(3, 16, 18, 10, face(1)), box(3, 38, 18, 10, face(1)),
+    ],
+  }),
+  /** 각기둥의 전개도: 삼각기둥(옆면 셋 + 밑면 둘) */
+  prism: () => ({
+    viewBox: '0 0 64 64',
+    parts: [
+      box(4, 20, 18, 24, face(2)), box(22, 20, 18, 24, face(3)), box(40, 20, 18, 24, face(4)),
+      svgEl('polygon', { points: '22,20 40,20 31,4.4', style: paint(face(1), INK, 2, 'stroke-linejoin:round') }),
+      svgEl('polygon', { points: '22,44 40,44 31,59.6', style: paint(face(1), INK, 2, 'stroke-linejoin:round') }),
+    ],
+  }),
+  /** 쌓기나무: 쌓기나무 네 개(바닥 셋 + 위에 하나) */
+  blocks: () => isoCubes([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+  /** 원기둥의 전개도: 옆면(직사각형) 위아래에 밑면(원) 둘 */
+  cylinder: () => ({
+    viewBox: '0 0 64 64',
+    parts: [
+      box(6, 22, 52, 20, face(7)),
+      svgEl('circle', { cx: 22, cy: 13, r: 9, style: paint(face(2)) }),
+      svgEl('circle', { cx: 22, cy: 51, r: 9, style: paint(face(2)) }),
+    ],
+  }),
+  /** 5학년: 정육면체 십자 전개도 + 직육면체 조각 한 장 */
+  grade5: () => ({
     viewBox: '0 0 64 64',
     parts: [
       square(15, 7, face(1), { size: 13 }), square(2, 20, face(2), { size: 13 }), square(15, 20, face(3), { size: 13 }),
@@ -227,20 +263,25 @@ const AREA_ARTS = {
       box(36, 41, 24, 15, face(7), { transform: 'rotate(-8 48 48)' }),
     ],
   }),
-  /** 6학년 전개도: 삼각기둥의 전개도(옆면 셋 + 밑면 둘) */
-  net6: () => ({
-    viewBox: '0 0 64 64',
-    parts: [
-      box(4, 20, 18, 24, face(2)), box(22, 20, 18, 24, face(3)), box(40, 20, 18, 24, face(4)),
-      svgEl('polygon', { points: '22,20 40,20 31,4.4', style: paint(face(1), INK, 2, 'stroke-linejoin:round') }),
-      svgEl('polygon', { points: '22,44 40,44 31,59.6', style: paint(face(6), INK, 2, 'stroke-linejoin:round') }),
-    ],
-  }),
-  /** 쌓기나무: 쌓기나무 네 개(바닥 셋 + 위에 하나) */
-  blocks: () => isoCubes([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+  /** 6학년: 삼각기둥 전개도 조각 + 쌓기나무 + 원기둥 밑면 */
+  grade6: () => {
+    const cubes = isoCubes([[0, 0, 0], [1, 0, 0], [0, 0, 1]], { edge: 11 });
+    const [vx, vy, vw, vh] = cubes.viewBox.split(' ').map(Number);
+    const k = 34 / Math.max(vw, vh);
+    return {
+      viewBox: '0 0 64 64',
+      parts: [
+        box(3, 18, 11, 16, face(2)), box(14, 18, 11, 16, face(3)), box(25, 18, 11, 16, face(4)),
+        svgEl('polygon', { points: '14,18 25,18 19.5,8.5', style: paint(face(1), INK, 2, 'stroke-linejoin:round') }),
+        svgEl('polygon', { points: '14,34 25,34 19.5,43.5', style: paint(face(1), INK, 2, 'stroke-linejoin:round') }),
+        svgEl('circle', { cx: 12, cy: 53, r: 7, style: paint(face(7)) }),
+        svgEl('g', { transform: `translate(${(28 - vx * k).toFixed(2)} ${(26 - vy * k).toFixed(2)}) scale(${k.toFixed(4)})` }, cubes.parts),
+      ],
+    };
+  },
 };
 
-/** 영역 카드·탭 그림 (영역 정의의 art). 없는 이름이면 undefined */
+/** 영역 카드·탭과 학년 카드의 그림 (영역 정의·학년 정의의 art): cube · cuboid · prism · blocks · cylinder · grade5 · grade6. 없는 이름이면 undefined */
 export function areaArt(kind) {
   const make = AREA_ARTS[kind];
   return make ? () => {
