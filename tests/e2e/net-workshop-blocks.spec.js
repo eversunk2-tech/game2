@@ -249,14 +249,21 @@ async function pokeStage(page) {
 }
 
 // ── 단계 지도와 차시 흐름 ─────────────────────
-test('단계 지도: 쌓기나무 네 차시가 정육면체 차시 뒤에 보이고, ?lesson=으로 그 차시만 들어간다', async ({ page }) => {
+test('단계 지도: 쌓기나무 네 차시가 6학년 쌓기나무 영역의 지도에 차례로 보이고(정육면체 차시는 5학년 영역), ?lesson=으로 그 차시만 들어간다', async ({ page }) => {
+  // B0a·B0c로 처음 화면이 바뀌어(인트로 → 학년 카드 → 영역 → 영역의 단계 지도) 들어가는 길과 "한 줄 단계 지도"를 새 구조로 고쳤다 — 보는 것은 그대로:
+  // 차시·단계의 차례와 이름, 차시마다 첫 단계만 열림, 차시 칩·시간 칩·단원, 넘침 없음, 쌓기나무 놀이 방법 줄, ?lesson= 화면
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
-  await page.getByRole('button', { name: '시작하기' }).click();
+  await page.getByRole('button', { name: '입장하기' }).click();
+  // 학년 카드는 5학년 → 6학년 차례, 쌓기나무는 6학년의 영역
+  expect(await page.locator('.grade-card').evaluateAll((els) => els.map((el) => el.dataset.grade))).toEqual(['5', '6']);
+  await page.locator('.grade-card[data-grade="6"]').click();
+  await page.locator('.area-card[data-area="blocks"]').click();
+  await expect(page.getByRole('tab', { name: '쌓기나무' })).toHaveAttribute('aria-selected', 'true');
   const titles = await page.locator('.lesson-group h3').allTextContents();
-  expect(titles[0]).toBe('정육면체의 전개도');
+  expect(titles).not.toContain('정육면체의 전개도'); // 전개도 차시는 이 지도에 섞이지 않는다
   // S2(3·4차시)가 1·2차시 뒤에 더해졌다
-  expect(titles.slice(-4)).toEqual(['어느 방향에서 보았을까', '만든 모양과 위에서 본 모양', '위, 앞, 옆에서 본 모양', '위에서 본 모양에 수 쓰기']);
+  expect(titles.slice(0, 4)).toEqual(['어느 방향에서 보았을까', '만든 모양과 위에서 본 모양', '위, 앞, 옆에서 본 모양', '위에서 본 모양에 수 쓰기']);
   for (const [lesson, names] of [
     ['blocks-look', ['쌓기 놀이터', '어느 방향에서 보았을까?', '이쪽에서 보면?']],
     ['blocks-top', ['똑같이 만들기', '모두 몇 개일까?', '숨겨진 쌓기나무']],
@@ -272,38 +279,46 @@ test('단계 지도: 쌓기나무 네 차시가 정육면체 차시 뒤에 보�
     await expect(group.locator('.stage-card').nth(1)).toBeDisabled();
     await expect(group.locator('.stage-card').nth(2)).toBeDisabled();
   }
-  // 차시 칩·시간 칩·단원: 전개도 차시는 자동 번호("n차시")와 게임의 시간(약 10분) 그대로이고 단원 글이 없다.
-  // 쌓기나무 차시는 "쌓기나무 1차시"·"쌓기나무 2차시", 제 시간(약 6분·약 8분), 단원 이름이 보인다
-  const heads = await page.locator('.lesson-group').evaluateAll((groups) => groups.map((g) => ({
+  // 차시 칩·시간 칩·단원: 쌓기나무 차시는 영역 안의 차례 "1차시"~"4차시"(영역 탭이 "쌓기나무"를 알려 준다), 제 시간(약 6분·약 8분 …), 단원 이름.
+  // 정육면체 차시(5학년, 차시가 하나뿐인 영역)는 칩 없이 제목만, 게임의 시간(약 10분) 그대로이고 단원 글이 없다
+  const headsOf = () => page.locator('.lesson-group').evaluateAll((groups) => groups.map((g) => ({
     id: g.dataset.lesson,
-    no: g.querySelector('.lesson-no').textContent,
+    no: g.querySelector('.lesson-no')?.textContent ?? null,
     note: g.querySelector('.lesson-note')?.textContent ?? null,
     time: [...g.querySelectorAll('.lesson-chips .chip')].map((c) => c.textContent.trim()).filter((t) => t.startsWith('약')),
   })));
-  const cubeHeads = heads.filter((head) => !head.id.startsWith('blocks-'));
-  expect(cubeHeads.length).toBeGreaterThan(0);
-  for (const [i, head] of cubeHeads.entries()) expect({ no: head.no, note: head.note, time: head.time }).toEqual({ no: `${i + 1}차시`, note: null, time: ['약 10분'] });
-  expect(heads.filter((head) => head.id.startsWith('blocks-'))).toEqual([
-    { id: 'blocks-look', no: '쌓기나무 1차시', note: '6학년 2학기 · 공간과 입체', time: ['약 6분'] },
-    { id: 'blocks-top', no: '쌓기나무 2차시', note: '6학년 2학기 · 공간과 입체', time: ['약 8분'] },
-    { id: 'blocks-three', no: '쌓기나무 3차시', note: '6학년 2학기 · 공간과 입체', time: ['약 10분'] },
-    { id: 'blocks-number', no: '쌓기나무 4차시', note: '6학년 2학기 · 공간과 입체', time: ['약 7분'] },
+  const spilled = () => page.locator('.lesson-group').evaluateAll((groups) => groups.map((g) => {
+    const box = g.getBoundingClientRect();
+    return [...g.querySelectorAll('.lesson-head > *')].filter((el) => el.getBoundingClientRect().right > box.right + 0.5 || el.getBoundingClientRect().left < box.left - 0.5).length;
+  }));
+  const heads = await headsOf();
+  expect(heads.slice(0, 4)).toEqual([
+    { id: 'blocks-look', no: '1차시', note: '6학년 2학기 · 공간과 입체', time: ['약 6분'] },
+    { id: 'blocks-top', no: '2차시', note: '6학년 2학기 · 공간과 입체', time: ['약 8분'] },
+    { id: 'blocks-three', no: '3차시', note: '6학년 2학기 · 공간과 입체', time: ['약 10분'] },
+    { id: 'blocks-number', no: '4차시', note: '6학년 2학기 · 공간과 입체', time: ['약 7분'] },
   ]);
   expect(await hasHorizontalScroll(page)).toBe(false);
   // 차시 머리(칩·제목·단원·시간)가 묶음 밖으로 나가지 않는다
-  expect(await page.locator('.lesson-group').evaluateAll((groups) => groups.map((g) => {
-    const box = g.getBoundingClientRect();
-    return [...g.querySelectorAll('.lesson-head > *')].filter((el) => el.getBoundingClientRect().right > box.right + 0.5 || el.getBoundingClientRect().left < box.left - 0.5).length;
-  }))).toEqual(heads.map(() => 0));
-  // 놀이 방법: 전개도 줄 뒤에 쌓기나무 줄(쌓기·빼기, 돌려 보기)이 있다
-  await page.getByRole('button', { name: '처음 화면' }).click();
+  expect(await spilled()).toEqual(heads.map(() => 0));
+  // 놀이 방법(쌓기나무 영역의 지도에서): 끝 두 줄이 쌓기나무 줄(쌓기·빼기, 돌려 보기)이고 전개도 줄이 섞이지 않는다
   await page.getByRole('button', { name: '놀이 방법' }).click();
   const howTo = await page.locator('.howto-list li').allTextContents();
   expect(howTo.slice(-2).map((t) => t.replace(/^\d+/, ''))).toEqual([
     '쌓기나무 차시에서는 판을 짧게 누르면 쌓이고, [빼기]를 누른 다음 누르면 빠져요. "위에서 본 판"의 칸을 눌러도 돼요.',
     '쌓기나무는 끌어서 여러 방향으로 돌려 보고, [위] [앞] [옆]을 누르면 그 방향에서 본 모양이 돼요.',
   ]);
-  expect(howTo.slice(0, -2).join(' ')).not.toContain('쌓기나무');
+  expect(howTo.join(' ')).not.toContain('전개도');
+  // 정육면체 차시(5학년 영역): 칩 없이 제목만, 약 10분, 단원 글 없음. 그 영역의 놀이 방법에는 쌓기나무 줄이 없다
+  await page.getByRole('button', { name: '단계 선택' }).click();
+  await page.getByRole('button', { name: '처음 화면' }).click();
+  await page.locator('.grade-card[data-grade="5"]').click();
+  await page.locator('.area-card[data-area="cube"]').click();
+  expect(await headsOf()).toEqual([{ id: 'cube', no: null, note: null, time: ['약 10분'] }]);
+  await expect(page.locator('.lesson-group h3')).toHaveText(['정육면체의 전개도']);
+  expect(await spilled()).toEqual([0]);
+  await page.getByRole('button', { name: '놀이 방법' }).click();
+  expect((await page.locator('.howto-list li').allTextContents()).join(' ')).not.toContain('쌓기나무');
   await page.goto(fileUrl(FILE, '?lesson=blocks-top&seed=1&sound=off'));
   await expect(page.locator('.eyebrow')).toHaveText('만든 모양과 위에서 본 모양');
   await page.getByRole('button', { name: '시작하기' }).click();

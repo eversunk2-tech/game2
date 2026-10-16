@@ -1,7 +1,7 @@
 /**
  * 모든 학습게임이 함께 쓰는 화면 흐름 ("종이 공방" 모습).
  *
- *   처음 화면 → (놀이 방법) → 단계 선택(단계 지도) → 플레이 → 결과 → 학습 기록
+ *   (게임 인트로) → 처음 화면 → (놀이 방법) → 단계 선택(단계 지도) → 플레이 → 결과 → 학습 기록
  *
  * 게임은 stages(단계 목록)와 playStage(stage, ctx)만 만들면 된다.
  * 별점·잠금 해제·학습 기록 저장·소리 켜고 끄기·결과 복사는 여기서 처리한다.
@@ -313,6 +313,91 @@ async function copyText(text) {
   }
 }
 
+/**
+ * 게임 인트로(선택 기능, B0c): 앱을 열면 맨 처음 보이는 화면. [입장하기]를 누르면 처음 화면(학년·영역 카드)으로 간다.
+ * intro 정의를 확인해 화면에 쓸 값으로 바꾼다. intro가 없으면 null — 인트로가 없는 게임은 화면·저장 값이 지금과 똑같다.
+ *   intro: {
+ *     subtitle?,                 부제(글자). 제목 그림의 리본 위(logo.ribbon) 또는 제목 아래
+ *     enterLabel? = '입장하기',  큰 버튼의 글자
+ *     title? = game.title,       화면 읽기용 제목(h1). 제목 그림이 있으면 그 그림의 대체 글
+ *     logo?: { width, height, ribbon?: { path, fontSize, length } }
+ *       제목 그림(게임 CSS가 .screen-intro의 --intro-logo-img로 준다)의 크기(비율)와, 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
+ *   }
+ * 배경 그림은 게임 CSS가 .screen-intro의 --intro-bg-img로 준다(엔진은 그림 파일을 모른다 — docs/engine.md 2절 "게임 인트로").
+ */
+export function planIntro(intro, game) {
+  if (intro == null || intro === false) return null;
+  if (typeof intro !== 'object' || Array.isArray(intro)) throw new Error('createGameApp: intro는 { subtitle, enterLabel, logo } 객체예요.');
+  const text = (value, fallback = '') => (typeof value === 'string' && value.trim() ? value.trim() : fallback);
+  let logo = null;
+  if (intro.logo != null) {
+    const { width, height, ribbon = null } = intro.logo;
+    if (!(Number(width) > 0 && Number(height) > 0)) throw new Error('createGameApp: intro.logo에는 제목 그림의 width·height(양수)가 필요해요.');
+    if (ribbon != null && !(typeof ribbon.path === 'string' && ribbon.path.trim() && Number(ribbon.fontSize) > 0 && Number(ribbon.length) > 0)) {
+      throw new Error('createGameApp: intro.logo.ribbon에는 path(SVG 경로)·fontSize·length가 필요해요.');
+    }
+    logo = { width: Number(width), height: Number(height), ribbon: ribbon && { path: ribbon.path.trim(), fontSize: Number(ribbon.fontSize), length: Number(ribbon.length) } };
+  }
+  return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo };
+}
+
+/** 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로 */
+export const opensWithIntro = (options) => !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
+
+/** 인트로 그림이 풀리기를(디코딩) 기다리는 가장 긴 시간. 그 안에 안 풀리면 그냥 시작한다(그때까지는 하늘색 바탕과 반짝임이 보인다) */
+const INTRO_WAIT_MS = 1500;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs, ...children) => {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs ?? {})) if (value != null) el.setAttribute(key, String(value));
+  el.append(...children);
+  return el;
+};
+// 인트로 꾸밈(화면 읽기에서 숨김). 자리·크기·때는 base.css의 nth-child가 정한다
+const INTRO_SKY_SPARKS = 8; // 하늘의 반짝임
+const INTRO_LOGO_SPARKS = 5; // 제목 둘레의 반짝임
+const INTRO_BLOCKS = [[1, 1, 1], [2, 1, 1], [1, 1, 1], [1, 2, 1], [1, 1, 1], [1, 1, 2]]; // 아래에서 떠오르는 정육면체·직육면체 (가로·세로·높이)
+
+/** 등축 투영으로 그린 작은 입체 하나: 윗면·왼쪽 앞면·오른쪽 앞면 (색은 base.css의 .ib-top·.ib-left·.ib-right) */
+function isoBlock([a, b, c]) {
+  const u = 10;
+  const at = ([x, y, z]) => `${((x - y) * 0.866 * u).toFixed(1)},${(((x + y) * 0.5 - z) * u).toFixed(1)}`;
+  const faces = [
+    ['ib-top', [[0, 0, c], [a, 0, c], [a, b, c], [0, b, c]]],
+    ['ib-left', [[0, b, 0], [a, b, 0], [a, b, c], [0, b, c]]],
+    ['ib-right', [[a, 0, 0], [a, b, 0], [a, b, c], [a, 0, c]]],
+  ];
+  const [x0, x1, y0, y1] = [-b * 0.866 * u - 2, a * 0.866 * u + 2, -c * u - 2, (a + b) * 0.5 * u + 2];
+  return svgEl('svg', { viewBox: `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`, focusable: 'false' },
+    ...faces.map(([cls, pts]) => svgEl('polygon', { class: cls, points: pts.map(at).join(' ') })));
+}
+
+/**
+ * 제목 그림의 리본 위에 얹는 부제: 그림과 같은 좌표의 SVG에서 리본의 가운데 선을 따라 휘어진 글(흰 글자 + 남색 테두리 + 아래 그림자).
+ * 글 길이는 length로 맞춘다(글꼴이 달라도 리본 밖으로 나가지 않는다). 테두리·그림자·글자를 세 겹으로 따로 그린다 —
+ * 한 겹에 테두리와 글자를 함께 그리면 글자마다 차례로 칠해져 옆 글자의 테두리가 앞 글자의 획(ㅏ의 짧은 획)을 덮는다
+ */
+function ribbonText(text, { width, height, ribbon }) {
+  const id = 'intro-ribbon-path';
+  const layer = (cls, extra = null) => svgEl('text', { class: cls, 'font-size': ribbon.fontSize, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...extra },
+    svgEl('textPath', { href: `#${id}`, startOffset: '50%', textLength: ribbon.length, lengthAdjust: 'spacingAndGlyphs' }, text));
+  return svgEl('svg', { class: 'intro-ribbon', viewBox: `0 0 ${width} ${height}`, 'aria-hidden': 'true', focusable: 'false' },
+    svgEl('defs', null, svgEl('path', { id, d: ribbon.path })),
+    layer('intro-ribbon-shadow', { transform: 'translate(0 4)' }),
+    layer('intro-ribbon-edge'),
+    layer('intro-ribbon-text'),
+  );
+}
+
+/** 요소의 CSS 배경 그림이 풀릴(디코딩) 때까지. 그림이 없거나 풀지 못하면 바로 */
+function backgroundDecoded(el) {
+  const url = /url\((["']?)(.*?)\1\)/.exec(getComputedStyle(el).backgroundImage || '')?.[2];
+  if (!url || typeof Image !== 'function') return Promise.resolve();
+  const img = new Image();
+  img.src = url;
+  return typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve();
+}
+
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
 function defaultHeroArt(game) {
   return h('div', { class: 'hero-papers' },
@@ -334,6 +419,7 @@ export function createGameApp({
   heroArt = null,
   rewards: rewardOptions = null,
   collections: collectionDefs = null,
+  intro: introDef = null,
   options = readUrlOptions(),
 }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
@@ -344,6 +430,7 @@ export function createGameApp({
   const allIds = allStages.map((s) => s.id);
   if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
   if (rewardOptions != null && typeof rewardOptions !== 'object') throw new Error('createGameApp: rewards는 { ranks, thresholds, badges, off } 객체예요.');
+  const introPlan = planIntro(introDef, game); // 게임 인트로(선택). null이면 인트로가 없다 — 아래 화면이 모두 지금과 같다
 
   // 공통 게임 요소 설정 (rewards.off면 점수·칭호·도장을 모두 숨긴다)
   const rewardsOn = !rewardOptions?.off;
@@ -472,6 +559,8 @@ export function createGameApp({
     confetti.clear();
     clear(main);
     main.append(screen);
+    // 인트로가 떠 있는 동안: 머리의 게임 이름·칭호 칩은 숨고 [소리] 버튼만 화면 오른쪽 위에 (base.css .edu-app.is-intro)
+    if (introPlan) root.classList.toggle('is-intro', screen.classList.contains('screen-intro'));
     const heading = screen.querySelector('h1, h2');
     if (heading) {
       heading.setAttribute('tabindex', '-1');
@@ -529,9 +618,12 @@ export function createGameApp({
       collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
       badges: { count: earnedCount(), total: badgeDefs.length },
     });
+    // 인트로가 있는 게임: 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽에 [← 처음으로] → 인트로
+    const toIntro = introPlan && !plan.current && button('← 처음으로', () => openIntro(), 'btn btn-small btn-back btn-intro');
     return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}` },
       h('div', { class: 'hero-copy' },
-        (eyebrow || grade) && h('div', { class: 'title-chips' },
+        (eyebrow || grade || toIntro) && h('div', { class: 'title-chips' },
+          toIntro,
           eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
           grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
         ),
@@ -567,6 +659,62 @@ export function createGameApp({
         h('span', { class: 'ruler' }),
       ),
     );
+  }
+
+  /**
+   * 게임 인트로 화면(introPlan이 있을 때만): 화면 가득 배경 그림 · 가운데 위 제목 그림(+ 리본 위 부제) · 아래 가운데 큰 [입장하기].
+   * 꾸밈(반짝임·떠오르는 입체)은 화면 읽기에서 숨긴다. 움직임은 transform·opacity만(base.css). 움직임 줄이기·?fx=low면 움직이지 않는 한 장면
+   */
+  function introScreen() {
+    const { title, subtitle, enterLabel, logo } = introPlan;
+    const repeat = (n, make) => Array.from({ length: n }, (_, i) => make(i));
+    const enter = h('button', {
+      type: 'button',
+      class: 'intro-enter',
+      onclick: () => {
+        sfx.play('unlock'); // 문이 열리는 종소리 (소리 끔이면 없다)
+        show(titleScreen());
+      },
+    }, h('span', { class: 'intro-enter-pulse' }, h('span', { class: 'intro-enter-face' }, enterLabel)));
+    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${quietFx() ? ' is-ready is-still' : ''}` },
+      h('div', { class: 'intro-bg', 'aria-hidden': 'true' }),
+      h('div', { class: 'intro-sparks', 'aria-hidden': 'true' }, repeat(INTRO_SKY_SPARKS, () => h('span', { class: 'intro-spark' }))),
+      h('div', { class: 'intro-blocks', 'aria-hidden': 'true' }, INTRO_BLOCKS.map((size) => h('span', { class: 'intro-block' }, isoBlock(size)))),
+      h('div', { class: 'intro-head' },
+        h('div', { class: 'intro-drop' },
+          h('div', { class: 'intro-float' },
+            h('div', { class: 'intro-logo-box' },
+              h('h1', { class: 'intro-title' }, logo
+                ? [h('span', { class: 'sr-only' }, title), h('span', { class: 'intro-logo', 'aria-hidden': 'true' }, h('span', { class: 'intro-shine' }))]
+                : h('span', { class: 'intro-title-text' }, title)),
+              subtitle && h('p', { class: `intro-subtitle${logo?.ribbon ? ' on-ribbon' : ''}` }, logo?.ribbon
+                ? [h('span', { class: 'sr-only' }, subtitle), ribbonText(subtitle, logo)]
+                : subtitle),
+              h('span', { class: 'intro-logo-sparks', 'aria-hidden': 'true' }, repeat(INTRO_LOGO_SPARKS, () => h('span', { class: 'intro-spark' }))),
+            ),
+          ),
+        ),
+      ),
+      h('div', { class: 'intro-foot' }, enter),
+    );
+    if (logo) screen.style.setProperty('--intro-ratio', String(logo.width / logo.height));
+    return screen;
+  }
+
+  /** 인트로를 연다: [입장하기]에 초점. 그림이 풀리면(또는 INTRO_WAIT_MS 뒤) 배경이 부드럽게 나타나고 제목이 떨어지는 움직임이 시작된다 */
+  function openIntro() {
+    const screen = introScreen();
+    show(screen);
+    screen.querySelector('.intro-enter').focus({ preventScroll: true });
+    const art = [...screen.querySelectorAll('.intro-bg, .intro-logo')];
+    const ready = () => {
+      if (!screen.isConnected) return;
+      for (const el of art) el.classList.add('is-loaded');
+      screen.classList.add('is-ready');
+    };
+    Promise.all(art.map((el) => backgroundDecoded(el).then(() => screen.isConnected && el.classList.add('is-loaded')))).then(ready);
+    const timer = setTimeout(ready, INTRO_WAIT_MS);
+    screenCleanups.push(() => clearTimeout(timer));
   }
 
   /**
@@ -838,7 +986,7 @@ export function createGameApp({
     const minutes = game.playMinutes ? h('span', { class: 'chip' }, icon('clock'), `약 ${game.playMinutes}분`) : null;
     return h('section', { class: 'sheet lesson-group', dataset: { lesson: g.lesson.id } },
       h('div', { class: 'lesson-head' },
-        h('span', { class: 'lesson-no' }, chipText),
+        chipText && h('span', { class: 'lesson-no' }, chipText),
         h('h3', { class: 'lesson-title' }, g.lesson.title),
         lessonNoteText(g.lesson) && h('span', { class: 'lesson-note' }, lessonNoteText(g.lesson)),
         h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), g.lesson.minutes == null ? minutes : minutesChip(lessonMinutes(g.lesson, game))),
@@ -868,7 +1016,7 @@ export function createGameApp({
 
   /**
    * 영역의 단계 지도: 위에 영역 탭(지금 영역 표시, 다른 영역으로 바로 — 방향키·Home·End), 아래에 그 영역의 차시만.
-   * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다). 모은 별·도감 칩은 그 영역의 것
+   * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다. 차시가 하나뿐인 영역은 칩 없음). 모은 별·도감 칩은 그 영역의 것
    */
   function areaStageScreen() {
     if (!areaEntry(currentArea)?.ready) currentArea = startAreaId(areaPlan, savedArea());
@@ -915,7 +1063,9 @@ export function createGameApp({
       });
       panel.setAttribute('aria-labelledby', `area-tab-${currentArea}`);
       panel.dataset.area = currentArea;
-      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, lessonChipText(g.lesson, i + 1, { useChip: false }))));
+      // 차시가 하나뿐인 영역은 차시 칩을 붙이지 않는다(영역 탭과 차시 제목이 알려 준다 — 수업 주소의 "2차시"와 어긋나는 "1차시"가 생기지 않게, B0a-2)
+      const many = entry.groups.length > 1;
+      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, many ? lessonChipText(g.lesson, i + 1, { useChip: false }) : null)));
       howToButton.hidden = howToLines(entry).length === 0;
     }
     function pick(id) {
@@ -1498,6 +1648,7 @@ export function createGameApp({
       if (direct && progress.isUnlocked(direct.id)) startStage(direct);
       else if (areaMode && areaEntry(options.areaId)?.ready) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는·준비 중 영역이면 아래로)
       else if (areaMode && gradeEntry(Number(options.gradeId))?.ready) openGrade(Number(options.gradeId)); // ?grade=<n>: 그 학년 화면으로
+      else if (introPlan && opensWithIntro(options)) openIntro(); // 게임 인트로: 수업 주소(?stage=·?lesson=·?area=·?grade=)가 없을 때만
       else show(titleScreen());
     },
     progress,

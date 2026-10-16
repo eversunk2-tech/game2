@@ -899,3 +899,29 @@
   .fold-tools .band-turn,
   .fold-tools.is-locked .band-turn { display: none; }
 }
+
+/* ── 게임 인트로 그림 (B0c · spec-grade6 15-6: 사용자가 캔바 시안에서 고른 그림. 파일은 고치지 않는다) ──
+ * 배치·움직임은 엔진(base.css "게임 인트로"), 여기는 그림과 그 그림에 맞춘 자리만.
+ * 배경 1680×944: 가운데 위는 빈 하늘, 왼쪽에 소년(얼굴 가로 18~26%), 오른쪽에 소녀(얼굴 66~73%), 가운데 아래는 계단 */
+.screen-intro {
+  --intro-logo-img: url('./img/intro-title.webp'); /* 제목 그림은 두 곳(그림 · 빛줄기 틀)에 쓰여 한 번만 적는다(빌드 파일에 한 벌) */
+  /* 그림이 풀리기 전(빈 화면 대신) · 세로 화면에서 그림 위쪽의 하늘: 그림의 하늘에서 뽑은 색(그림의 일부) */
+  --intro-sky: linear-gradient(180deg, #0f66d0 0%, #1b74d9 45%, #2a83e0 100%);
+}
+.screen-intro .intro-bg { background-image: url('./img/intro-bg.jpg'); }
+.screen-intro .intro-logo { background-image: var(--intro-logo-img); }
+.screen-intro .intro-shine { mask-image: var(--intro-logo-img); }
+/* 가로 화면: 그림을 화면 가득(cover, 엔진 기본). 화면이 그림보다 납작하면 위 하늘을 조금 더 잘라 계단과 아이들을 남긴다(50% 60%) */
+/* 세로 화면: 그림을 화면 폭의 1.5배로 아래에 붙인다 — 두 아이의 가운데(그림 가로 45.7%)가 화면 가운데에 오고(37%) 두 아이가 다 보인다.
+   그림 위쪽은 하늘색으로 녹이고, 제목은 그 위의 하늘(그림 위 끝 + 40px까지)에 */
+@media (max-aspect-ratio: 1/1) {
+  .screen-intro { --intro-head-h: calc(100vh - 84.3vw - 28px); }
+  .screen-intro .intro-bg {
+    top: auto; height: 84.3vw;
+    background-size: 150vw auto; background-position: 37% 100%;
+    mask: linear-gradient(180deg, transparent 0%, #000 24%);
+  }
+}
+@supports (height: 1dvh) {
+  @media (max-aspect-ratio: 1/1) { .screen-intro { --intro-head-h: calc(100dvh - 84.3vw - 28px); } }
+}

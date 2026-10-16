@@ -2140,6 +2140,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   expect(points).toBe(33); // 전개도 3 × (2 + 5) + 연속 3번 1 + 단계 완료 5 + 별 3개 6
 
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off')); // 다시 열기 (처음 화면)
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await expect(page.locator('.rank-chip small')).toHaveText(`${points}점`);
   // N1-3: 도감 칩은 전개도 도감만 "n / 11". 안 되는 모양 노트(24칸)는 합치지 않고 따로 "노트 n / 24"
   await expect(page.locator('.workshop-card')).toContainText('도감 3 / 11');
@@ -5780,6 +5781,7 @@ test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 
   test.skip(testInfo.project.name !== 'chromebook', '처음 화면 그림의 값은 크롬북 화면에서 확인');
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   const hero = page.locator('.hero-net .fold-stage');
   const read = () => page.evaluate(() => ({
     scene: document.querySelector('.hero-net .net-scene').style.transform,

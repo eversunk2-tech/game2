@@ -145,11 +145,20 @@ const AREAS = [
   { id: 'cylinder', grade: 6, title: '원기둥의 전개도', note: '6학년 2학기 · 원기둥, 원뿔, 구', lessons: ['cylinder'], art: areaArt('cylinder') },
 ];
 
+// ── 게임 인트로 (spec-grade6 15-6 · 2026-10-16 사용자 수정 요청: "최근 유행하는 게임 인트로 화면처럼", 캔바 그림 + 코드 움직임) ──
+// 그림은 style.css가 준다(img/intro-bg.jpg 배경, img/intro-title.webp 제목). 여기에는 제목 그림의 크기와 부제를 얹을 빈 파란 리본의 가운데 선(그림 좌표)
+const INTRO = {
+  subtitle: '전개도와 쌓기나무로 떠나는 도형 모험',
+  enterLabel: '입장하기',
+  logo: { width: 1352, height: 873, ribbon: { path: 'M410 750 Q690 814 1010 743', fontSize: 52, length: 580 } },
+};
+
 createGameApp({
   root: document.getElementById('app'),
   game: { ...meta, subtitle: '5·6학년 수학 · 전개도와 쌓기나무' },
   grades: GRADES,
   areas: AREAS,
+  intro: INTRO, // 앱을 열면 인트로부터(수업 주소 ?lesson=·?area=·?grade=·?stage=로 열면 인트로 없이)
   // 처음 화면(학년·영역을 고르기 전)의 놀이 방법: 모든 영역에 같은 몇 줄. 영역의 단계 지도·한 차시 주소에서는 그 영역의 줄(AREAS의 howTo)
   howTo: [
     '학년을 고른 다음, 공부할 영역을 골라요. 영역을 누르면 그 영역의 차시와 단계가 나와요.',

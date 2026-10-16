@@ -332,6 +332,7 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
 test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이고 첫 단계가 처음부터 열려 있다. 정육면체 차시의 카드·도감 칩은 그대로다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   // B0a: 학년 카드 → 학년 화면 — 두 차시는 5학년의 영역 "정육면체의 전개도"·"직육면체의 전개도"로 나뉘어 이 차례로 보인다
   await page.getByRole('button', { name: /^5학년/ }).click();
   expect(await page.locator('.area-card').evaluateAll((els) => els.map((el) => el.dataset.area))).toEqual(['cube', 'cuboid']);
@@ -825,6 +826,7 @@ test('내 맘대로 직육면체 전개도: 2가지만 찾고 끝내면 별 2개
   expect(await storedXpOf(page)).toBe(30);
   // 학습 기록·결과 복사·도감 화면에는 이 모음이 보이지 않는다(정육면체 차시의 도감 칩 그대로). 기록을 지우면 찾은 전개도도 지워진다
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await page.getByRole('button', { name: '학습 기록' }).click();
   await expect(page.locator('.btn-collection')).toContainText('도감 0 / '); // 도감 수에 찾은 직육면체 전개도(3가지)가 들어가지 않는다
   await expect(page.locator('.btn-collection')).not.toContainText(/직육면체|54/);
@@ -1754,6 +1756,7 @@ test('한 차시만 열었을 때의 도감 칩: ?lesson=cube는 지금까지처
   await expect(page.locator('.lesson-group')).toHaveCount(1);
   // 차시를 고르지 않은 화면: 정육면체 차시의 도감은 그 차시 머리에, 내 공방 카드에는 도감 칩이 그대로 있다
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await expect(page.locator('.workshop-meta')).toContainText('도감 0 / ');
   // B0a: 학년 카드 → 영역 카드 → 영역의 단계 지도 (정육면체·직육면체는 5학년의 두 영역)
   await page.getByRole('button', { name: /^5학년/ }).click();

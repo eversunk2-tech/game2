@@ -1089,7 +1089,7 @@ test.describe('끌어다 놓기 (움직임 줄이기)', () => {
 
 // ── 영역 (areas, B0a) ─────────────────────────────
 test.describe('엔진 영역', () => {
-  test('처음 화면: [시작하기] 대신 영역 카드(차시가 없는 영역은 누를 수 없는 "준비 중" 카드, 없는 차시 id는 건너뜀). 카드를 누르면 그 영역의 차시만, 칩은 영역 안의 차례', async ({ page }) => {
+  test('처음 화면: [시작하기] 대신 영역 카드(차시가 없는 영역은 누를 수 없는 "준비 중" 카드, 없는 차시 id는 건너뜀). 카드를 누르면 그 영역의 차시만, 칩은 영역 안의 차례(차시가 하나뿐인 영역은 칩 없음)', async ({ page }) => {
     const errors = collectErrors(page);
     await page.goto(AREA_URL);
     await expect(page.locator('h1')).toHaveText('영역 시험 공방');
@@ -1115,7 +1115,7 @@ test.describe('엔진 영역', () => {
     await expect(page.locator('.challenge-card')).toHaveCount(1);
     await page.getByRole('tab', { name: '둘째 영역' }).click();
     await expect(page.locator('.lesson-group h3')).toHaveText(['다 차시']);
-    await expect(page.locator('.lesson-no')).toHaveText(['1차시']);
+    await expect(page.locator('.lesson-no')).toHaveCount(0); // 차시가 하나뿐인 영역은 칩 없이 차시 제목만 (B0c 덧붙임 — B0a-2)
     await expect(page.locator('.star-total')).toHaveText('모은 별 0 / 6');
     expect(errors).toEqual([]);
   });
