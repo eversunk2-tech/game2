@@ -9,6 +9,7 @@ import meta from './game.json' with { type: 'json' };
 import { createGameApp } from '../../shared/ui/app.js';
 import { areaArt } from './thumbs.js'; // 학년·영역 카드와 탭 그림
 import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
+import { CUBOID_HOW_TO_MORE } from './cuboid-main.js'; // 직육면체 영역의 놀이 방법에 덧붙이는 줄(상자 크기 · 돌리기 손잡이, spec 16-16)
 import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
 import { playDice } from './play-dice.js';
@@ -125,6 +126,7 @@ const CUBOID_HOW_TO = [
   ...CUBE_HOW_TO.slice(0, 4),
   '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 서로 다른 전개도를 3가지까지 찾아봐요.',
 ];
+CUBOID_HOW_TO.push(...CUBOID_HOW_TO_MORE);
 const GRADES = [
   { grade: 5, title: '5학년', note: '정육면체, 직육면체 전개도 탐구', art: areaArt('grade5') },
   { grade: 6, title: '6학년', note: '각기둥의 전개도, 쌓기나무 탐구, 원기둥의 전개도 탐구', art: areaArt('grade6') },

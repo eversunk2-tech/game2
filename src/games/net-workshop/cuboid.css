@@ -205,6 +205,105 @@
 .rect-card.is-used { background-image: none; background-color: var(--paper-2); font-size: 1rem; }
 .rect-card.is-used .size-rect { opacity: 0.45; }
 
+/* ── 돌리기 손잡이 (spec 16-16): 고른 면·카드의 모서리에 ↻ (48px). 잡고 돌리면 면이 따라 돌고, 놓으면 90°로 맞춰진다 ── */
+.rect-tray { position: relative; }
+.rect-card .size-rect { width: calc(var(--card-cm) * var(--card-k, 1) * var(--cw, 1)); height: calc(var(--card-cm) * var(--card-k, 1) * var(--ch, 1)); }
+.turn-handle {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 2.5px solid var(--ink);
+  border-radius: 50%;
+  background: var(--butter);
+  box-shadow: 0 3px 0 var(--ink);
+  color: var(--ink);
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.turn-handle .icon { width: 26px; height: 26px; stroke-width: 2.8; }
+.turn-handle:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.free-play.is-turning-face, .free-play.is-turning-face .turn-handle { cursor: grabbing; }
+.free-play.is-dragging-any .turn-handle { visibility: hidden; }
+
+/* ── 상자 크기 정하기 (spec 16-16): 오른쪽 판의 ± 버튼, 매트에는 그 상자(끌어서 돌려 본다) ── */
+.box-head { align-items: center; }
+.box-head .box-tip { flex: 1; min-width: 0; text-align: right; line-height: 1.3; }
+.box-change { flex: none; min-height: var(--tap); padding: 6px 12px; font-size: 0.95rem; }
+.box-chooser { display: flex; flex-direction: column; gap: 10px; }
+.box-chooser-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0; }
+.box-chooser-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.box-range { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
+.box-steppers { display: flex; flex-direction: column; gap: 8px; max-width: 26rem; }
+.box-stepper { display: grid; grid-template-columns: 3.4em var(--tap) 1fr var(--tap); align-items: center; gap: 8px; }
+.box-axis { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.box-step { width: var(--tap); min-height: var(--tap); padding: 0; font-family: var(--font-display); font-size: 1.6rem; line-height: 1; }
+.box-value { text-align: center; font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; }
+.box-cards, .box-notice, .box-confirm-text { margin: 0; font-size: 0.92rem; font-weight: 700; line-height: 1.45; color: var(--ink-2); }
+.box-notice { color: var(--correct); }
+.box-notice.is-wrong { color: var(--wrong); }
+.box-confirm { display: flex; flex-direction: column; gap: 8px; }
+.box-confirm-text { color: var(--ink); }
+.free-panel.is-choosing .found-nets,
+.free-panel.is-choosing .free-buttons { display: none; }
+/* 매트의 상자: 놓는 판 자리에 접은 직육면체. 면 이름(가~바)은 입체와 함께 돌아 눕거나 뒤집혀 보이므로 숨기고 색과 길이 이름표로 본다 */
+.box-stage { position: absolute; inset: 20px 14px 14px; }
+.box-stage .fold-stage { inset: 0 0 46px; }
+.box-stage .face-label { visibility: hidden; }
+.box-caption {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  margin: 0;
+  max-width: calc(100% - 16px);
+  padding: 4px 14px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  font-weight: 800;
+  font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 직육면체 도감 주문: 도감 띠(도감 수 · 별 기준 막대 · [도감 보기])와 매트 위의 54칸 ── */
+.dex-strip-row { display: flex; align-items: center; gap: 12px; }
+.dex-meter { position: relative; flex: 1; height: 14px; border-radius: 999px; border: 2px solid var(--ink); background: var(--paper-2); margin-bottom: 14px; }
+.dex-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--butter); }
+.dex-meter-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
+.dex-meter-mark small { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; font-weight: 800; line-height: 1; white-space: nowrap; color: var(--ink-2); }
+.dex-meter-mark.is-reached small { color: var(--ink); }
+.dex-open { flex: none; min-height: var(--tap); padding: 6px 12px; font-size: 0.95rem; }
+.dex-board {
+  position: absolute;
+  inset: 16px 14px 14px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 2px solid var(--ink);
+  background: var(--paper);
+}
+.dex-board-head { display: flex; align-items: center; gap: 10px; }
+.dex-board-head b { display: inline-flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; }
+.dex-board-count { flex: 1; font-weight: 800; color: var(--ink-2); }
+.dex-board-close { min-height: var(--tap); padding: 6px 12px; font-size: 0.95rem; }
+.dex-board-grid { flex: 1; min-height: 0; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); gap: 4px; }
+.dex-cell { display: grid; place-items: center; min-width: 0; min-height: 0; border-radius: 6px; border: 2px solid var(--ink); background: var(--paper-2); font-family: var(--font-display); font-weight: 700; color: var(--ink-2); overflow: hidden; }
+.dex-cell.is-empty { border: 2px dashed var(--star-line); background: var(--paper); }
+.dex-cell.is-new { background: var(--butter-soft); box-shadow: inset 0 0 0 3px var(--butter); }
+.dex-cell.is-same { box-shadow: inset 0 0 0 3px var(--primary); }
+.dex-cell .mini-net { width: 88%; height: 88%; }
+
 /* 찾은 전개도 띠: 이번 판에 찾은 것(3칸) + 이 기기에서 찾은 가지 수 */
 .found-nets { display: flex; flex-direction: column; gap: 8px; }
 .found-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
@@ -275,4 +374,5 @@
   .cuboid-free .edit-tools .tool-undo { width: var(--tap); padding: 0; }
   .cuboid-free .edit-tools .tool-clear span,
   .cuboid-free .edit-tools .tool-undo span { display: none; }
+  .dex-board-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }

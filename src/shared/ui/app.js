@@ -35,6 +35,8 @@ import {
   collectionXp,
   normalizeCollectionState,
   normalizeCollections,
+  reportedQuiet,
+  xpAfterCount,
 } from '../core/collection.js';
 import { MAX_STARS, clampStars, createProgress, starsFromAccuracy } from '../core/progress.js';
 import { createRng } from '../core/random.js';
@@ -1111,7 +1113,9 @@ export function createGameApp({
           if (rewardsOn) {
             // 새로 찾음 점수(기본 +5, 도감 정의의 xp)는 칸과 함께 바로 저장한다(같은 칸으로 다시 받을 수 없다)
             // 도감 정의에 xpAfter가 있으면 그만큼 찬 뒤의 칸은 그 점수 — 몇 번째인지는 방금 등록한 뒤의 칸 수(r.count)로 센다
-            const gain = discoverXp(collectionXp(collections.find((c) => c.id === id), r.count));
+            // (xpAfter.with가 있으면 함께 세는 모음의 칸까지 합친 수 — xpAfterCount)
+            const def = collections.find((c) => c.id === id);
+            const gain = discoverXp(collectionXp(def, xpAfterCount(collectionState, collections, def)));
             const xp = finished ? gain : play.discovered(gain);
             rewardStore.addXp(xp);
             if (!finished) savedXp += xp;
@@ -1402,6 +1406,8 @@ export function createGameApp({
     const collectionParts = [
       chips.main && `도감 ${chips.main.count}/${chips.main.total}`,
       ...chips.side.map((c) => sideText(c, '/')),
+      // 보이지 않는 모음 가운데 report: true인 것은 찾은 칸이 있을 때만 "제목 n/m" (예: 직육면체 전개도 3/54)
+      ...reportedQuiet(collectionState, collections).map((c) => `${c.title} ${c.count}/${c.total}`),
     ].filter(Boolean);
     const copyButton = button('결과 복사', async () => {
       const extra = [];

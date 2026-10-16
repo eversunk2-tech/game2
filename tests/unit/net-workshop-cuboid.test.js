@@ -427,15 +427,18 @@ test('만나는 선분: 테두리 선분 14개는 7쌍이고 서로 짝이며 �
 });
 
 // ── 단계와 문항 ─────────────────────────────
-test('직육면체 차시: 정육면체 차시 다음에 오고, 일반 4단계(만나는 선분 5 · 알맞은 면 4 · 길이까지 살펴요 5 · 내 맘대로 전개도), tag는 기획서 오개념 표의 말', () => {
+test('직육면체 차시: 정육면체 차시 다음에 오고, 일반 4단계(만나는 선분 5 · 알맞은 면 4 · 길이까지 살펴요 5 · 내 맘대로 전개도) + 도전 주문서 "직육면체 도감 주문"(spec 16-16), tag는 기획서 오개념 표의 말', () => {
   assert.deepEqual(LESSONS.map((l) => l.id).slice(0, 2), ['cube', 'cuboid']);
   assert.deepEqual(LESSONS[1], CUBOID_LESSON);
   const mine = STAGES.filter((s) => s.lesson === 'cuboid');
   assert.deepEqual(mine, CUBOID_STAGES);
   assert.deepEqual(mine.map((s) => [s.id, s.kind, s.count, Boolean(s.challenge)]), [
     ['cuboid-edge', 'edge', 5, false], ['cuboid-face', 'face', 4, false], ['cuboid-judge', 'cjudge', 5, false], ['cuboid-free', 'cfree', 2, false],
+    ['cuboid-dex', 'cdex', 54, true], // 도전 주문서: 일반 4단계를 마치면 열리고 차시 별 합계에 넣지 않는다. 시간 재기는 켠 학생만
   ]);
-  assert.deepEqual(mine.map((s) => s.order), ['짝 찾기 주문', '수선 주문', '검사 주문', '설계 주문']);
+  assert.equal(mine[4].timer, 'optional');
+  assert.deepEqual(mine.map((s) => s.order), ['짝 찾기 주문', '수선 주문', '검사 주문', '설계 주문', '도감 주문']);
+  assert.doesNotMatch(mine[4].goal, /예상|예측/);
   assert.equal(new Set(STAGES.map((s) => s.id)).size, STAGES.length);
   // 직접 만드는 단계의 목표 문장에는 "예상"이 없다 (spec 16-12)
   assert.doesNotMatch(mine[3].goal, /예상|예측/);

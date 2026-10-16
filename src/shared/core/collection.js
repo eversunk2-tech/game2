@@ -13,6 +13,9 @@
  *   xpAfter: { count, xp } — 칸이 count개 찬 뒤에(count + 1번째 칸부터) 처음 등록하는 칸은 xp 대신 이 점수를 준다(0~xp 사이 정수).
  *     칸이 아주 많은 모음에서 점수가 끝없이 쌓이지 않게 할 때 쓴다(예: 54가지 가운데 처음 10가지만 +5, 그 뒤는 +1).
  *     몇 번째인지는 등록하는 순간 그 모음에 든 칸 수로 센다 — 어떤 칸을 먼저 찾든, 몇 판에 나눠 찾든 점수의 합이 같다
+ *     xpAfter.with: [다른 모음 id] — 몇 번째인지를 그 모음들에 든 칸까지 합쳐 센다(한 묶음으로 "처음 count가지"를 셀 때.
+ *     예: 직육면체 전개도 54가지 + 두 길이가 같은 직육면체 전개도 29가지를 합쳐 처음 10가지). 묶음의 모음끼리 서로 적어 두면 어느 쪽에 먼저 넣든 같다
+ *   report: true면 보이지 않는 모음(quiet)이라도 결과 복사 문장에 "제목 n/m"을 한 칸 넣는다(찾은 칸이 있을 때만)
  */
 import { XP } from './rewards.js';
 
@@ -21,7 +24,7 @@ export function normalizeCollections(defs) {
   if (defs == null) return [];
   if (!Array.isArray(defs)) throw new Error('collections는 배열이에요.');
   const ids = new Set();
-  return defs.map((def) => {
+  const out = defs.map((def) => {
     if (!def?.id || !def?.title || !Array.isArray(def.items) || def.items.length === 0) {
       throw new Error('collections: 도감마다 id, title, items(칸 목록)가 필요해요.');
     }
@@ -40,7 +43,12 @@ export function normalizeCollections(defs) {
       if (!(Number.isInteger(count) && count >= 1 && Number.isInteger(xp) && xp >= 0 && xp <= top)) {
         throw new Error(`collections(${def.id}): xpAfter는 { count: 1 이상 정수, xp: 0~${top} 사이 정수 }예요.`);
       }
+      const group = def.xpAfter.with;
+      if (group != null && !(Array.isArray(group) && group.every((id) => typeof id === 'string' && id && id !== def.id))) {
+        throw new Error(`collections(${def.id}): xpAfter.with는 함께 셀 다른 모음 id의 배열이에요.`);
+      }
     }
+    if (def.report != null && typeof def.report !== 'boolean') throw new Error(`collections(${def.id}): report는 true나 false예요.`);
     const itemIds = new Set();
     const items = def.items.map((item) => {
       if (item?.id == null || !item?.name) throw new Error(`collections(${def.id}): 칸마다 id와 name이 필요해요.`);
@@ -52,6 +60,12 @@ export function normalizeCollections(defs) {
     });
     return { ...def, items };
   });
+  for (const def of out) {
+    for (const id of def.xpAfter?.with ?? []) {
+      if (!ids.has(id)) throw new Error(`collections(${def.id}): xpAfter.with에 없는 모음이 있어요 (${id}).`);
+    }
+  }
+  return out;
 }
 
 /** 저장된 값을 안전한 모양으로. 도감에 없는 칸은 버린다. */
@@ -121,6 +135,26 @@ export function collectItem(state, defs, collectionId, itemId, { at = Date.now()
   const next = { ...state, [def.id]: { ...current, [id]: { at, stage } } };
   const s = collectionStatus(next, def);
   return { state: next, isNew: true, count: s.count, total: s.total, item, known: true };
+}
+
+/**
+ * 점수 상한(xpAfter)을 셀 때의 칸 수: 그 모음에 든 칸 수 + xpAfter.with에 적은 모음들에 든 칸 수.
+ * ctx.collect가 등록한 바로 뒤의 상태로 부르면 "이 칸이 묶음에서 몇 번째인가"가 된다
+ */
+export function xpAfterCount(state, defs, def) {
+  if (!def) return 0;
+  const group = [def, ...(def.xpAfter?.with ?? []).map((id) => defs.find((d) => d.id === id)).filter(Boolean)];
+  return group.reduce((sum, d) => sum + collectionStatus(state, d).count, 0);
+}
+
+/**
+ * 결과 복사 문장에 넣을 보이지 않는 모음(quiet + report)의 칸: [{ id, title, count, total }] — 찾은 칸이 있는 것만
+ */
+export function reportedQuiet(state, defs) {
+  return defs.filter((def) => def.quiet && def.report).map((def) => {
+    const s = collectionStatus(state, def);
+    return { id: def.id, title: def.title, count: s.count, total: s.total };
+  }).filter((c) => c.count > 0);
 }
 
 /**
