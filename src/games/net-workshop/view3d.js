@@ -887,7 +887,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       const start = performance.now();
       el.dataset.fold = 'folding';
       const step = (now) => {
-        const p = Math.min(1, (now - start) / ms);
+        // 첫 프레임의 시각(프레임이 시작된 때)은 누른 처리 안에서 잰 start보다 앞설 수 있다: 0 아래로 내려가면 접는 정도가 0 근처에서 오르내린다
+        const p = Math.max(0, Math.min(1, (now - start) / ms));
         raf = p < 1 ? requestAnimationFrame(step) : 0;
         // 다 펴는 움직임: 끝나기 0.2초 전부터 처음 모습으로 잇기 시작해, 펴지는 것과 처음 모습으로 돌아가는 것이 함께 끝난다
         // (움직임 없이 바로 바꾸는 저사양에서는 미리 하지 않는다 — 다 펴진 때 바뀐다)
