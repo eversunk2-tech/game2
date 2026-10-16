@@ -237,6 +237,8 @@ function createPaints({ ctx, bench }) {
       topBox.hidden = !kinds.includes('top');
       paintRow.replaceChildren(...kinds.filter((k) => k !== 'top').map((k) => grids[k].el));
       paintRow.hidden = paintRow.childElementCount === 0;
+      // 판이 매트 아래로 가는 배치(태블릿 세로 등)에서는 모눈을 왼쪽 칸에, 물음·까닭·[다음 문제]를 오른쪽 칸에 둔다(blocks.css)
+      bench.panel.classList.toggle('has-paints', !paintRow.hidden);
       for (const grid of Object.values(grids)) {
         grid.set();
         grid.lock(false);
@@ -245,6 +247,7 @@ function createPaints({ ctx, bench }) {
     hide() {
       topBox.hidden = true;
       paintRow.hidden = true;
+      bench.panel.classList.remove('has-paints');
     },
     get: (kinds) => Object.fromEntries(kinds.map((k) => [k, grids[k].get()])),
     lock(value) {

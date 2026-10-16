@@ -257,15 +257,11 @@ async function solveNumViews(page, testInfo, q) {
 }
 
 // ── 차시 흐름 ─────────────────────────────
+// 처음 화면·[시작하기]·단계 지도는 거치지 않는다(영역 화면이 생기면 바뀐다): 차시의 첫 단계 주소로 바로 들어가 [다음 단계]로 잇는다
 test('3차시(?lesson=blocks-three): 앞과 뒤, 오른쪽과 왼쪽 → 위, 앞, 옆에서 본 모양 그리기 → 위, 앞, 옆을 보고 쌓기 를 처음부터 끝까지', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?lesson=blocks-three&seed=1&sound=off'));
-  await page.getByRole('button', { name: '시작하기' }).click();
-  await expect(page.locator('.lesson-no')).toHaveText(['쌓기나무 3차시']);
-  await expect(page.locator('.stage-card .stage-title')).toHaveText(['앞과 뒤, 오른쪽과 왼쪽', '위, 앞, 옆에서 본 모양 그리기', '위, 앞, 옆을 보고 쌓기']);
-  await expect(page.locator('.stage-thumb svg')).toHaveCount(3);
-  await page.locator('.stage-card').first().click();
+  await page.goto(fileUrl(FILE, '?lesson=blocks-three&stage=blocks-flip&seed=1&sound=off'));
   await expect(page.locator('.order-kind')).toHaveText('관찰 주문');
   for (const q of questionsFor('blocks-flip')) await solveFlip(page, testInfo, q);
   await expect(page.getByRole('heading', { name: '단계 성공!' })).toBeVisible();
@@ -292,11 +288,7 @@ test('3차시(?lesson=blocks-three): 앞과 뒤, 오른쪽과 왼쪽 → 위, �
 test('4차시(?lesson=blocks-number): 자리마다 몇 개? → 수를 보고 쌓기 → 수만 보고 알아내기 를 처음부터 끝까지', async ({ page }, testInfo) => {
   test.setTimeout(120_000);
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?lesson=blocks-number&seed=1&sound=off'));
-  await page.getByRole('button', { name: '시작하기' }).click();
-  await expect(page.locator('.lesson-no')).toHaveText(['쌓기나무 4차시']);
-  await expect(page.locator('.stage-card .stage-title')).toHaveText(['자리마다 몇 개?', '수를 보고 쌓기', '수만 보고 알아내기']);
-  await page.locator('.stage-card').first().click();
+  await page.goto(fileUrl(FILE, '?lesson=blocks-number&stage=blocks-write&seed=1&sound=off'));
   await expect(page.locator('.order-kind')).toHaveText('기록 주문');
   for (const q of questionsFor('blocks-write')) await solveWrite(page, testInfo, q);
   await expect(page.getByText('3번 중 3번 맞힘')).toBeVisible();
@@ -1126,8 +1118,8 @@ test('접근성: 모눈·수 쓰기 판의 이름과 칸 이름, 주어진 그�
   await writeByPress(page, testInfo, w.target);
   await page.locator('.blk-check').click();
   await page.evaluate(() => document.querySelector('.btn-back').click());
-  await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => document.querySelectorAll('.blk-stage').length)).toBe(0);
+  // 단계에서 나갔다(나간 뒤의 화면은 영역 화면이 생기면 바뀌므로 무대가 없어진 것만 본다)
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('.blk-stage, .blk-panel').length)).toBe(0);
   expect(errors).toEqual([]);
 });
 

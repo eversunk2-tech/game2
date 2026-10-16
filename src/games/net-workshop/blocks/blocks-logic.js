@@ -120,7 +120,7 @@ export const BLOCK_STAGES = [
   {
     id: 'blocks-draw', lesson: 'blocks-three', area: 'blocks', kind: 'draw', count: 3, order: '기록 주문',
     title: '위, 앞, 옆에서 본 모양 그리기',
-    goal: '만든 모양을 보고 위, 앞, 옆에서 본 모양을 모눈에 칠해요.',
+    goal: '만든 모양을 보고 위, 앞, 옆에서 본 모양을 칠해요.',
   },
   {
     id: 'blocks-build', lesson: 'blocks-three', area: 'blocks', kind: 'build', count: 3, order: '설계 주문',

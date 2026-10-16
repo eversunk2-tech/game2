@@ -282,6 +282,13 @@
   .blk-options, .blk-options.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .blk-option .blk-flat { width: 108px; }
 }
+/* 판이 아래로 가는 배치(1000px 이하)에서 모눈을 칠하는 문항: 모눈은 왼쪽 칸(주어진 그림 자리), 물음·까닭·[다음 문제]는 오른쪽 칸 —
+   한 줄로 쌓으면 모눈 한 줄(약 180px)만큼 판이 길어져 태블릿 세로(820×1180)에서 글자가 넓은 기기면 화면을 넘친다 */
+@media (max-width: 1000px) and (min-width: 561px) {
+  .blk-bench .blk-panel.has-paints > * { grid-column: 2; }
+  .blk-bench .blk-panel.has-paints > .order-head { grid-column: 1 / -1; }
+  .blk-bench .blk-panel.has-paints > .blk-answer { grid-column: 1; grid-row: 2 / span 7; align-self: start; }
+}
 /* 판이 아래로 가는 배치인데 화면이 낮은 기기(가로로 든 작은 태블릿 960×768 등 — 높이 820px 이하): 매트를 440px까지만 높여
    아래 판의 물음·까닭·[다음 문제]가 조금이라도 더 한 화면에 들어오게 한다(review-blocks S1b-3). 쌓기나무 크기·조작 칸 자리는 그대로 들어간다 */
 @media (max-width: 1000px) and (min-width: 561px) and (max-height: 820px) {
