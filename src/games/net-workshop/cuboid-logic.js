@@ -719,6 +719,18 @@ export function boxNotice(dims, { dex = false } = {}) {
   if (kind === 'cube') return { text: '세 모서리의 길이가 모두 같으면 정육면체예요. 정육면체도 직육면체라 그대로 만들 수 있어요.', block: false };
   return null;
 }
+/**
+ * 판이 좁을 때(휴대폰 — 교실 기기가 아니다)의 안내: 그 상자의 전개도 가운데 판에 들어가는 것이 하나도 없으면 고를 수 없고(block),
+ * 일부만 들어가면 몇 가지인지 알린다 → { text, block } | null
+ */
+export function boxBoardNotice(dims, board) {
+  const list = boxCatalog(dims).list;
+  const fit = list.filter((n) => centerOnBoard(n.net, board)).length;
+  if (fit === list.length) return null;
+  if (fit === 0) return { text: '이 화면의 판에는 이 상자의 전개도가 들어가지 않아요. 더 작은 상자를 골라요.', block: true };
+  return { text: `이 화면의 판에는 이 상자의 전개도 ${list.length}가지 가운데 ${fit}가지만 들어가요.`, block: false };
+}
+
 /** 힌트 글: 가장 긴 모서리끼리 이어 네 장을 한 줄로 → 남은 두 장을 위와 아래에 (처음 상자는 지금까지의 글과 같다) */
 export function boxHintText(dims) {
   if (boxKind(dims) === 'cube') return '면 네 장을 한 줄로 이어 놓고, 남은 두 장을 그 줄의 위와 아래에 하나씩 붙여 봐요.';

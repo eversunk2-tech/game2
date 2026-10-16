@@ -10,6 +10,7 @@ import { createGameApp } from '../../shared/ui/app.js';
 import { areaArt } from './thumbs.js'; // 학년·영역 카드와 탭 그림
 import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
 import { CUBOID_HOW_TO_MORE } from './cuboid-main.js'; // 직육면체 영역의 놀이 방법에 덧붙이는 줄(상자 크기 · 돌리기 손잡이, spec 16-16)
+import { CUBOID_BADGES } from './cuboid-main.js'; // 직육면체 차시의 도장: 직육면체 도감 완성(spec 16-17 — 도장판 13칸)
 import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
 import { playDice } from './play-dice.js';
@@ -86,6 +87,7 @@ const BADGES = [
     test: (s) => (s.collections['cube-non-nets']?.count ?? 0) >= 12,
   },
 ];
+BADGES.push(...CUBOID_BADGES); // 직육면체 도감 완성 (cuboid-main.js, spec 16-17)
 
 // 도감 2개: 내 맘대로 전개도와 도감 주문에서 직접 만들어 접은 모양만 등록한다 (판별에서 본 것, 주사위 주문에서 접은 것은 아님)
 // "도감 n / 11" 칩에는 전개도 도감만 세고, 노트는 label로 따로 "노트 n / 24". 노트 등록 점수는 +1 (spec 16-8)

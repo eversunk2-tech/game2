@@ -234,6 +234,7 @@
 /* ── 상자 크기 정하기 (spec 16-16): 오른쪽 판의 ± 버튼, 매트에는 그 상자(끌어서 돌려 본다) ── */
 .box-head { align-items: center; }
 .box-head .box-tip { flex: 1; min-width: 0; text-align: right; line-height: 1.3; }
+.box-tip-axis { white-space: nowrap; } /* 축마다 한 덩어리: "높이 4 cm"가 숫자와 단위 사이에서 갈리지 않는다 */
 .box-change { flex: none; min-height: var(--tap); padding: 6px 12px; font-size: 0.95rem; }
 .box-chooser { display: flex; flex-direction: column; gap: 10px; }
 .box-chooser-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0; }
@@ -255,6 +256,24 @@
 .box-stage { position: absolute; inset: 20px 14px 14px; }
 .box-stage .fold-stage { inset: 0 0 46px; }
 .box-stage .face-label { visibility: hidden; }
+/* 가로·세로·높이 이름표: 입체와 함께 줄지 않는 화면 크기 글자(14px쯤), 그 모서리 가운데 바깥 (cuboid-free.js placeBoxTags) */
+.box-tags { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.box-tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 2px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 0 var(--ink);
+}
 .box-caption {
   position: absolute;
   left: 50%;
@@ -275,6 +294,13 @@
 
 /* ── 직육면체 도감 주문: 도감 띠(도감 수 · 별 기준 막대 · [도감 보기])와 매트 위의 54칸 ── */
 .dex-strip-row { display: flex; align-items: center; gap: 12px; }
+/* 도감 띠의 머리 줄: 이름 · 도감 수 · [도감 보기] — 띠를 접어도 이 줄은 남는다 */
+.dex-strip-head { align-items: center; flex-wrap: wrap; }
+.dex-strip-head .dex-strip-count { flex: 1; text-align: right; }
+.dex-strip-head .dex-open { margin-left: 4px; }
+/* 도감 보기가 매트를 덮는 동안: 아래 도구 띠 · 보기 조작판을 숨긴다 */
+.free-mat.is-dex-open .mat-tools,
+.free-mat.is-dex-open .view-pad { visibility: hidden; }
 .dex-meter { position: relative; flex: 1; height: 14px; border-radius: 999px; border: 2px solid var(--ink); background: var(--paper-2); margin-bottom: 14px; }
 .dex-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--butter); }
 .dex-meter-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
@@ -341,8 +367,15 @@
   .rect-card { min-height: 58px; }
 }
 
-/* 태블릿 세로: 상자 크기 정하기는 두 칸(왼쪽 ± · 오른쪽 안내와 버튼) — 아래 판이 길어져 화면이 넘치지 않게 */
+/* 태블릿 세로: 상자 크기 정하기는 두 칸(왼쪽 ± · 오른쪽 안내와 버튼) — 아래 판이 길어져 화면이 넘치지 않게.
+   도감 띠는 한 줄: [직육면체 도감] [n / 54] [별 기준 막대] [도감 보기] */
 @media (min-width: 561px) and (max-width: 900px) {
+  .dex-strip { flex-direction: row; align-items: center; }
+  .dex-strip-head { display: contents; }
+  .dex-strip-head > b { order: 0; flex: none; }
+  .dex-strip-head .dex-strip-count { order: 1; flex: none; text-align: left; }
+  .dex-strip-row { order: 2; flex: 1; min-width: 0; }
+  .dex-strip-head .dex-open { order: 3; margin-left: 0; }
   .box-chooser {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

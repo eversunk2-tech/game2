@@ -36,6 +36,7 @@ import {
   CUBOID_LATER_NOTE,
   DEFAULT_BOX,
   boxBoard,
+  boxBoardNotice,
   boxCards,
   boxCardsText,
   boxHintText,
@@ -77,6 +78,8 @@ const PHONE = '(max-width: 560px)';
 const MILESTONES = [5, 10, 20, 30, 40, 54];
 const cm = (value) => `${Math.round(value * 100) / 100} cm`;
 const FACE_COUNT = 6;
+/** 도감 주문을 별 없이 멈춘 판의 결과 제목·도장 글 (엔진 finish({ title, stamp })) */
+const CUBOID_DEX_PAUSE = Object.freeze({ title: '오늘은 여기까지!', stamp: Object.freeze(['다음에', '또 찾아요']) });
 
 export function playCuboidFree(stage, ctx) {
   const { h } = ctx;
@@ -125,14 +128,61 @@ export function playCuboidFree(stage, ctx) {
   // 상자 보기: 크기를 고르는 동안 매트에 그 직육면체(끌어서 돌려 본다 — 답을 알려 주는 것이 아니라 언제든 돌려도 된다).
   // 고르는 동안에만 만든다: 접는 무대(.fold-stage)가 문서에 늘 하나이게
   let boxView = null;
+  let boxRaf = 0;
   const boxCaption = h('p', { class: 'box-caption', 'aria-hidden': 'true' });
-  const boxStage = h('div', { class: 'box-stage', hidden: true }, boxCaption);
+  // 가로·세로·높이 이름표: 입체 위에 그리면 상자와 함께 작아져(작게는 6px) 읽기 어렵다 — 화면 크기 그대로인 이름표를 모서리 가운데 바깥에 둔다
+  const boxTags = BOX_AXES.map(() => h('span', { class: 'box-tag' }));
+  const boxTagLayer = h('div', { class: 'box-tags', 'aria-hidden': 'true' }, boxTags);
+  const boxStage = h('div', { class: 'box-stage', hidden: true }, boxTagLayer, boxCaption);
   function closeBoxView() {
     boxStage.hidden = true;
+    cancelAnimationFrame(boxRaf);
+    boxRaf = 0;
     if (!boxView) return;
     boxView.destroy();
     boxView.el.remove();
     boxView = null;
+  }
+  /**
+   * 이름표 자리: 띠(그 모서리)의 화면 가운데에서 상자 가운데의 반대쪽으로 조금 밖에. 이름표끼리 겹치면 바깥으로 더 민다. 상자 보기 안으로 당긴다.
+   * 그 띠가 놓인 면이 등을 보이면(돌려서 안 보이는 면) 그 이름표는 숨긴다. 돌리는 동안 따라가도록 그림마다 다시 놓는다
+   */
+  function placeBoxTags() {
+    if (!boxView || boxStage.hidden) return;
+    const stage = boxStage.getBoundingClientRect();
+    const faces = [...boxView.el.querySelectorAll('.net-face')].map((f) => f.getBoundingClientRect());
+    if (faces.length === 0 || stage.width === 0) return;
+    const cx = (Math.min(...faces.map((b) => b.left)) + Math.max(...faces.map((b) => b.right))) / 2;
+    const cy = (Math.min(...faces.map((b) => b.top)) + Math.max(...faces.map((b) => b.bottom))) / 2;
+    const bands = [...(boxView.faceEl('f0')?.querySelectorAll('.edge-band') ?? []), ...(boxView.faceEl('f2')?.querySelectorAll('.edge-band') ?? [])];
+    const placed = [];
+    boxTags.forEach((tag, i) => {
+      const band = bands[i];
+      const hidden = !band || band.closest('.net-face').classList.contains('is-back');
+      tag.hidden = hidden;
+      if (hidden) return;
+      const b = band.getBoundingClientRect();
+      const [mx, my] = [b.left + b.width / 2, b.top + b.height / 2];
+      let [dx, dy] = [mx - cx, my - cy];
+      const len = Math.hypot(dx, dy) || 1;
+      [dx, dy] = [dx / len, dy / len];
+      const [w, hgt] = [tag.offsetWidth, tag.offsetHeight];
+      let push = Math.max(w * Math.abs(dx), hgt * Math.abs(dy)) / 2 + 10;
+      let box = null;
+      for (let step = 0; step < 40; step += 1) {
+        const left = Math.max(2, Math.min(stage.width - w - 2, mx + dx * push - w / 2 - stage.left));
+        const top = Math.max(2, Math.min(stage.height - hgt - 2, my + dy * push - hgt / 2 - stage.top));
+        box = { left, top, right: left + w, bottom: top + hgt };
+        if (!placed.some((q) => box.left < q.right + 4 && q.left < box.right + 4 && box.top < q.bottom + 4 && q.top < box.bottom + 4)) break;
+        push += 6;
+      }
+      placed.push(box);
+      tag.style.transform = `translate(${box.left.toFixed(1)}px, ${box.top.toFixed(1)}px)`;
+    });
+  }
+  function followBoxTags() {
+    placeBoxTags();
+    boxRaf = requestAnimationFrame(followBoxTags);
   }
 
   // 도감 보기(도감 주문): 매트 위에 54칸
@@ -194,9 +244,10 @@ export function playCuboidFree(stage, ctx) {
   const dexMarks = [10, 20, 30].map((n) => h('span', { class: 'dex-meter-mark', style: { left: `${(n / CUBOID_DEX_COUNT) * 100}%` } }, h('small', null, `${n}`)));
   const dexOpen = h('button', { type: 'button', class: 'btn dex-open', onclick: () => showDexBoard(true) }, icon('book'), h('span', null, '도감 보기'));
   const dexStripCount = h('span', { class: 'found-count dex-strip-count' });
-  const dexStripRow = h('div', { class: 'dex-strip-row' }, h('span', { class: 'dex-meter', 'aria-hidden': 'true' }, dexMeter, dexMarks), dexOpen);
+  const dexStripRow = h('div', { class: 'dex-strip-row' }, h('span', { class: 'dex-meter', 'aria-hidden': 'true' }, dexMeter, dexMarks));
+  // [도감 보기]는 머리 줄에 둔다: 판 안쪽이 넘쳐 띠를 한 줄로 접어도(54칸을 다 채운 장면 등) 늘 보인다
   const dexStrip = h('section', { class: 'found-nets dex-strip', 'aria-label': '직육면체 전개도 도감' },
-    h('div', { class: 'found-head' }, h('b', null, icon('book'), '직육면체 도감'), dexStripCount),
+    h('div', { class: 'found-head dex-strip-head' }, h('b', null, icon('book'), '직육면체 도감'), dexStripCount, dexOpen),
     dexStripRow,
   );
   const shelf = dexMode ? dexStrip : foundEl;
@@ -238,7 +289,8 @@ export function playCuboidFree(stage, ctx) {
     board = createRectBoard({ ctx, adapter: rectAdapter({ ...size, cards: boxCards(box) }), root: bench, onChange: (_, message) => update(message) });
     traySlot.append(board.trayEl);
     host.prepend(board.el);
-    boxTip.textContent = boxText(box);
+    // 축마다 한 덩어리(줄이 바뀌어도 "4 / cm"처럼 숫자와 단위가 갈리지 않게)
+    boxTip.replaceChildren(...box.flatMap((v, i) => [i > 0 ? ' · ' : null, h('span', { class: 'box-tip-axis' }, `${BOX_AXES[i]} ${v} cm`)].filter(Boolean)));
     hintTextEl.textContent = boxHintText(box);
     board.fit(host);
   }
@@ -298,7 +350,7 @@ export function playCuboidFree(stage, ctx) {
   function renderShelf() {
     if (dexMode) {
       const count = dexCount();
-      dexStripCount.textContent = `${count} / ${CUBOID_DEX_COUNT}`;
+      dexStripCount.textContent = count >= CUBOID_DEX_COUNT ? `${count} / ${CUBOID_DEX_COUNT} 완성` : `${count} / ${CUBOID_DEX_COUNT}`;
       dexMeter.style.width = `${(count / CUBOID_DEX_COUNT) * 100}%`;
       dexMarks.forEach((mark, i) => mark.classList.toggle('is-reached', count >= [10, 20, 30][i]));
       dexOpen.setAttribute('aria-label', `도감 보기, 직육면체 전개도 ${count} / ${CUBOID_DEX_COUNT}`);
@@ -311,7 +363,11 @@ export function playCuboidFree(stage, ctx) {
       slot.setAttribute('aria-label', item ? `${i + 1}번째로 찾은 전개도${item.isNew ? ', 처음 찾음' : ''}` : `${i + 1}번째 칸, 아직 못 찾음`);
       slot.replaceChildren(item ? miniRects(item.rects) : h('small', null, i + 1 === CUBOID_FREE_FULL ? '별 3개' : i + 1 === goal ? '별 2개' : '별 1개'));
     });
-    foundCount.textContent = `지금까지 ${cuboidCount()}가지`;
+    // 무엇을 세는지 적는다(spec 16-17 M3-8): 정육면체 상자로는 1차시의 정육면체 도감을, 그 밖에는 이 기기의 직육면체 전개도(세 길이가 다른 것 + 두 길이가 같은 것)를
+    if (boxKind(box) === 'cube') {
+      const cube = ctx.collection(BOX_KINDS.cube.collection);
+      foundCount.textContent = `정육면체 도감 ${cube.found.size} / ${cube.total}`;
+    } else foundCount.textContent = `직육면체 전개도 ${cuboidCount()}가지`;
   }
 
   // ── 도감 보기 (도감 주문): 54칸 — 찾은 칸은 그 전개도의 작은 그림, 못 찾은 칸은 "?" ─────
@@ -333,6 +389,7 @@ export function playCuboidFree(stage, ctx) {
   }
   let dexReturn = null;
   function showDexBoard(open) {
+    mat.classList.toggle('is-dex-open', open); // 도감 보기가 매트를 덮는 동안 아래 도구 띠를 숨긴다(띠 끝이 비져나오지 않게)
     if (open) {
       renderDexBoard();
       dexReturn = document.activeElement;
@@ -457,12 +514,23 @@ export function playCuboidFree(stage, ctx) {
     boxView.setViewEnabled(true);
     // 이름표: 윗면(가)의 가로·세로 모서리, 앞면(다)의 높이 모서리 — 면 id는 펼친 순서(윗면 f0 · 아랫면 f1 · 앞면 f2 …), 변은 입체의 꼭짓점 순서
     boxView.setEdgeMarks([
-      { face: 'f0', edge: 0, tone: 'a', text: `가로 ${dims[0]} cm` },
-      { face: 'f0', edge: 1, tone: 'a', text: `세로 ${dims[1]} cm` },
-      { face: 'f2', edge: 1, tone: 'a', text: `높이 ${dims[2]} cm` },
+      { face: 'f0', edge: 0, tone: 'a' },
+      { face: 'f0', edge: 1, tone: 'a' },
+      { face: 'f2', edge: 1, tone: 'a' },
     ]);
+    boxTags.forEach((tag, i) => {
+      tag.textContent = `${BOX_AXES[i]} ${dims[i]} cm`;
+    });
+    if (!boxRaf) followBoxTags();
     boxCaption.textContent = boxKind(dims) === 'cube' ? `정육면체 · ${boxText(dims)}` : `직육면체 · ${boxText(dims)}`;
     boxView.el.setAttribute('aria-label', `고른 상자: ${boxCaption.textContent}. 끌거나 방향키로 돌려 볼 수 있어요.`);
+  }
+
+  /** 고르는 상자의 안내: 정육면체 · 도감 주문의 같은 길이(boxNotice)와, 판이 좁은 화면(휴대폰)에서 전개도가 판에 들어가지 않는 상자(boxBoardNotice) */
+  function chooserNotice(dims) {
+    const list = [boxNotice(dims, { dex: dexMode }), boxBoardNotice(dims, boxBoard(dims, { phone }))].filter(Boolean);
+    if (list.length === 0) return null;
+    return { text: list.map((n) => n.text).join(' '), block: list.some((n) => n.block) };
   }
 
   function renderChooser() {
@@ -473,7 +541,7 @@ export function playCuboidFree(stage, ctx) {
       s.more.disabled = pending[i] >= BOX_MAX;
     });
     chooseCards.textContent = `면 6장: ${boxCardsText(pending)}`;
-    const notice = boxNotice(pending, { dex: dexMode });
+    const notice = chooserNotice(pending);
     chooseNotice.textContent = notice?.text ?? '';
     chooseNotice.hidden = !notice;
     chooseNotice.classList.toggle('is-wrong', Boolean(notice?.block));
@@ -489,7 +557,7 @@ export function playCuboidFree(stage, ctx) {
     ctx.sfx.play('click');
     renderChooser();
     showBox(pending);
-    const notice = boxNotice(pending, { dex: dexMode });
+    const notice = chooserNotice(pending);
     ctx.feedback.announce(`${BOX_AXES[i]} ${next} cm${notice ? `. ${notice.text}` : ''}`);
   }
 
@@ -506,6 +574,7 @@ export function playCuboidFree(stage, ctx) {
     editSection.hidden = true;
     buttonsSlot.replaceChildren();
     dexBoard.hidden = true;
+    mat.classList.remove('is-dex-open');
     order.el.classList.add('is-choosing');
     chooseSection.hidden = false;
     boxStage.hidden = false;
@@ -523,7 +592,7 @@ export function playCuboidFree(stage, ctx) {
   }
 
   function applyBox({ confirmed = false } = {}) {
-    if (mode !== 'choose' || boxNotice(pending, { dex: dexMode })?.block) return;
+    if (mode !== 'choose' || chooserNotice(pending)?.block) return;
     if (sameBox(pending, box)) {
       leaveChoose();
       return;
@@ -536,7 +605,7 @@ export function playCuboidFree(stage, ctx) {
       chooseConfirm.replaceChildren(h('p', { class: 'box-confirm-text' }, `판에 놓은 면 ${count}장을 모두 거두고 새 크기의 면 카드로 바꿀까요?`), h('div', { class: 'btn-pair' }, yes, no));
       chooseButtons.hidden = true;
       chooseConfirm.hidden = false;
-      yes.focus({ preventScroll: true });
+      no.focus({ preventScroll: true }); // Enter 한 번에 놓인 면이 모두 거둬지지 않게 [취소]에 둔다
       ctx.feedback.announce(`판에 놓은 면 ${count}장을 모두 거두고 새 크기의 면 카드로 바꿀까요?`);
       return;
     }
@@ -571,6 +640,7 @@ export function playCuboidFree(stage, ctx) {
     const st = board.state();
     if (!rectReadiness(st.rects, FACE_COUNT).ready) return;
     dexBoard.hidden = true;
+    mat.classList.remove('is-dex-open');
     const layout = board.layout(); // 판을 숨기기 전에 칸 크기·자리를 잰다
     const dexBefore = dexCount();
     const before = playXp();
@@ -727,10 +797,8 @@ export function playCuboidFree(stage, ctx) {
     }
     const count = dexCount();
     if (count >= CUBOID_DEX_COUNT) {
-      buttonsSlot.replaceChildren(
-        h('p', { class: 'goal-done' }, icon('check'), `직육면체 전개도 ${CUBOID_DEX_COUNT}가지를 모두 찾았어요!`),
-        actionButton('btn-primary free-finish', 'play', '결과 보기', () => finish(), { after: true }),
-      );
+      // 다 채웠다는 것은 도감 띠("54 / 54 완성")가 알린다 — 놓는 화면에서는 줄을 더하지 않아 판 안쪽이 넘치지 않는다(낮은 화면에서도 [도감 보기]가 남게)
+      buttonsSlot.replaceChildren(actionButton('btn-primary free-finish', 'play', '결과 보기', () => finish(), { after: true }));
     } else if (canStop()) buttonsSlot.replaceChildren(stopButton());
     else buttonsSlot.replaceChildren(h('p', { class: 'dex-rule' }, icon('star'), '10가지 별 1개 · 20가지 별 2개 · 30가지 별 3개. 찾은 전개도는 다음에도 이어져요.'));
   }
@@ -783,6 +851,8 @@ export function playCuboidFree(stage, ctx) {
         highlights: cuboidDexHighlights(sum, { earned, dexCount: count }),
         stats: cuboidDexStats(sum),
         practiceNote: CUBOID_FREE_REPLAY_NOTE,
+        // 별 없이 멈춘 판(10가지 전): "도전 성공!" · "다시 해 봐요" 대신 이어 갈 판이라는 말로 (spec 16-17)
+        ...(stars === 0 ? CUBOID_DEX_PAUSE : {}),
       });
       return;
     }

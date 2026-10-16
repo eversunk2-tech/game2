@@ -324,7 +324,7 @@ test('옛 저장 값(학년·영역이 없던 때의 기록)으로 열어도 별
   // 내 공방 카드: 게임 하나에 하나 — 일반 단계의 별 합(도전 주문서 별은 빼는 엔진 규칙 그대로), 칭호, 도감, 도장
   await expect(page.locator('.rank-chip')).toContainText('접기 장인'); // 112점: 셋째 칭호(100점부터)
   await expect(page.locator('.rank-chip small')).toHaveText('112점');
-  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 12']);
+  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 13']); // 도장판 13칸: 직육면체 도감 완성(spec 16-17)
   // 학년 카드의 별: 5학년 3 + 2 + 1, 6학년 3 + 2. "지난번 영역" 값이 없으니 첫 학년에 "여기부터!"
   await expect(gradeCard(page, 5)).toHaveAccessibleName(gradeName(grade(5), 6, true));
   await expect(gradeCard(page, 6)).toHaveAccessibleName(gradeName(grade(6), 5, false));
@@ -408,7 +408,7 @@ test('한 차시 주소(?lesson=)는 지금처럼 그 차시만: 학년·영역 
       expect(lines[0]).toBe(CUBE_HOW_TO_FIRST);
       expect(lines.join(' '), c.lesson).not.toContain('쌓기나무'); // S1b-5: 전개도 차시 주소에 쌓기나무 줄이 없다
       if (c.howTo === 'cube') expect(lines).toHaveLength(6);
-      else expect(lines.join(' ')).not.toMatch(/도감|도전 주문서/); // 직육면체 차시에는 도감·도전 주문서가 없다
+      else expect(lines.join(' ')).toContain('도전 주문서에서 직육면체 전개도 54가지 도감을 채워 봐요'); // 직육면체 차시의 도전 주문서(도감 주문, spec 16-17)
     }
     await page.getByRole('button', { name: '시작하기' }).click();
     await expect(page.getByRole('tablist')).toHaveCount(0);
@@ -438,7 +438,7 @@ test('놀이 방법: 처음 화면(학년·영역을 고르기 전)은 공통 �
     else {
       expect(lines[0]).toBe(CUBE_HOW_TO_FIRST);
       expect(lines.join(' ')).not.toContain('쌓기나무');
-      if (a.id === 'cuboid') expect(lines.join(' ')).not.toMatch(/도감|도전 주문서/);
+      if (a.id === 'cuboid') expect(lines.join(' ')).toContain('도전 주문서에서 직육면체 전개도 54가지 도감을 채워 봐요'); // spec 16-17
       else expect(lines.join(' ')).toContain('도전 주문서');
     }
     await expect(page.locator('.screen-howto .actions .btn')).toHaveText(['단계 선택', '처음 화면']);

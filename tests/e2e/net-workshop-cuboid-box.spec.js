@@ -176,13 +176,15 @@ test('상자 크기 정하기: [크기 바꾸기] → 가로·세로·높이 ± 
   await expect(page.locator('.box-stepper[data-axis="0"]')).toHaveAttribute('aria-label', '가로 3 cm');
   await expect(page.locator('.box-stepper[data-axis="2"] .box-less')).toBeDisabled(); // 1 cm보다 작게는 못 한다
   await expect(page.locator('.box-stage .fold-stage')).toHaveAttribute('data-fold', 'done');
-  await expect(page.locator('.box-stage .edge-tag')).toHaveText(['가로 3 cm', '세로 2 cm', '높이 1 cm']);
+  await expect(page.locator('.box-stage .box-tag')).toHaveText(['가로 3 cm', '세로 2 cm', '높이 1 cm']);
+  await expect(page.locator('.box-stage .edge-tag')).toHaveCount(0); // 이름표는 입체 위가 아니라 화면 크기 그대로(M3-3)
+  await expect(page.locator('.box-stage .edge-band')).toHaveCount(3); // 어느 모서리인지는 입체 위의 띠로
   await expect(page.locator('.box-caption')).toHaveText(`직육면체 · ${boxText([3, 2, 1])}`);
   // ±로 고르면 상자와 이름표가 바로 바뀐다 (화면 읽기 "가로 4 cm")
   await page.locator('.box-stepper[data-axis="0"] .box-more').click();
   await expect(page.locator('.box-stepper[data-axis="0"]')).toHaveAttribute('aria-label', '가로 4 cm');
   await expect(page.locator('.box-stepper[data-axis="0"] .box-more')).toBeDisabled(); // 4 cm보다 크게는 못 한다
-  await expect(page.locator('.box-stage .edge-tag').first()).toHaveText('가로 4 cm');
+  await expect(page.locator('.box-stage .box-tag').first()).toHaveText('가로 4 cm');
   await expect(page.locator('.box-cards')).toHaveText('면 6장: 4×2 cm 두 장 · 4×1 cm 두 장 · 2×1 cm 두 장');
   // 상자는 끌어서 돌려 볼 수 있다
   const stage = await page.locator('.box-stage .fold-stage').boundingBox();
@@ -244,7 +246,7 @@ test('같은 전개도는 크기만 바꿔 다시 접으면 다시 세지 않는
   await setBox(page, [2, 2, 1], { apply: false });
   await page.locator('.box-apply').click();
   await expect(page.locator('.box-confirm-text')).toHaveText('판에 놓은 면 6장을 모두 거두고 새 크기의 면 카드로 바꿀까요?');
-  await expect(page.locator('.box-confirm-yes')).toBeFocused();
+  await expect(page.locator('.box-confirm-no')).toBeFocused(); // Enter 한 번에 거둬지지 않게 초점은 [취소](M3-9)
   await page.locator('.box-confirm-no').click();
   await expect(page.locator('.box-confirm')).toBeHidden();
   await page.locator('.box-cancel').click();
@@ -259,7 +261,7 @@ test('같은 전개도는 크기만 바꿔 다시 접으면 다시 세지 않는
   await foldIt(page);
   await expect(page.locator('.meta-xp b')).toHaveText('+14');
   expect(await stored(page, 'cuboid-pair-nets')).toEqual([pairId]);
-  await expect(page.locator('.found-count')).toHaveText('지금까지 2가지'); // 직육면체 전개도(세 길이가 다른 것 + 두 길이가 같은 것)
+  await expect(page.locator('.found-count')).toHaveText('직육면체 전개도 2가지'); // 직육면체 전개도(세 길이가 다른 것 + 두 길이가 같은 것)
   // 정육면체 상자: 1차시의 정육면체 전개도 도감에 넣는다(십자 = 1-4-1e). 무대 도장은 정육면체 도감의 칸 수
   await page.locator('.free-new').click();
   await setBox(page, [2, 2, 2]);
@@ -302,12 +304,24 @@ test('배치(크기 64가지 × 네 크기): 상자를 고르는 장면과 그 �
         const tools = box(document.querySelector('.edit-tools'));
         out.board = within(box(board), box(document.querySelector('.free-host'))) && box(board).bottom <= tools.top + 1 && within(box(board), mat);
         out.cell = parseFloat(getComputedStyle(board).getPropertyValue('--cell'));
+        // 1 cm 칸은 매트에 들어가는 가장 큰 크기(84px까지): 판의 칸 수로 정해진다 — 48px을 지킬 수 있는 상자는 48px 이상이 된다(spec 16-17)
+        const host = box(document.querySelector('.free-host'));
+        const cols = board.querySelector('.board-row').children.length;
+        const rows = board.querySelectorAll('.board-row').length;
+        out.ideal = Math.max(24, Math.floor(Math.min(84, host.height / rows, host.width / cols)));
+        out.tools = [...document.querySelectorAll('.edit-tools button')].filter((b) => b.getClientRects().length > 0).every((b) => Math.min(b.getBoundingClientRect().width, b.getBoundingClientRect().height) >= 48);
       }
       const faces = [...document.querySelectorAll('.box-stage .net-face')];
       if (faces.length > 0) {
         const stage = box(document.querySelector('.box-stage'));
         out.box = faces.every((f) => within(box(f), stage, 1)) && within(stage, mat);
-        out.tags = document.querySelectorAll('.box-stage .edge-tag').length;
+        // 가로·세로·높이 이름표: 셋, 글자 11px 이상, 서로 겹치지 않고 상자 보기 안(M3-3)
+        const tags = [...document.querySelectorAll('.box-stage .box-tag')].filter((t) => !t.hidden);
+        const rects = tags.map((t) => box(t));
+        out.tags = tags.length;
+        out.tagFont = Math.min(...tags.map((t) => parseFloat(getComputedStyle(t).fontSize)));
+        out.tagOverlap = rects.some((p, i) => rects.some((q, j) => i < j && p.left < q.right && q.left < p.right && p.top < q.bottom && q.top < p.bottom));
+        out.tagInside = rects.every((r) => within(r, stage));
       }
       return out;
     });
@@ -318,7 +332,15 @@ test('배치(크기 64가지 × 네 크기): 상자를 고르는 장면과 그 �
       await setBox(page, dims, { apply: false });
       await noScroll(page, `${label} 고르는 중`);
       if (!phone) await expectPanelFits(page, `${label} 고르는 중`);
-      expect(await inside(), `${label} 고르는 중`).toMatchObject({ box: true, tags: 3 });
+      const chosen = await inside();
+      expect(chosen, `${label} 고르는 중`).toMatchObject({ box: true, tags: 3, tagOverlap: false, tagInside: true });
+      expect(chosen.tagFont, `${label} 이름표 글자`).toBeGreaterThanOrEqual(11);
+      if (phone && await page.locator('.box-apply').isDisabled()) {
+        // 휴대폰 판에 전개도가 하나도 들어가지 않는 상자는 고를 수 없다(M3-5)
+        await expect(page.locator('.box-notice')).toContainText('이 화면의 판에는 이 상자의 전개도가 들어가지 않아요');
+        last = dims;
+        continue;
+      }
       await page.locator('.box-apply').click();
       await expect(page.locator('.box-chooser')).toBeHidden();
       await expect(page.locator('.box-tip')).toHaveText(boxText(dims));
@@ -326,14 +348,23 @@ test('배치(크기 64가지 × 네 크기): 상자를 고르는 장면과 그 �
       if (!phone) await expectPanelFits(page, label);
       const m = await inside();
       expect(m.board, `${label} 판이 매트 안`).toBe(true);
+      // 큰 상자의 1 cm 칸은 48px보다 작을 수 있다(사용자 결정 2026-10-17, spec 16-17): 칸은 24px 이상이고 매트에 들어가는 가장 큰 크기,
+      // 그 크기가 48px 이상이면 48px 이상. 면 카드(판 안 버튼)·도구 띠 버튼·손잡이는 늘 48px 이상(expectPanelFits · 아래 tools · 손잡이 검사)
       expect(m.cell, `${label} 1 cm 칸`).toBeGreaterThanOrEqual(24);
+      expect(m.cell, `${label} 1 cm 칸 = 들어가는 가장 큰 크기`).toBe(m.ideal);
+      if (m.ideal >= 48) expect(m.cell, `${label} 1 cm 칸 48px`).toBeGreaterThanOrEqual(48);
+      expect(m.tools, `${label} 도구 띠 버튼 48px`).toBe(true);
       expect(await spot(page), `${label} 머리·매트`).toEqual(start);
       last = dims;
     }
     expect(last).toEqual(snakeBoxes().at(-1));
     // 큰 상자는 접은 장면까지 (판이 큰 상자 넷)
     for (const dims of [[4, 4, 4], [1, 1, 4], [2, 3, 4], [4, 1, 4]]) {
-      if (phone && dims.join() === '4,4,4') continue; // 휴대폰 판에는 다 들어가지 않는 전개도가 있다
+      await setBox(page, dims, { apply: false });
+      if (await page.locator('.box-apply').isDisabled()) { // 휴대폰 판에 들어가는 전개도가 없는 상자(M3-5)
+        await page.locator('.box-cancel').click();
+        continue;
+      }
       await setBox(page, dims);
       const board = boxBoard(dims, { phone });
       const net = boxCatalog(dims).list.find((n) => centerOnBoard(n.net, board));
@@ -793,7 +824,7 @@ test('점수 상한의 경계(두 모음을 합쳐 센다)와 탭 두 개: 세 �
   await tabA.reload();
   const tabB = await context.newPage();
   await tabB.goto(STAGE_URL('cuboid-free'));
-  await expect(tabB.locator('.found-count')).toHaveText('지금까지 9가지');
+  await expect(tabB.locator('.found-count')).toHaveText('직육면체 전개도 9가지');
   // A: 세 길이가 다른 것의 10번째 +7
   await tabA.bringToFront();
   await buildNet(tabA, netFor([3, 2, 1], ids[20]));
@@ -820,7 +851,7 @@ test('점수 상한의 경계(두 모음을 합쳐 센다)와 탭 두 개: 세 �
   // 새 탭: 저장된 것(A의 한 쌍)에 없는 B의 전개도는 12번째라 +1뿐 — 10번째의 7점을 다시 받지 못한다
   const tabC = await context.newPage();
   await tabC.goto(STAGE_URL('cuboid-free'));
-  await expect(tabC.locator('.found-count')).toHaveText('지금까지 11가지');
+  await expect(tabC.locator('.found-count')).toHaveText('직육면체 전개도 11가지');
   await setBox(tabC, [2, 2, 1]);
   await buildNet(tabC, netFor([2, 2, 1], pairIds[0]));
   await foldIt(tabC);
@@ -1003,6 +1034,139 @@ test('도감 보기 배치(네 크기): 54칸이 매트 안에 다 들어가고(
       };
     });
     expect(fit, `${size.width}×${size.height}`).toEqual({ inMat: true, cellsIn: true, close: true });
+  }
+  expect(errors).toEqual([]);
+});
+
+// ── 검토 반영(M3b) ─────────────────────────────
+const ALL54 = () => freeNets().map((n) => n.id);
+
+test('M3-1 도감 54칸을 다 채운 뒤에도 놓는 화면에 [도감 보기]가 늘 있다("54 / 54 완성"과 함께) — 다시 들어와도, 54번째를 접고 [펴서 고치기]로 돌아와도. 판 안쪽 넘침 0', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const sizes = testInfo.project.name === 'chromebook' ? [SIZES.chromebook, SIZES.low, { width: 1024, height: 768 }] : [SIZES.tablet, SIZES.phone];
+  for (const size of sizes) {
+    const at = `${size.width}×${size.height}`;
+    await page.setViewportSize(size);
+    await page.goto(STAGE_URL('cuboid-dex'));
+    await page.evaluate(() => localStorage.clear());
+    await seedOld(page, { cuboid: ALL54() });
+    await page.goto(STAGE_URL('cuboid-dex'));
+    await expect(page.locator('.dex-strip-count'), at).toHaveText('54 / 54 완성');
+    await expect(page.locator('.dex-open'), at).toBeVisible();
+    await expect(page.locator('.free-finish'), at).toBeVisible(); // 다 채웠으니 [결과 보기]
+    await noScroll(page, `${at} 다 채움`);
+    if (size.width > 560) await expectPanelFits(page, `${at} 다 채움`);
+    await page.locator('.dex-open').click();
+    await expect(page.locator('.dex-cell.is-found svg')).toHaveCount(54);
+    await expect(page.locator('.dex-cell.is-empty')).toHaveCount(0);
+    await page.locator('.dex-board-close').click();
+  }
+  // 54번째를 접은 뒤 [펴서 고치기]로 돌아와도 (1366×680 · 휴대폰)
+  await page.setViewportSize(testInfo.project.name === 'chromebook' ? SIZES.low : SIZES.phone);
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await page.evaluate(() => localStorage.clear());
+  const board = page.viewportSize().width <= 560 ? CUBOID_BOARDS.phone : CUBOID_BOARDS.wide;
+  const last = freeNets().find((n) => centerOnBoard(n.net, board));
+  await seedOld(page, { cuboid: ALL54().filter((id) => id !== last.id) });
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await buildNet(page, netFor([3, 2, 1], last.id, board));
+  await foldIt(page);
+  await expect(page.locator('.dex-strip-count')).toHaveText('54 / 54 완성');
+  await expect(page.locator('.found-stamp')).toContainText('완성!');
+  await page.locator('.free-fix').click();
+  await expect(page.locator('.dex-open')).toBeVisible();
+  await noScroll(page, '54번째를 접고 돌아옴');
+  if (page.viewportSize().width > 560) await expectPanelFits(page, '54번째를 접고 돌아옴');
+  expect(errors).toEqual([]);
+});
+
+test('결정 1: 54칸을 다 채우고 마치면 "직육면체 도감 완성" 도장 — 결과 화면의 새 도장, 도장판 13칸 가운데 받은 도장', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await page.evaluate(() => localStorage.clear());
+  await seedOld(page, { cuboid: ALL54() });
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await page.locator('.free-finish').click();
+  await expect(page.locator('.screen-result')).toBeVisible();
+  await expect(page.locator('.result-title')).toHaveText('도전 성공!');
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 3개');
+  await expect(page.locator('.screen-result')).toContainText('직육면체 도감 완성');
+  await page.keyboard.press('Escape');
+  await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
+  await page.getByRole('button', { name: '학습 기록' }).click();
+  await expect(page.locator('.badge-item')).toHaveCount(13);
+  await expect(page.locator('.badge-item[data-badge="cuboid-dex-complete"]')).toHaveClass(/is-earned/);
+  await expect(page.locator('.badge-item[data-badge="cuboid-dex-complete"]')).toContainText('직육면체의 전개도 54가지를 모두 찾아요');
+  expect(errors).toEqual([]);
+});
+
+test('결정 2: 도감 주문을 10가지 전에 [오늘은 여기까지]로 멈추면 결과 제목 "오늘은 여기까지!"와 도장 "다음에 또 찾아요"(별 0개, 점수 0) — 별이 있으면 지금처럼 "도전 성공!"', async ({ page }) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await page.evaluate(() => localStorage.clear());
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await buildNet(page, BAD.overlap);
+  await foldIt(page);
+  await page.locator('.reason-skip').click();
+  await page.locator('.free-stop').click();
+  await expect(page.locator('.screen-result')).toBeVisible();
+  await expect(page.locator('.result-title')).toHaveText('오늘은 여기까지!');
+  await expect(page.locator('.result-stamp')).toContainText('다음에');
+  await expect(page.locator('.result-stamp')).toContainText('또 찾아요');
+  await expect(page.locator('.result-stamp')).not.toContainText(/다시|해 봐요/);
+  await expect(page.locator('.screen-result')).not.toContainText('도전 성공');
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 0개');
+  await expect(page.locator('.screen-result')).toContainText('도감 10가지를 채우면 별 1개예요');
+  expect(await storedXpOf(page)).toBe(0);
+  // 별이 있으면 지금처럼: 9가지를 찾아 둔 기기에서 10번째
+  await page.goto(STAGE_URL('cuboid-dex'));
+  const ids = freeNets().filter((n) => centerOnBoard(n.net, CUBOID_BOARDS.wide)).map((n) => n.id);
+  await seedOld(page, { cuboid: ids.slice(0, 9) });
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await buildNet(page, netFor([3, 2, 1], ids[9]));
+  await foldIt(page);
+  await page.locator('.free-stop').click();
+  await expect(page.locator('.result-title')).toHaveText('도전 성공!');
+  await expect(page.locator('.result-stamp')).not.toContainText('또 찾아요');
+  expect(errors).toEqual([]);
+});
+
+test('결정 3 · M3-6~9: 놀이 방법의 도감 주문 줄, 상자 크기 글은 축마다 한 덩어리, 도감 보기 동안 도구 띠 숨김, 무엇을 세는지 적은 글, 정육면체 상자의 셈', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  // 놀이 방법(직육면체 차시 주소)
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off&lesson=cuboid'));
+  await page.getByRole('button', { name: '놀이 방법' }).click();
+  await expect(page.locator('.howto-list')).toContainText('도전 주문서에서 직육면체 전개도 54가지 도감을 채워 봐요');
+  // M3-6: 상자 크기 글 — 줄이 바뀌어도 "높이 4 cm"가 갈리지 않는다(태블릿에서 4 · 4 · 4)
+  await page.goto(STAGE_URL('cuboid-free'));
+  await setBox(page, [4, 4, 4]);
+  const axes = await page.locator('.box-tip .box-tip-axis').evaluateAll((els) => els.map((el) => [el.textContent, el.getClientRects().length]));
+  expect(axes).toEqual([['가로 4 cm', 1], ['세로 4 cm', 1], ['높이 4 cm', 1]]); // 한 덩어리가 두 줄에 걸치면 사각형이 둘이 된다
+  // M3-8: 정육면체 상자로는 1차시의 정육면체 도감을 센다, 그 밖에는 직육면체 전개도
+  await expect(page.locator('.found-count')).toHaveText('정육면체 도감 0 / 11');
+  await setBox(page, [3, 2, 1]);
+  await expect(page.locator('.found-count')).toHaveText('직육면체 전개도 0가지');
+  // M3-7: 도감 보기가 매트를 덮는 동안 아래 도구 띠를 숨긴다
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await expect(page.locator('.edit-tools')).toBeVisible();
+  await page.locator('.dex-open').click();
+  await expect(page.locator('.edit-tools')).toBeHidden();
+  await page.locator('.dex-board-close').click();
+  await expect(page.locator('.edit-tools')).toBeVisible();
+  if (testInfo.project.name === 'tablet') {
+    // M3-5: 휴대폰 판에 전개도가 들어가지 않는 상자는 고를 수 없다
+    await page.setViewportSize(SIZES.phone);
+    await page.goto(STAGE_URL('cuboid-free'));
+    await setBox(page, [4, 4, 4], { apply: false });
+    await expect(page.locator('.box-notice')).toContainText('이 화면의 판에는 이 상자의 전개도가 들어가지 않아요');
+    await expect(page.locator('.box-apply')).toBeDisabled();
+    await setBox(page, [2, 3, 4], { apply: false });
+    await expect(page.locator('.box-notice')).toContainText('54가지 가운데');
+    await expect(page.locator('.box-apply')).toBeEnabled();
   }
   expect(errors).toEqual([]);
 });

@@ -27,6 +27,7 @@ import {
   PAIR_NET_COUNT,
   boxArrangement,
   boxBoard,
+  boxBoardNotice,
   boxCards,
   boxCardsText,
   boxCatalog,
@@ -780,4 +781,29 @@ test('옛 저장 값: 지금까지 사이트에서 쌓은 직육면체 전개도
   assert.equal(discoverXp(collectionXp(def, xpAfterCount(r.state, DEFS, def))), 1);
   assert.deepEqual(DEFS.find((d) => d.id === CUBOID_NETS_ID).items.map((i) => i.id), freeNets().map((n) => n.id));
   assert.equal(DEFS.find((d) => d.id === CUBOID_NETS_ID).report, true); // 결과 복사 문장에 "직육면체 전개도 n/54"
+});
+
+test('판이 좁을 때의 안내(M3-5): 보통 판은 64가지 모두 안내가 없고, 휴대폰 판은 들어가는 전개도가 없으면 고를 수 없다(4 × 4 × 4 · 3 × 4 × 4 꼴), 일부만 들어가면 그 가짓수 — 독립 계산(직사각형이 판에 들어가는지)과 같다', () => {
+  let blocked = 0;
+  let partial = 0;
+  for (const dims of ALL_DIMS) {
+    assert.equal(boxBoardNotice(dims, boxBoard(dims)), null, `${dims}`);
+    const board = boxBoard(dims, { phone: true });
+    const shapes = UNFOLDED.get(dims.join(','));
+    // 독립 계산: 그 상자의 서로 다른 모양마다, 8가지로 돌리거나 뒤집어 판(cols × rows)에 들어가는 것이 있나
+    const byShape = new Map(shapes.map((u) => [shapeOf(u.rects), u.rects]));
+    const fit = [...byShape.values()].filter((rects) => Array.from({ length: 8 }, (_, k) => transformRects(rects, k)).some((r) => Math.max(...r.map((q) => q.x + q.w)) <= board.cols && Math.max(...r.map((q) => q.y + q.h)) <= board.rows)).length;
+    const notice = boxBoardNotice(dims, board);
+    if (fit === byShape.size) assert.equal(notice, null, `${dims}`);
+    else if (fit === 0) {
+      blocked += 1;
+      assert.deepEqual(notice, { text: '이 화면의 판에는 이 상자의 전개도가 들어가지 않아요. 더 작은 상자를 골라요.', block: true }, `${dims}`);
+    } else {
+      partial += 1;
+      assert.deepEqual(notice, { text: `이 화면의 판에는 이 상자의 전개도 ${byShape.size}가지 가운데 ${fit}가지만 들어가요.`, block: false }, `${dims}`);
+    }
+  }
+  assert.equal(boxBoardNotice([4, 4, 4], boxBoard([4, 4, 4], { phone: true })).block, true);
+  assert.equal(boxBoardNotice([3, 4, 4], boxBoard([3, 4, 4], { phone: true })).block, true);
+  assert.ok(blocked > 0 && partial > 0, `${blocked} · ${partial}`);
 });

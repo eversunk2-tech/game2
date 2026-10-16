@@ -1199,6 +1199,8 @@ export function createGameApp({
        * practiceNote: 별 3개 단계를 다시 한 판의 안내 문장을 게임의 말로 바꾼다(그런 판에서만 보인다).
        * stats: [{ label, value }](3개까지)로 결과의 기록 칸(정답률 · 맞힘/시도)을 게임의 말로 바꾼다 — 맞힘·틀림으로 보이지 않는 단계.
        *   그런 판은 "다시 살펴볼 점"(틀린 개념 수)도 보이지 않는다. 학습 기록에는 답이 그대로 남는다.
+       * title · stamp(선택): 결과 제목과 결과 도장의 글(한두 줄 [글, 글])을 게임의 말로 바꾼다 — 예: 여러 번에 나눠 하는 도전을 별 없이
+       *   멈춘 판("오늘은 여기까지!" · ["다음에", "또 찾아요"]). 주지 않으면 지금까지와 같다. 점수·별·기록은 바뀌지 않는다
        */
       finish(result = {}) {
         if (finished) return;
@@ -1219,6 +1221,7 @@ export function createGameApp({
         const showTime = !(stage.timer === 'optional' && !timerOn);
         showResult(stage, record, {
           fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, stats: result.stats, starNote: result.starNote, showTime, opened, time,
+          title: result.title, stamp: result.stamp,
         });
       },
     };
@@ -1267,8 +1270,8 @@ export function createGameApp({
     return { summary, sx, gained: play.xp() + sx.total, before, after, rankUp: after.index > before.index, newBadges: fresh };
   }
 
-  function resultStamp(record, label) {
-    const words = STAMP_WORDS[record.cleared ? record.stars : 0] ?? STAMP_WORDS[1];
+  function resultStamp(record, label, custom = null) {
+    const words = custom ?? STAMP_WORDS[record.cleared ? record.stars : 0] ?? STAMP_WORDS[1];
     const d = new Date(record.startedAt ?? Date.now());
     return h('div', { class: `stamp result-stamp${record.cleared ? '' : ' stamp-blue'}`, 'aria-hidden': 'true' },
       h('span', { class: 'stamp-inner' },
@@ -1291,6 +1294,7 @@ export function createGameApp({
 
   function showResult(stage, record, {
     fromAccuracy = true, reward = null, highlights = null, practiceNote = null, stats = null, starNote = null, showTime = true, opened = [], time = null,
+    title: customTitle = null, stamp: customStamp = null,
   } = {}) {
     let nextStage = null;
     if (!stage.challenge) {
@@ -1307,6 +1311,9 @@ export function createGameApp({
     if (record.cleared && stage.challenge) title = '도전 성공!';
     else if (record.cleared && isLast) title = plan.groups ? '이 차시를 마쳤어요!' : '모든 단계를 마쳤어요!';
     else if (record.cleared) title = '단계 성공!';
+    if (typeof customTitle === 'string' && customTitle.trim()) title = customTitle.trim(); // 게임이 정한 제목 (finish({ title }))
+    const stampWords = Array.isArray(customStamp) && customStamp.length > 0 && customStamp.length <= 2 && customStamp.every((w) => typeof w === 'string' && w.trim())
+      ? customStamp.map((w) => w.trim()) : null;
     const number = stageNumber(stage);
     const label = stage.challenge ? '도전' : `${number}단계`;
     const eyebrow = stage.challenge ? `도전 주문서 · ${stage.title}` : label === stage.title ? label : `${label} · ${stage.title}`;
@@ -1329,7 +1336,7 @@ export function createGameApp({
         h('section', { class: 'sheet certificate tape' },
           h('p', { class: 'cert-eyebrow' }, eyebrow),
           h('h2', { class: 'result-title' }, title),
-          resultStamp(record, label),
+          resultStamp(record, label, stampWords),
           starsEl(record.stars, 'stars-big'),
           hint && h('p', { class: 'star-hint' }, hint),
           reward && highlightTiles(highlights ?? defaultHighlights(reward.summary)),
