@@ -22,9 +22,9 @@
 | --- | --- | --- |
 | 작업 폴더 · 브랜치 | `.worktrees/c1` · `track/c1`(`d6371ad`에서 이어서) | `.worktrees/cuboid` · `track/cuboid`(`4126bfc`에서 이어서) |
 | 무엇 | `main`에 전부터 있던 검사: 조작판 48px 재기(C2-1), 주사위 주문의 알림(C2-2), 긴 검사의 시간 예산(C2-3), 느린 기기에서 실패하는 정육면체 검사 6개(덧붙임) | 직육면체 검사: 550ms만 보이는 "반 접힘"을 바로 단언하는 곳(M2b-1), 시간 예산 없는 11개·빠듯한 13개(M2b-2·3), 풀린 단언 1곳(M2b-8) |
-| 지침 | [build-fix-brief-c2.md](games/net-workshop/build-fix-brief-c2.md) / [review-fix-brief-c2.md](games/net-workshop/review-fix-brief-c2.md) | [build-fix-brief-m2c.md](games/net-workshop/build-fix-brief-m2c.md) / 재확인 지침은 아직 안 씀 |
-| 상태 | Build 중 | Build 중 |
-| 이어서 | Build 끝 → 별도 Review → `main`에 합쳐 올림 | Build 끝 → 재확인 지침 쓰고 별도 Review → 합쳐 올림 |
+| 지침 | [build-fix-brief-c2.md](games/net-workshop/build-fix-brief-c2.md) / [review-fix-brief-c2.md](games/net-workshop/review-fix-brief-c2.md) | [build-fix-brief-m2c.md](games/net-workshop/build-fix-brief-m2c.md) / [review-fix-brief-m2c.md](games/net-workshop/review-fix-brief-m2c.md) |
+| 상태 | Build 끝(`586eee7`) → Review가 10-14에 사용량 한도로 끊겨 **10-16에 처음부터 다시** | Build 끝(`5cc6736`) → **재검토 2 통과**(`871a023`) → 이 컴퓨터의 `main`에 합침(올리지 않음 — `c2`와 함께 올린다). 남긴 것: M2c-1 "머무는 시간"을 더는 보지 않음(고치면 좋음) |
+| 이어서 | Review 통과 → `main`에 합쳐 전체 테스트 → 올림 | (`c2`와 함께 올림) |
 
 두 트랙이 함께 고치는 파일은 `tests/e2e/net-workshop.spec.js` 하나다(`M2c`는 "자유 배치: 모든 장면…"의 시간 예산 한 줄만, 나머지는 `c2`).
 
@@ -91,7 +91,7 @@
 
 - 저장소: `/Users/sungchul/Desktop/play2/game2`(`main`). 작업 폴더 두 개가 그 안의 `.worktrees/`에 있다(`.git/info/exclude`로 가려 둠). 각 작업 폴더의 `node_modules`는 맨 위 폴더의 것을 가리키는 링크다 — **작업 폴더에서 `npm install`·`npm ci`를 하지 않는다.**
 - 테스트용 브라우저: `~/Library/Caches/ms-playwright`(Chromium 141, 479 MB). 2026-10-11에 한 번 비워져 다시 받았다. 없으면 `npx playwright install chromium`(내려받기라 사용자에게 먼저 확인).
-- 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다. 지난 검토의 측정 스크립트와 교과서 PDF 복사본은 남아 있지 않다. 교과서 PDF는 사용자가 다시 줘야 읽을 수 있다(계획은 완성되어 있어 지금은 필요 없다).
+- 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다(2026-10-16에도 비워짐 — 지난 검토들의 측정 스크립트는 남아 있지 않다). 지난 검토의 측정 스크립트와 교과서 PDF 복사본은 남아 있지 않다. 교과서 PDF는 사용자가 다시 줘야 읽을 수 있다(계획은 완성되어 있어 지금은 필요 없다).
 - 포트: 5173은 다른 프로젝트(`history game`), 5183은 사용자가 이 앱을 보는 개발 서버(`PORT=5183 npm run dev` — `main` 폴더의 내용을 보여 준다. 트랙의 화면을 보려면 그 작업 폴더에서 다른 포트로 띄운다).
 - 여러 트랙이 브라우저 테스트를 함께 돌릴 때는 `npm run test:e2e -- --workers=4`. 시간 제한으로 실패한 검사는 혼자 다시 돌려 부하 탓인지 가린다.
 - GitHub: `eversunk2-tech/game2`(공개). 예전 작업 브랜치 `claude/laughing-brahmagupta-gb15je`는 `a137a40`까지 `main`에 합쳐졌고 더 쓰지 않는다.
