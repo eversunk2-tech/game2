@@ -922,7 +922,7 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
 
   /** 끄는 동안(마우스·손가락) 놓일 자리를 미리 보인다. 눌러 고른 채 마우스를 움직일 때도 같다 */
   function onMove(event) {
-    if (!enabled) return;
+    if (!enabled || turning) return; // 손잡이로 돌리는 동안에는 놓일 자리를 보이지 않는다
     if (press && event.pointerId === press.id && !press.dragged && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 8) press.dragged = true;
     // 마우스 왼쪽 버튼으로 끄는 중에 오른쪽 버튼을 함께 누름(포인터 이벤트로는 버튼이 바뀐 pointermove로 온다)
     if (event.pointerType === 'mouse' && event.button === 2 && (event.buttons & 2)) rightPress(event);
@@ -1100,6 +1100,7 @@ export function createRectBoard({ ctx, adapter, root, onChange = null }) {
       ...target, id: event.pointerId, x0: event.clientX, y0: event.clientY, cx, cy, a0: Math.atan2(event.clientY - cy, event.clientX - cx),
       active: false, deg: 0, el, handle, hx: handle.offsetLeft, hy: handle.offsetTop,
     };
+    if (!held) hidePreview();
     try {
       handle.setPointerCapture(event.pointerId);
     } catch {

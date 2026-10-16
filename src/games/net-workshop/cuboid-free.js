@@ -255,7 +255,6 @@ export function playCuboidFree(stage, ctx) {
     })
     : null;
   resizer?.observe(host);
-  resizer?.observe(order.el);
 
   // ── 놓는 판 상태 ────────────────────────────
   let lastReason = 'count';
@@ -329,7 +328,7 @@ export function playCuboidFree(stage, ctx) {
       // 못 찾은 칸에는 전개도를 알 수 있는 것(그림·이름·속성)을 두지 않는다
       const cls = `dex-cell${got ? ' is-found' : ' is-empty'}${got && newThisPlay.has(n.id) ? ' is-new' : ''}${got && lastSame === n.id ? ' is-same' : ''}`;
       return h('li', { class: cls, 'aria-label': got ? `도감 ${i + 1}번 직육면체 전개도${newThisPlay.has(n.id) ? ', 이번에 찾음' : ''}${lastSame === n.id ? ', 방금 접은 모양' : ''}` : `도감 ${i + 1}번, 아직 못 찾음` },
-        got ? dexThumb(n.id) : h('span', { 'aria-hidden': 'true' }, '?'));
+        got ? [dexThumb(n.id), newThisPlay.has(n.id) && h('small', { class: 'dex-cell-new', 'aria-hidden': 'true' }, '새로')] : h('span', { 'aria-hidden': 'true' }, '?'));
     }));
   }
   let dexReturn = null;
