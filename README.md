@@ -84,6 +84,8 @@ tests/e2e/                  브라우저 테스트 (Playwright)
 | `?sound=off` | 소리 끄고 시작 |
 | `?seed=1` | 모두 같은 문제 순서 |
 | `?lesson=<차시 id>` | 그 차시의 단계만 보이기 (차시 묶음이 있는 게임. 예: `net-workshop.html?lesson=cube`) |
+| `?grade=<학년>` | 그 학년 화면으로 바로 (학년이 있는 게임. 예: 입체도형 공방 `net-workshop.html?grade=6`) |
+| `?area=<영역 id>` | 그 영역의 단계 지도로 바로 (영역이 있는 게임. 예: 입체도형 공방 `net-workshop.html?area=blocks` — 영역 `cube` 정육면체의 전개도 · `cuboid` 직육면체의 전개도 · `blocks` 쌓기나무). 차례는 `?lesson=` > `?area=` > `?grade=` |
 | `?fx=low` | 효과 줄이기 (느린 기기: 색종이·화면 움직임 끔. CPU 코어 2개 이하 기기는 저절로) |
 
 ## 설계 원칙

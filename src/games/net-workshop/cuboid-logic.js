@@ -605,7 +605,7 @@ export function judgeCuboidAnswer(question, answer) {
 export function cuboidJudgeTip(question) {
   if (question.intended === 'overlap') return '빗금 친 면과 점선(비어요)을 찾아보고, 돌려 보기로 빈 자리를 확인해요.';
   if (question.intended === 'length') return '같은 무늬로 표시한 두 변에 적힌 길이를 견줘 봐요.';
-  if (question.intended === 'pair') return '마주 보는 두 면에 적힌 길이를 견줘 봐요.';
+  if (question.intended === 'pair') return '펴서 마주 보는 두 면에 적힌 길이를 견줘 봐요.'; // 접은 채로는 길이 글자가 뒤집히고 맞은편 면이 뒤에 있다 (spec 16-15)
   return '';
 }
 
