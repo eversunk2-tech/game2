@@ -364,3 +364,38 @@ test('차시가 하나뿐인 영역(정육면체·직육면체)의 단계 지도
   await page.getByRole('button', { name: '시작하기' }).click();
   await expect(page.locator('.lesson-no')).toHaveText(['2차시']);
 });
+
+test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입장하기]의 남색 글자와 금빛 바탕(위 · 가운데 · 아래 색)', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  const ratios = await page.evaluate(() => {
+    const rgb = (c) => c.match(/[\d.]+/g).slice(0, 3).map(Number);
+    const lum = (c) => {
+      const [r, g, b] = rgb(c).map((v) => {
+        const x = v / 255;
+        return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a, b) => {
+      const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+      return (x + 0.05) / (y + 0.05);
+    };
+    // CSS 변수(토큰)의 색을 rgb()로
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    const color = (v) => {
+      probe.style.color = v;
+      return getComputedStyle(probe).color;
+    };
+    const text = getComputedStyle(document.querySelector('.intro-ribbon-text')).fill;
+    const edge = getComputedStyle(document.querySelector('.intro-ribbon-edge')).stroke;
+    const ink = getComputedStyle(document.querySelector('.intro-enter-face')).color;
+    const out = { 부제: ratio(text, edge), ...Object.fromEntries(['--butter-soft', '--butter', '--star'].map((v) => [`버튼 ${v}`, ratio(ink, color(`var(${v})`))])) };
+    probe.remove();
+    return out;
+  });
+  for (const [what, r] of Object.entries(ratios)) expect(r, what).toBeGreaterThanOrEqual(4.5);
+  // 버튼 바탕이 정말 그 세 색의 금빛 그러데이션이다(위 반짝임 + 금빛 + 파란 테)
+  expect(await page.locator('.intro-enter-face').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(3);
+});

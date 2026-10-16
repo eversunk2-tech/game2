@@ -321,9 +321,10 @@ async function copyText(text) {
  *     enterLabel? = '입장하기',  큰 버튼의 글자
  *     title? = game.title,       화면 읽기용 제목(h1). 제목 그림이 있으면 그 그림의 대체 글
  *     logo?: { width, height, ribbon?: { path, fontSize, length } }
- *       제목 그림(게임 CSS가 .screen-intro의 --intro-logo-img로 준다)의 크기(비율)와, 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
+ *       제목 그림의 크기(비율)와, 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
  *   }
- * 배경 그림은 게임 CSS가 .screen-intro의 --intro-bg-img로 준다(엔진은 그림 파일을 모른다 — docs/engine.md 2절 "게임 인트로").
+ * 그림은 게임 CSS가 준다: .intro-bg(배경)·.intro-logo(제목)의 background-image, .intro-shine(빛이 스치는 틀)의 mask-image
+ * (엔진은 그림 파일을 모른다 — docs/engine.md 2절 "게임 인트로").
  */
 export function planIntro(intro, game) {
   if (intro == null || intro === false) return null;

@@ -5782,6 +5782,7 @@ test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?sound=off'));
   await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
+  await page.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); })); // 처음 화면 그림이 제 크기에 맞춰진 뒤(크기 관찰자 — 주소로 바로 열 때는 load 전에 끝나던 것)
   const hero = page.locator('.hero-net .fold-stage');
   const read = () => page.evaluate(() => ({
     scene: document.querySelector('.hero-net .net-scene').style.transform,
