@@ -3,6 +3,17 @@ import { collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helper
 
 // 모든 게임에 공통으로 적용되는 기본 검사. 새 게임을 만들면 자동으로 포함된다.
 
+/**
+ * 처음 화면 → 단계 지도: [시작하기]를 누른다. 영역이 있는 게임(엔진 areas)은 [시작하기] 자리에 영역 카드가 있어 첫 영역 카드를 누른다
+ * (B0a: 영역 카드가 생기며 바꿈 — 뜻은 그대로 "처음 화면에서 단계 지도로")
+ */
+async function openStageMap(page) {
+  const area = page.locator('.area-card');
+  await expect(area.or(page.getByRole('button', { name: '시작하기' })).first()).toBeVisible();
+  if (await area.count()) await area.first().click();
+  else await page.getByRole('button', { name: '시작하기' }).click();
+}
+
 test('게임 모음 페이지가 모든 게임으로 연결된다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl('index.html'));
@@ -22,7 +33,7 @@ for (const file of gameFiles()) {
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     expect(await hasHorizontalScroll(page)).toBe(false);
 
-    await page.getByRole('button', { name: '시작하기' }).click();
+    await openStageMap(page);
     await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
     await expect(page.locator('.stage-card').nth(1)).toBeDisabled();
 
@@ -37,9 +48,20 @@ for (const file of gameFiles()) {
 
   test(`${file}: ?unlock=all 이면 모든 단계가 열린다`, async ({ page }) => {
     await page.goto(fileUrl(file, '?unlock=all&sound=off'));
-    await page.getByRole('button', { name: '시작하기' }).click();
-    const cards = page.locator('.stage-card');
-    const count = await cards.count();
-    for (let i = 0; i < count; i += 1) await expect(cards.nth(i)).toBeEnabled();
+    await openStageMap(page);
+    await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
+    // 영역이 있는 게임은 영역 탭마다 그 영역의 단계 카드를 본다 (모든 단계)
+    const tabs = page.getByRole('tab');
+    const areas = await tabs.count();
+    for (let t = 0; t < Math.max(1, areas); t += 1) {
+      if (areas) {
+        await tabs.nth(t).click();
+        await expect(tabs.nth(t)).toHaveAttribute('aria-selected', 'true');
+      }
+      const cards = page.locator('.stage-card');
+      const count = await cards.count();
+      expect(count).toBeGreaterThan(0);
+      for (let i = 0; i < count; i += 1) await expect(cards.nth(i)).toBeEnabled();
+    }
   });
 }

@@ -17,6 +17,7 @@ import {
   formatReport,
   summarize,
 } from '../core/learning-log.js';
+import { AREA_KEY, areaLabel, areaLine, areaOfLesson, lessonNumberInArea, planAreas, startAreaId } from '../core/areas.js';
 import {
   collectItem,
   collectionChips,
@@ -62,6 +63,7 @@ import {
  *   ?sound=off    소리 끄고 시작
  *   ?seed=<값>    모두 같은 문제 순서로 시작
  *   ?lesson=<id>  그 차시 묶음의 단계만 보이기 (게임이 lessons를 쓸 때)
+ *   ?area=<id>    그 영역의 단계 지도로 바로 (게임이 areas를 쓸 때. ?lesson=이 함께 오면 ?lesson=이 이긴다)
  *   ?fx=low       효과 줄이기: 색종이·화면 움직임 끔 (느린 기기. CPU 코어 2개 이하면 자동)
  */
 export function readUrlOptions(search = globalThis.location?.search ?? '') {
@@ -70,6 +72,7 @@ export function readUrlOptions(search = globalThis.location?.search ?? '') {
     unlockAll: params.get('unlock') === 'all',
     stageId: params.get('stage'),
     lessonId: params.get('lesson'),
+    areaId: params.get('area'),
     sound: params.get('sound') !== 'off',
     seed: params.get('seed'),
     fx: params.get('fx'),
@@ -118,8 +121,9 @@ function badgeLessons(stages, lessons) {
 /**
  * 단계 지도의 차시 칩 글자. 차시 정의에 chip(글자)이 있으면 그것, 없으면 차시 순서대로 "n차시".
  * (한 게임에 영역이 다른 차시가 섞일 때: 예) 전개도 차시 뒤의 쌓기나무 차시에 chip: '쌓기나무 1차시')
+ * useChip: false면 chip을 쓰지 않고 늘 "n차시" — 영역의 단계 지도(영역 탭이 어느 영역인지 알려 주고, n은 영역 안의 차례)
  */
-export const lessonChipText = (lesson, number) => (typeof lesson?.chip === 'string' && lesson.chip.trim() ? lesson.chip.trim() : `${number}차시`);
+export const lessonChipText = (lesson, number, { useChip = true } = {}) => (useChip && typeof lesson?.chip === 'string' && lesson.chip.trim() ? lesson.chip.trim() : `${number}차시`);
 
 /** 차시의 시간 칩에 쓸 분: 차시 정의의 minutes(양수)가 있으면 그것, 없으면 게임의 playMinutes. 둘 다 없으면 null */
 export function lessonMinutes(lesson, game) {
@@ -313,6 +317,7 @@ export function createGameApp({
   playStage,
   howTo = [],
   lessons = null,
+  areas = null,
   heroArt = null,
   rewards: rewardOptions = null,
   collections: collectionDefs = null,
@@ -350,6 +355,13 @@ export function createGameApp({
     return regularOf(group ? group.stages : stages).indexOf(stage) + 1;
   };
   const optionalIds = stages.filter((s) => s.challenge).map((s) => s.id);
+
+  // 영역(선택 기능, core/areas.js): 보이는 영역과 그 차시 묶음. 영역을 쓰지 않는 게임은 null — 아래 화면이 모두 지금과 같다.
+  // ?lesson=으로 한 차시만 열면 영역 카드·탭은 없다(areaMode가 아님). 그때도 놀이 방법·차시 칩은 그 차시가 든 영역의 것을 쓴다
+  const areaPlan = planAreas(areas, Array.isArray(lessons) && lessons.length ? planLessons(allStages, lessons, null).groups : [], lessons);
+  const areaMode = Boolean(areaPlan && !plan.current);
+  const lessonArea = plan.current ? areaOfLesson(areaPlan, plan.current.id) : null;
+  let currentArea = null; // 영역의 단계 지도에서 보는 영역 id (areaMode)
 
   const storage = createStorage(game.id);
   const progress = createProgress({ stageIds, storage, unlockAll: options.unlockAll, openIds: plan.openIds, optionalIds });
@@ -494,7 +506,14 @@ export function createGameApp({
         console.error(error);
       }
     }
-    return h('section', { class: 'screen screen-title hero' },
+    const lines = howToLines(lessonArea);
+    const card = rewardsOn && workshopCard({
+      rank: rewardStore.rank(),
+      stars: { total: progress.totalStars(), max: progress.maxStars },
+      collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
+      badges: { count: earnedCount(), total: badgeDefs.length },
+    });
+    return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}` },
       h('div', { class: 'hero-copy' },
         (eyebrow || grade) && h('div', { class: 'title-chips' },
           eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
@@ -502,17 +521,27 @@ export function createGameApp({
         ),
         h('h1', { class: 'title-main' }, before, h('span', { class: 'mark' }, mark), after),
         game.summary && h('p', { class: 'lead' }, game.summary),
-        h('div', { class: 'actions' },
-          button('시작하기', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true }),
-          howTo.length > 0 && button('놀이 방법', () => show(howToScreen())),
-          button('학습 기록', () => show(reportScreen())),
-        ),
-        rewardsOn && workshopCard({
-          rank: rewardStore.rank(),
-          stars: { total: progress.totalStars(), max: progress.maxStars },
-          collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
-          badges: { count: earnedCount(), total: badgeDefs.length },
-        }),
+        // 영역이 있으면 [시작하기] 자리에 영역 카드(누르면 그 영역의 단계 지도). 놀이 방법·학습 기록은 내 공방 카드 옆에 세로로
+        // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다)
+        areaMode
+          ? [
+            areaCards(),
+            h('div', { class: 'hero-foot' },
+              card,
+              h('div', { class: 'actions hero-more' },
+                lines.length > 0 && button('놀이 방법', () => show(howToScreen()), 'btn', 'info'),
+                button('학습 기록', () => show(reportScreen()), 'btn', 'book'),
+              ),
+            ),
+          ]
+          : [
+            h('div', { class: 'actions' },
+              button('시작하기', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true }),
+              lines.length > 0 && button('놀이 방법', () => show(howToScreen())),
+              button('학습 기록', () => show(reportScreen())),
+            ),
+            card,
+          ],
       ),
       h('div', { class: 'hero-art', 'aria-hidden': 'true' },
         h('div', { class: `hero-mat${art ? ' has-art' : ''}` }, art ?? defaultHeroArt(game)),
@@ -524,18 +553,91 @@ export function createGameApp({
     );
   }
 
-  function howToScreen() {
+  /**
+   * 놀이 방법 줄: 영역의 howTo가 있으면 그 영역의 줄, 없으면 게임의 howTo.
+   * entry: 영역(areaPlan의 한 칸). 영역을 고르기 전(처음 화면)·영역이 없는 게임은 null → 게임의 howTo(공통 줄)
+   */
+  function howToLines(entry) {
+    const own = entry?.area?.howTo;
+    return Array.isArray(own) && own.length > 0 ? own : howTo;
+  }
+
+  /**
+   * 놀이 방법 화면. 처음 화면에서 열면 그 화면의 줄(영역을 고르기 전이면 공통 줄, ?lesson=이면 그 차시가 든 영역의 줄).
+   * entry를 주면(영역의 단계 지도에서 열었을 때) 그 영역의 줄과 [단계 선택](그 영역의 지도로)
+   */
+  function howToScreen(entry = null) {
+    const lines = entry ? howToLines(entry) : howToLines(lessonArea);
+    let go = button('시작하기', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true });
+    if (entry) go = button('단계 선택', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true });
+    else if (areaMode) go = null; // 영역을 고르기 전: 처음 화면의 영역 카드에서 고른다
     return h('section', { class: 'screen screen-howto' },
       h('h2', null, '놀이 방법'),
-      h('ol', { class: 'sheet howto-list' }, howTo.map((step, i) => h('li', null,
+      h('ol', { class: 'sheet howto-list' }, lines.map((step, i) => h('li', null,
         h('span', { class: 'howto-no', 'aria-hidden': 'true' }, String(i + 1)),
         h('span', null, step),
       ))),
       h('div', { class: 'actions actions-start' },
-        button('시작하기', () => show(stageSelectScreen()), 'btn btn-primary btn-lg', 'play', { after: true }),
+        go,
         button('처음 화면', () => show(titleScreen()), 'btn', 'home'),
       ),
     );
+  }
+
+  // ── 영역 (areaMode): 처음 화면의 영역 카드 · 단계 지도의 영역 탭 ─────────────
+  const areaEntry = (id) => areaPlan?.find((entry) => entry.area.id === id) ?? null;
+  /** 영역의 일반 단계 id (모은 별은 일반 단계만 센다 — 도전 주문서는 빼는 것이 엔진 규칙) */
+  const areaStageIds = (entry) => entry.groups.flatMap((g) => regularOf(g.stages)).map((s) => s.id);
+  function areaStars(entry) {
+    const ids = areaStageIds(entry);
+    return { stars: ids.reduce((sum, id) => sum + progress.getStars(id), 0), max: ids.length * MAX_STARS };
+  }
+  function areaArt(entry) {
+    if (typeof entry.area.art !== 'function') return null;
+    try {
+      return entry.area.art(h);
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  }
+  /** 영역의 단계 지도를 연다 */
+  function openArea(id) {
+    currentArea = id;
+    show(stageSelectScreen());
+  }
+
+  /** 처음 화면의 영역 카드: 작은 그림 · 영역 이름 · 학년·단원 한 줄 · 차시 수 · 그 영역의 모은 별. 지난번에 하던 영역(처음이면 첫 영역)에 "여기부터!" */
+  function areaCards() {
+    const here = startAreaId(areaPlan, storage.get(AREA_KEY, null));
+    return h('ul', { class: 'area-cards', 'aria-label': '영역' }, areaPlan.map((entry) => {
+      const { area } = entry;
+      const { stars, max } = areaStars(entry);
+      const isHere = area.id === here;
+      const art = areaArt(entry);
+      const line = areaLine(area);
+      return h('li', null,
+        isHere && h('span', { class: 'flag', 'aria-hidden': 'true' }, '여기부터!'),
+        h('button', {
+          type: 'button',
+          class: `area-card${isHere ? ' is-now' : ''}`,
+          dataset: { area: area.id },
+          'aria-label': areaLabel(area, { lessons: entry.groups.length, stars, maxStars: max, here: isHere }),
+          onclick: () => {
+            sfx.play('click');
+            openArea(area.id);
+          },
+        },
+          art && h('span', { class: 'area-art', 'aria-hidden': 'true' }, art),
+          h('span', { class: 'area-title' }, area.title),
+          line && h('span', { class: 'area-line' }, line),
+          h('span', { class: 'area-meta' },
+            h('span', { class: 'chip' }, icon('book'), `차시 ${entry.groups.length}개`),
+            h('span', { class: 'chip' }, starIcon(true), `별 ${stars} / ${max}`),
+          ),
+        ),
+      );
+    }));
   }
 
   const STATE_TEXT = { done: ['check', '마쳤어요'], now: ['flag', '지금 할 곳'] };
@@ -631,11 +733,13 @@ export function createGameApp({
    * 도감 칩: lesson이 맞는 도감은 그 차시 머리에, 나머지(차시 없음·안 보이는 차시)는 화면 머리에.
    * "도감 n / m"에는 label이 없는 도감만 합치고, label이 있는 도감은 따로 "노트 n / m"처럼 보인다.
    */
-  function collectionChip(lessonId, cls = 'chip') {
-    const shown = (c) => plan.groups?.some((g) => g.lesson.id === c.lesson);
+  function collectionChip(lessonId, cls = 'chip', shownGroups = plan.groups) {
+    const shown = (c) => shownGroups?.some((g) => g.lesson.id === c.lesson);
     const defs = collections.filter((c) => (lessonId === null ? !shown(c) : c.lesson === lessonId));
     // 한 차시만 열었을 때: 다른 차시의 도감은 화면 머리에 넣지 않는다 (offLesson)
-    if (lessonId === null) for (let i = defs.length - 1; i >= 0; i -= 1) if (offLesson(defs[i])) defs.splice(i, 1);
+    // 영역의 단계 지도: 다른 영역의 차시에 딸린 도감도 넣지 않는다 (그 영역에 없는 차시라 무엇을 채우는지 알 수 없다)
+    const offArea = (c) => Boolean(areaMode && c.lesson && lessons?.some((l) => l.id === c.lesson) && !shown(c));
+    if (lessonId === null) for (let i = defs.length - 1; i >= 0; i -= 1) if (offLesson(defs[i]) || offArea(defs[i])) defs.splice(i, 1);
     if (defs.length === 0) return null;
     const { main, side } = chipsOf(defs);
     return [
@@ -644,9 +748,24 @@ export function createGameApp({
     ];
   }
 
-  function stageSelectScreen() {
+  /** 차시 묶음 한 판: "n차시" 칩 + 차시 제목 + 단원 글 + 도감·시간 칩, 단계 카드 길, 도전 주문서 줄 */
+  function lessonGroup(g, chipText) {
     const minutesChip = (n) => (n ? h('span', { class: 'chip' }, icon('clock'), `약 ${n}분`) : null);
     const minutes = game.playMinutes ? h('span', { class: 'chip' }, icon('clock'), `약 ${game.playMinutes}분`) : null;
+    return h('section', { class: 'sheet lesson-group', dataset: { lesson: g.lesson.id } },
+      h('div', { class: 'lesson-head' },
+        h('span', { class: 'lesson-no' }, chipText),
+        h('h3', { class: 'lesson-title' }, g.lesson.title),
+        lessonNoteText(g.lesson) && h('span', { class: 'lesson-note' }, lessonNoteText(g.lesson)),
+        h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), g.lesson.minutes == null ? minutes : minutesChip(lessonMinutes(g.lesson, game))),
+      ),
+      stagePath(regularOf(g.stages)),
+      challengeRow(challengesOf(g.stages)),
+    );
+  }
+
+  function stageSelectScreen() {
+    if (areaMode) return areaStageScreen();
     return h('section', { class: 'screen screen-stages' },
       h('div', { class: 'screen-head' },
         h('h2', null, '단계를 골라요'),
@@ -656,18 +775,74 @@ export function createGameApp({
         ),
       ),
       plan.groups
-        ? plan.groups.map((g) => h('section', { class: 'sheet lesson-group', dataset: { lesson: g.lesson.id } },
-          h('div', { class: 'lesson-head' },
-            h('span', { class: 'lesson-no' }, lessonChipText(g.lesson, g.number)),
-            h('h3', { class: 'lesson-title' }, g.lesson.title),
-            lessonNoteText(g.lesson) && h('span', { class: 'lesson-note' }, lessonNoteText(g.lesson)),
-            h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), g.lesson.minutes == null ? minutes && minutes.cloneNode(true) : minutesChip(lessonMinutes(g.lesson, game))),
-          ),
-          stagePath(regularOf(g.stages)),
-          challengeRow(challengesOf(g.stages)),
-        ))
+        // 차시 칩: 차시 정의의 chip, 없으면 "n차시"(영역이 있는 게임을 ?lesson=으로 열었으면 n은 그 영역 안의 차례)
+        ? plan.groups.map((g) => lessonGroup(g, lessonChipText(g.lesson, lessonNumberInArea(areaPlan, g.lesson.id) ?? g.number)))
         : h('section', { class: 'sheet stage-board' }, stagePath(regularOf(stages)), challengeRow(challengesOf(stages))),
       h('div', { class: 'actions actions-start' }, button('처음 화면', () => show(titleScreen()), 'btn', 'home')),
+    );
+  }
+
+  /**
+   * 영역의 단계 지도: 위에 영역 탭(지금 영역 표시, 다른 영역으로 바로 — 방향키·Home·End), 아래에 그 영역의 차시만.
+   * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다). 모은 별·도감 칩은 그 영역의 것
+   */
+  function areaStageScreen() {
+    if (!areaEntry(currentArea)) currentArea = startAreaId(areaPlan, storage.get(AREA_KEY, null));
+    const headChips = h('div', { class: 'head-chips' });
+    const panel = h('div', { class: 'area-panel', id: 'area-panel', role: 'tabpanel' });
+    const howToButton = button('놀이 방법', () => show(howToScreen(areaEntry(currentArea))), 'btn', 'info');
+    const ids = areaPlan.map((entry) => entry.area.id);
+    const tabs = areaPlan.map((entry) => {
+      const art = areaArt(entry);
+      return h('button', {
+        type: 'button',
+        role: 'tab',
+        class: 'area-tab',
+        id: `area-tab-${entry.area.id}`,
+        'aria-controls': 'area-panel',
+        dataset: { area: entry.area.id },
+        onclick: () => pick(entry.area.id),
+        onkeydown: (event) => {
+          const at = ids.indexOf(entry.area.id);
+          const to = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: ids.length - 1 }[event.key];
+          if (to == null) return;
+          event.preventDefault();
+          const next = (to + ids.length) % ids.length;
+          pick(ids[next]);
+          tabs[next].focus();
+        },
+      }, art && h('span', { class: 'area-tab-art', 'aria-hidden': 'true' }, art), h('span', null, entry.area.title));
+    });
+    function render() {
+      const entry = areaEntry(currentArea);
+      const { stars, max } = areaStars(entry);
+      headChips.replaceChildren(...[
+        collectionChip(null, 'chip chip-ink chip-lg', entry.groups),
+        h('p', { class: 'chip chip-ink chip-lg star-total' }, starIcon(true), `모은 별 ${stars} / ${max}`),
+      ].flat().filter(Boolean));
+      tabs.forEach((tab, i) => {
+        const on = ids[i] === currentArea;
+        tab.setAttribute('aria-selected', String(on));
+        tab.setAttribute('tabindex', on ? '0' : '-1');
+        tab.classList.toggle('is-current', on);
+      });
+      panel.setAttribute('aria-labelledby', `area-tab-${currentArea}`);
+      panel.dataset.area = currentArea;
+      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, lessonChipText(g.lesson, i + 1, { useChip: false }))));
+      howToButton.hidden = howToLines(entry).length === 0;
+    }
+    function pick(id) {
+      if (id === currentArea) return;
+      sfx.play('click');
+      currentArea = id;
+      render();
+    }
+    render();
+    return h('section', { class: 'screen screen-stages has-areas' },
+      h('div', { class: 'screen-head' }, h('h2', null, '단계를 골라요'), headChips),
+      h('div', { class: 'area-tabs', role: 'tablist', 'aria-label': '영역' }, tabs),
+      panel,
+      h('div', { class: 'actions actions-start' }, button('처음 화면', () => show(titleScreen()), 'btn', 'home'), howToButton),
     );
   }
 
@@ -706,6 +881,12 @@ export function createGameApp({
   };
 
   function startStage(stage) {
+    // 영역: 이 단계가 든 영역을 "지난번에 하던 영역"으로 기억하고(처음 화면의 "여기부터!"), 단계 지도로 돌아가면 그 영역의 지도
+    const stageArea = areaOfLesson(areaPlan, stage.lesson);
+    if (stageArea) {
+      if (areaMode) currentArea = stageArea.area.id;
+      storage.set(AREA_KEY, stageArea.area.id);
+    }
     const area = h('div', { class: 'play-area' });
     const meta = h('div', { class: 'play-meta' });
     const chipText = stage.chip ?? (stage.challenge ? '도전 주문서' : `${stageNumber(stage)}단계`);
@@ -1153,6 +1334,7 @@ export function createGameApp({
       rewardStore.reset();
       collectionState = normalizeCollectionState(null, collections);
       storage.set('collections', collectionState);
+      if (areaPlan) storage.remove(AREA_KEY); // 지난번에 하던 영역도 잊는다(다음 학생은 첫 영역부터)
       foundThisVisit.clear();
       renderRankChip();
       show(reportScreen());
@@ -1220,6 +1402,7 @@ export function createGameApp({
       renderRankChip();
       const direct = options.stageId ? stages.find((s) => s.id === options.stageId) : null;
       if (direct && progress.isUnlocked(direct.id)) startStage(direct);
+      else if (areaMode && areaEntry(options.areaId)) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는 id면 처음 화면)
       else show(titleScreen());
     },
     progress,

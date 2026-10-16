@@ -1,10 +1,12 @@
 /**
- * 전개도 접기 공방. 기획서: docs/games/net-workshop/spec.md (16절: 자유 배치·게임 요소)
- * 차시 묶음(LESSONS)으로 단계를 묶는다. 선생님은 ?lesson=cube 처럼 차시로 바로 들어간다.
+ * 입체도형 공방(예전 이름 "전개도 접기 공방" — id·주소·저장 열쇠는 net-workshop 그대로).
+ * 기획서: docs/games/net-workshop/spec.md (16절: 자유 배치·게임 요소) · spec-grade6.md (7-1절: 영역)
+ * 차시 묶음(LESSONS)으로 단계를 묶고, 차시를 영역(AREAS)으로 나눈다. 선생님은 ?lesson=cube 처럼 차시로, ?area=blocks 처럼 영역으로 바로 들어간다.
  * 단계 종류(kind)에 맞는 화면 함수로 넘긴다: judge · opposite · complete · free(내 맘대로 전개도) · dex(도감 주문) · dice(주사위 주문)
  */
 import meta from './game.json' with { type: 'json' };
 import { createGameApp } from '../../shared/ui/app.js';
+import { areaArt } from './thumbs.js'; // 영역 카드·탭 그림
 import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
 import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
@@ -106,17 +108,41 @@ const COLLECTIONS = [
   ...CUBOID_COLLECTIONS, // 직육면체 차시에서 찾은 전개도(화면에 보이지 않는 모음, cuboid-main.js)
 ];
 
+// ── 영역 (spec-grade6 7-1절): 처음 화면의 영역 카드 · 단계 지도의 영역 탭 ──
+// 차시가 아직 없는 영역(6학년 전개도)은 보이지 않고, 적어 둔 차시가 만들어지면 저절로 나타난다(엔진이 없는 차시 id는 건너뛴다)
+const NET5_HOW_TO = [
+  '전개도를 보고, 접으면 입체가 될지 먼저 머릿속으로 생각해요.',
+  '답한 뒤에 [접어 보기]나 막대로 직접 접어서 확인해요. 접은 입체는 끌어서 여러 방향으로 돌려 보고, 크게도 작게도 볼 수 있어요.',
+  '틀리면 겹치는 면(빗금, ✗ 겹쳐요)과 비는 곳(점선, 비어요)을 보여 줘요. 오른쪽 까닭 쪽지를 읽어 보세요.',
+  '면 카드는 빈 자리로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요. 키보드는 Tab과 Enter, 방향키를 써요.',
+  '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 새로 찾은 전개도는 도감에 모여요.',
+  '네 단계를 모두 마치면 도전 주문서(주사위 주문, 도감 주문)가 열려요. 하고 싶은 사람만 해요. 시간은 [시간 재기]를 켠 사람에게만 보여요.',
+];
+const AREAS = [
+  { id: 'net5', title: '5학년 전개도', grades: [5], note: '정육면체ㆍ직육면체', lessons: ['cube', 'cuboid'], art: areaArt('net5'), howTo: NET5_HOW_TO },
+  { id: 'net6', title: '6학년 전개도', grades: [6], note: '각기둥ㆍ원기둥', lessons: ['prism', 'cylinder'], art: areaArt('net6') },
+  {
+    id: 'blocks',
+    title: '쌓기나무',
+    grades: [6],
+    note: '6학년 2학기 · 공간과 입체',
+    lessons: ['blocks-look', 'blocks-top', 'blocks-three', 'blocks-number', 'blocks-layer'],
+    art: areaArt('blocks'),
+    howTo: BLOCK_HOW_TO, // 쌓기나무 차시의 조작
+  },
+];
+
 createGameApp({
   root: document.getElementById('app'),
-  game: { ...meta, subtitle: '5·6학년 수학 · 입체도형의 전개도' },
+  game: { ...meta, subtitle: '5·6학년 수학 · 전개도와 쌓기나무' },
+  areas: AREAS,
+  // 처음 화면(영역을 고르기 전)의 놀이 방법: 모든 영역에 같은 몇 줄. 영역의 단계 지도·한 차시 주소에서는 그 영역의 줄(AREAS의 howTo)
   howTo: [
-    '전개도를 보고, 접으면 입체가 될지 먼저 머릿속으로 생각해요.',
-    '답한 뒤에 [접어 보기]나 막대로 직접 접어서 확인해요. 접은 입체는 끌어서 여러 방향으로 돌려 보고, 크게도 작게도 볼 수 있어요.',
-    '틀리면 겹치는 면(빗금, ✗ 겹쳐요)과 비는 곳(점선, 비어요)을 보여 줘요. 오른쪽 까닭 쪽지를 읽어 보세요.',
-    '면 카드는 빈 자리로 끌어 놓거나, 카드를 누른 다음 자리를 눌러요. 키보드는 Tab과 Enter, 방향키를 써요.',
-    '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 새로 찾은 전개도는 도감에 모여요.',
-    '네 단계를 모두 마치면 도전 주문서(주사위 주문, 도감 주문)가 열려요. 하고 싶은 사람만 해요. 시간은 [시간 재기]를 켠 사람에게만 보여요.',
-    ...BLOCK_HOW_TO, // 쌓기나무 차시의 조작
+    '공부할 영역을 골라요. 카드를 누르면 그 영역의 차시와 단계가 나와요.',
+    '단계는 차례로 열려요. 앞 단계를 마치면 다음 단계를 할 수 있어요.',
+    '틀려도 괜찮아요. 까닭을 읽고 다시 해 보면 솜씨 점수가 쌓이고 칭호가 올라가요.',
+    '마우스, 손가락, 키보드(Tab과 Enter, 방향키) 어느 것으로도 할 수 있어요.',
+    '영역마다 하는 방법은 단계를 고르는 화면의 [놀이 방법]에서 볼 수 있어요.',
   ],
   heroArt,
   lessons: [...LESSONS, ...BLOCK_LESSONS],

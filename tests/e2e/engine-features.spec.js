@@ -129,6 +129,32 @@ window.dnd = enableDragDrop({
 </script></body></html>`;
 const DND_URL = 'http://engine.test/dnd.html';
 
+// 영역 시험 페이지(엔진 areas): 차시 셋을 영역 둘에 나눈다. 차시가 없는 영역 하나와 아직 없는 차시 id 하나를 적어 둔다
+const AREA_PAGE = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/src/shared/styles/base.css"></head><body><div id="app"></div>
+<script type="module">
+import { createGameApp } from '/src/shared/ui/app.js';
+createGameApp({
+  root: document.getElementById('app'),
+  game: { id: 'area-test', title: '영역 시험 공방', summary: '영역을 시험해요.', grades: [5, 6], subject: '수학', playMinutes: 10 },
+  howTo: ['공통 줄'],
+  lessons: [{ id: 'a', title: '가 차시' }, { id: 'b', title: '나 차시', chip: '특별 칩' }, { id: 'c', title: '다 차시' }],
+  areas: [
+    { id: 'x', title: '첫 영역', grades: [5], note: '첫 단원', lessons: ['a', 'ghost', 'b'], howTo: ['첫 영역 줄'] },
+    { id: 'empty', title: '빈 영역', lessons: ['none'] },
+    { id: 'y', title: '둘째 영역', grades: [6], note: '둘째 단원', lessons: ['c'], art: (h) => h('span', { class: 'test-area-art' }, '그림') },
+  ],
+  stages: [
+    { id: 'a1', lesson: 'a', title: 'A1' }, { id: 'a2', lesson: 'a', title: 'A2' }, { id: 'ach', lesson: 'a', title: 'A 도전', challenge: true },
+    { id: 'b1', lesson: 'b', title: 'B1' }, { id: 'c1', lesson: 'c', title: 'C1' }, { id: 'c2', lesson: 'c', title: 'C2' },
+  ],
+  playStage(stage, ctx) {
+    ctx.el.append(ctx.h('button', { type: 'button', class: 'btn', onclick: () => ctx.finish({ stars: 3 }) }, '끝내기'));
+  },
+}).start();
+</script></body></html>`;
+const AREA_URL = 'http://engine.test/areas.html';
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 }));
   await page.route('http://engine.test/**', async (route) => {
@@ -136,6 +162,7 @@ test.beforeEach(async ({ page }) => {
     if (pathname === '/engine.html') return route.fulfill({ contentType: 'text/html', body: ENGINE_PAGE });
     if (pathname === '/once.html') return route.fulfill({ contentType: 'text/html', body: ONCE_PAGE });
     if (pathname === '/dnd.html') return route.fulfill({ contentType: 'text/html', body: DND_PAGE });
+    if (pathname === '/areas.html') return route.fulfill({ contentType: 'text/html', body: AREA_PAGE });
     const file = path.resolve(`.${pathname}`);
     const contentType = file.endsWith('.css') ? 'text/css' : 'text/javascript';
     return route.fulfill({ contentType, body: srcBody(file, await readFile(file, 'utf8')) });
@@ -1052,6 +1079,80 @@ test.describe('끌어다 놓기 (움직임 줄이기)', () => {
     expect(leftOf(await dragState(page))).toEqual(NOTHING_LEFT); // 같은 차례에 없어진다
     expect(await page.locator('.dnd-item[data-v="가"]').evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
     expect(await page.evaluate(() => window.drops)).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+});
+
+// ── 영역 (areas, B0a) ─────────────────────────────
+test.describe('엔진 영역', () => {
+  test('처음 화면: [시작하기] 대신 보이는 영역의 카드(차시가 없는 영역은 없음, 없는 차시 id는 건너뜀). 카드를 누르면 그 영역의 차시만, 칩은 영역 안의 차례', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(AREA_URL);
+    await expect(page.locator('h1')).toHaveText('영역 시험 공방');
+    await expect(btn(page, '시작하기')).toHaveCount(0);
+    await expect(page.locator('.area-card')).toHaveCount(2);
+    await expect(page.locator('.area-card').nth(0)).toHaveAccessibleName('첫 영역, 5학년 · 첫 단원, 차시 2개, 모은 별 0 / 9, 여기부터');
+    await expect(page.locator('.area-card').nth(1)).toHaveAccessibleName('둘째 영역, 6학년 · 둘째 단원, 차시 1개, 모은 별 0 / 6');
+    await expect(page.locator('.area-card').nth(1).locator('.area-art .test-area-art')).toHaveText('그림');
+    await expect(page.locator('.area-card').nth(0).locator('.area-art')).toHaveCount(0); // 그림을 주지 않은 영역
+    await page.locator('.area-card').nth(0).click();
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('tab').nth(0)).toHaveAccessibleName('첫 영역');
+    await expect(page.getByRole('tab').nth(1)).toHaveAccessibleName('둘째 영역'); // 탭의 그림은 화면 읽기에서 숨는다
+    await expect(page.getByRole('tab').nth(1).locator('.area-tab-art')).toHaveAttribute('aria-hidden', 'true');
+    await expect(page.locator('.lesson-group h3')).toHaveText(['가 차시', '나 차시']);
+    await expect(page.locator('.lesson-no')).toHaveText(['1차시', '2차시']); // 차시 정의의 chip('특별 칩')은 영역 지도에서 쓰지 않는다
+    await expect(page.locator('.star-total')).toHaveText('모은 별 0 / 9'); // 도전 주문서는 별 합계에 넣지 않는다
+    await expect(page.locator('.challenge-card')).toHaveCount(1);
+    await page.getByRole('tab', { name: '둘째 영역' }).click();
+    await expect(page.locator('.lesson-group h3')).toHaveText(['다 차시']);
+    await expect(page.locator('.lesson-no')).toHaveText(['1차시']);
+    await expect(page.locator('.star-total')).toHaveText('모은 별 0 / 6');
+    expect(errors).toEqual([]);
+  });
+
+  test('"다음 단계"는 같은 차시 안에서만, 결과에서 [단계 선택]·[← 단계 선택]은 그 단계가 든 영역의 지도. 처음 화면의 "여기부터!"는 방금 한 영역', async ({ page }) => {
+    const errors = collectErrors(page);
+    await page.goto(AREA_URL);
+    await page.locator('.area-card').nth(0).click();
+    await page.locator('.stage-card').first().click();
+    await btn(page, '끝내기').click();
+    await btn(page, '다음 단계').click();
+    await expect(page.getByRole('heading', { name: 'A2' })).toBeVisible();
+    await btn(page, '끝내기').click();
+    await expect(page.getByRole('heading', { name: '이 차시를 마쳤어요!' })).toBeVisible();
+    await expect(btn(page, '다음 단계')).toHaveCount(0); // 나 차시로 넘어가지 않는다
+    await expect(page.locator('.opened-chip')).toHaveText('도전 주문서 1개가 열렸어요');
+    await btn(page, '단계 선택').click();
+    await expect(page.getByRole('tab', { name: '첫 영역' })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.star-total')).toHaveText('모은 별 6 / 9');
+    await page.getByRole('tab', { name: '둘째 영역' }).click();
+    await page.locator('.stage-card').first().click();
+    await btn(page, '← 단계 선택').click();
+    await expect(page.getByRole('tab', { name: '둘째 영역' })).toHaveAttribute('aria-selected', 'true');
+    await btn(page, '처음 화면').click();
+    await expect(page.locator('.area-card').nth(1)).toHaveClass(/is-now/);
+    await expect(page.locator('.area-card').nth(0)).toHaveAccessibleName('첫 영역, 5학년 · 첫 단원, 차시 2개, 모은 별 6 / 9');
+    // 내 공방 카드는 게임 하나에 하나
+    await expect(page.locator('.workshop-meta .chip').first()).toHaveText('별 6 / 15');
+    expect(errors).toEqual([]);
+  });
+
+  test('?lesson=: 영역 카드·탭 없이 그 차시만. 차시 칩은 chip이 있으면 그것, 없으면 영역 안의 차례. 놀이 방법은 그 차시가 든 영역의 줄(없으면 공통 줄)', async ({ page }) => {
+    const errors = collectErrors(page);
+    for (const [lesson, chip, line] of [['a', '1차시', '첫 영역 줄'], ['b', '특별 칩', '첫 영역 줄'], ['c', '1차시', '공통 줄']]) {
+      await page.goto(`${AREA_URL}?lesson=${lesson}`);
+      await expect(page.locator('.area-card')).toHaveCount(0);
+      await btn(page, '놀이 방법').click();
+      await expect(page.locator('.howto-list li')).toHaveText([`1${line}`]);
+      await btn(page, '시작하기').click();
+      await expect(page.getByRole('tablist')).toHaveCount(0);
+      await expect(page.locator('.lesson-no')).toHaveText([chip]);
+    }
+    // 영역을 고르기 전(처음 화면)의 놀이 방법은 공통 줄
+    await page.goto(AREA_URL);
+    await btn(page, '놀이 방법').click();
+    await expect(page.locator('.howto-list li')).toHaveText(['1공통 줄']);
     expect(errors).toEqual([]);
   });
 });

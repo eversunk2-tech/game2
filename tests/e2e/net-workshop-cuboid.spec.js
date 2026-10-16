@@ -271,7 +271,7 @@ test('?lesson=cuboid: 그 차시 4단계만 보이고 첫 단계만 열림(도�
 test('단계 지도: 직육면체 차시는 정육면체 차시 다음에 보이고 첫 단계가 처음부터 열려 있다. 정육면체 차시의 카드·도감 칩은 그대로다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
-  await page.getByRole('button', { name: '시작하기' }).click();
+  await page.getByRole('button', { name: /^5학년 전개도/ }).click(); // 영역 카드 (B0a: [시작하기] 자리) — 두 차시는 "5학년 전개도" 영역에 있다
   // 두 차시의 묶음만 본다(data-lesson) — 다른 차시가 더해져도 이 검사가 달라지지 않게 전체 차시 목록·전체 별 수에 기대지 않는다
   const cube = page.locator('.lesson-group[data-lesson="cube"]');
   const cuboid = page.locator('.lesson-group[data-lesson="cuboid"]');
@@ -1689,7 +1689,7 @@ test('한 차시만 열었을 때의 도감 칩: ?lesson=cube는 지금까지처
   // 차시를 고르지 않은 화면: 정육면체 차시의 도감은 그 차시 머리에, 내 공방 카드에는 도감 칩이 그대로 있다
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   await expect(page.locator('.workshop-meta')).toContainText('도감 0 / ');
-  await page.getByRole('button', { name: '시작하기' }).click();
+  await page.getByRole('button', { name: /^5학년 전개도/ }).click(); // 영역 카드 (B0a: [시작하기] 자리)
   await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
   await expect(page.locator('.lesson-group[data-lesson="cuboid"] .collection-chip')).toHaveCount(0);
 });

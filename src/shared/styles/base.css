@@ -610,6 +610,59 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .challenge-card .stage-title { margin-top: 0; font-size: 1.15rem; }
 .challenge-card .stage-foot { padding-top: 2px; flex-wrap: wrap; }
 
+/* ── 영역 (게임이 areas를 줄 때만): 처음 화면의 영역 카드 · 단계 지도의 영역 탭 ── */
+/* 처음 화면: [시작하기] 자리에 영역 카드. 카드 = 작은 그림 + 영역 이름 + 학년·단원 한 줄 + 차시 수·모은 별. 지난번에 하던 영역은 파랑 테두리 + "여기부터!" 깃발 */
+.hero.has-areas .hero-copy { gap: 16px; }
+.area-cards { list-style: none; margin: 4px 0 0; padding: 0; width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+.area-cards > li { position: relative; display: flex; }
+.area-card {
+  position: relative; width: 100%;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px;
+  padding: 12px 16px 14px; text-align: left; cursor: pointer;
+  border-radius: 18px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
+  box-shadow: var(--edge);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.area-card:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
+.area-card:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.area-card:focus-visible { box-shadow: var(--edge), 0 0 0 7px var(--butter); }
+.area-card.is-now { border-color: var(--primary); box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
+.area-card.is-now:hover { box-shadow: 0 6px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
+.area-card.is-now:focus-visible { box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 7px var(--butter); }
+.area-art { width: 56px; height: 56px; flex: none; display: grid; place-items: center; }
+.area-art > svg { width: 100%; height: 100%; }
+.area-title { font-family: var(--font-display); font-weight: 700; font-size: 1.32rem; line-height: 1.2; }
+.area-line { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); line-height: 1.35; }
+/* 그림은 이름·한 줄 옆에, 차시 수·모은 별 칩은 카드 아래 한 줄(그림 밑까지 넓게) */
+.area-title { grid-column: 2; align-self: end; min-width: 0; }
+.area-line { grid-column: 2; align-self: start; min-width: 0; }
+.area-art { grid-column: 1; grid-row: 1 / span 2; }
+.area-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.area-meta .chip { padding: 1px 10px; white-space: nowrap; }
+.area-meta .icon { width: 1.05em; height: 1.05em; }
+/* 내 공방 카드 + 그 옆에 [놀이 방법]·[학습 기록]을 세로로. 좁으면 버튼이 카드 아래 한 줄로 */
+.hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; width: 100%; }
+.hero-foot .workshop-card { flex: 1 1 300px; margin-top: 0; }
+.hero.has-areas .hero-more { flex-direction: column; align-items: stretch; gap: 12px; }
+/* 단계 지도: 영역 탭(role="tablist"). 지금 보는 영역은 눌린 키 모양(내려앉고 그림자 없음) + 잉크 바탕 흰 글자 — 색만으로 구분하지 않는다 */
+.area-tabs { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.area-tab {
+  min-height: var(--tap); display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 18px 4px 8px; border-radius: 14px; border: 2px solid var(--ink);
+  background: var(--paper); color: var(--ink); cursor: pointer;
+  font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.2;
+  box-shadow: var(--edge-sm);
+  transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-2);
+}
+.area-tab:hover { transform: translateY(-1px); box-shadow: var(--edge); background-color: #fff; }
+.area-tab:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
+.area-tab:focus-visible { box-shadow: var(--edge-sm), 0 0 0 7px var(--butter); }
+.area-tab.is-current, .area-tab.is-current:hover { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); background-color: var(--ink); color: var(--on-primary); cursor: default; }
+.area-tab.is-current:focus-visible { box-shadow: 0 0 0 7px var(--butter); }
+.area-tab-art { width: 42px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--paper); }
+.area-tab-art > svg { width: 100%; height: 100%; }
+.area-panel { display: flex; flex-direction: column; gap: var(--sp-4); }
+
 /* 결과: 오늘의 솜씨 · 점수 줄 · 칭호 카드 · 새 도장 */
 .behaviors { width: 100%; list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; text-align: left; }
 .behavior { display: flex; flex-direction: column; gap: 1px; padding: 8px 12px; border-radius: 14px; background: var(--paper-2); border: 1.5px solid var(--line); }
@@ -824,4 +877,26 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .certificate .actions { width: 100%; }
   .summary-tiles { gap: 8px; }
   .tile dd { font-size: 1.35rem; }
+}
+
+/* 영역 카드·탭: 크롬북 높이(약 680px)에서는 처음 화면 간격을 조금 줄인다 · 태블릿 세로부터는 한 줄로 쌓는다 */
+@media (max-height: 720px) and (min-width: 901px) {
+  .hero.has-areas { padding-top: 0; padding-bottom: 12px; }
+  .hero.has-areas .hero-copy { gap: 14px; }
+}
+/* 901~1180px 가로 화면(작은 노트북·가로 태블릿): 그림 칸을 줄여 글 칸을 넓힌다 — 내 공방 카드가 덜 접혀 낮아진다 */
+@media (min-width: 901px) and (max-width: 1180px) {
+  .hero.has-areas { grid-template-columns: 1.55fr 1fr; gap: 28px; }
+}
+@media (max-width: 900px) {
+  .hero.has-areas { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .area-cards { gap: 12px; }
+  .area-card { padding: 10px 12px 12px; }
+  .area-art { width: 48px; height: 48px; }
+  .hero.has-areas .hero-more { flex-direction: row; width: 100%; }
+  .hero.has-areas .hero-more .btn { flex: 1; }
+  .area-tab { padding: 4px 14px; font-size: 1.05rem; }
+  .area-tab-art { display: none; }
 }

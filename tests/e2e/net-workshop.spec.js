@@ -2038,7 +2038,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   // N1-3: 도감 칩은 전개도 도감만 "n / 11". 안 되는 모양 노트(24칸)는 합치지 않고 따로 "노트 n / 24"
   await expect(page.locator('.workshop-card')).toContainText('도감 3 / 11');
   await expect(page.locator('.workshop-card')).not.toContainText('/ 35');
-  await page.getByRole('button', { name: '시작하기' }).click();
+  await page.getByRole('button', { name: /^5학년 전개도/ }).click(); // 영역 카드 (B0a: [시작하기] 자리)
   await expect(page.locator('.lesson-chips .collection-chip')).toHaveText(['도감 3 / 11', '노트 0 / 24']);
   await page.getByRole('button', { name: '처음 화면' }).click();
   await page.getByRole('button', { name: '학습 기록' }).click();
@@ -5685,6 +5685,8 @@ test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 
   await page.mouse.wheel(0, -200);
   expect(await read()).toEqual(HERO);
   expect(await hero.evaluate((el) => getComputedStyle(el).touchAction)).toBe('manipulation');
+  // 전개도의 놀이 방법은 "5학년 전개도" 영역의 것이다(B0a: 처음 화면의 놀이 방법은 영역을 고르기 전의 공통 줄) — 영역 카드 → [놀이 방법]
+  await page.getByRole('button', { name: /^5학년 전개도/ }).click();
   await page.getByRole('button', { name: '놀이 방법' }).click();
   await expect(page.getByText('답한 뒤에 [접어 보기]나 막대로 직접 접어서 확인해요. 접은 입체는 끌어서 여러 방향으로 돌려 보고, 크게도 작게도 볼 수 있어요.')).toBeVisible();
   expect(errors).toEqual([]);
