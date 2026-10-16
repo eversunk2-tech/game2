@@ -23,10 +23,10 @@
 | 작업 폴더 · 브랜치 | `.worktrees/b0` · `track/b0`(새로) | `.worktrees/blocks` · `track/blocks` | `.worktrees/c1` · `track/c1` |
 | 지침 | [build-brief-b0a.md](games/net-workshop/build-brief-b0a.md) | [build-brief-s2.md](games/net-workshop/build-brief-s2.md) | [build-fix-brief-c3.md](games/net-workshop/build-fix-brief-c3.md) |
 | 무엇 | 엔진 "영역", 처음 화면의 영역 카드, 영역별 단계 지도와 탭, `?area=`, 앱 이름 "입체도형 공방", 놀이 방법을 영역별로 | `blocks-three`·`blocks-number`, `grid-draw.js`, S1에서 넘어온 다섯 가지 | 끌기 안내가 가끔 숨는 앱 문제(`view3d.js` 한 줄), "머무는 시간" 검사, 드문 실패 원인 찾기 |
-| 상태 (**2026-10-16 일시정지**) | 커밋 `f91480e`(엔진 영역 카드·영역 탭·`?area=`·지난 영역 기억, 앱 이름). 작업 트리 깨끗. 새 검사 파일 `net-workshop-areas.spec.js`를 쓰려던 참 — 세 가지 테스트는 아직 안 돌림 | 커밋 `7b645b2`(3·4차시 바탕: 문제 만들기·채점·화면 6단계). **커밋 안 된 것**: 파일 6개 고침 + 새 검사 파일 `tests/e2e/net-workshop-blocks2.spec.js`(쓰던 중) | 커밋 `20678f7`(앱: 접기 진행도를 0~1로 묶음) · `cdc2757`(검사: 머문 시간, 시간 예산·기다림 제한). 작업 트리 깨끗. 마지막 커밋에서 세 가지 테스트를 돌리려던 참 |
+| 상태 (2026-10-16 일시정지 → 같은 날 이어서) | 커밋 `f91480e`(엔진 영역 카드·영역 탭·`?area=`·지난 영역 기억, 앱 이름). 작업 트리 깨끗. 새 검사 파일 `net-workshop-areas.spec.js`를 쓰려던 참 — 세 가지 테스트는 아직 안 돌림 | 커밋 `7b645b2`(3·4차시 바탕: 문제 만들기·채점·화면 6단계). **커밋 안 된 것**: 파일 6개 고침 + 새 검사 파일 `tests/e2e/net-workshop-blocks2.spec.js`(쓰던 중) | 커밋 `20678f7`(앱: 접기 진행도를 0~1로 묶음) · `cdc2757`(검사: 머문 시간, 시간 예산·기다림 제한). 작업 트리 깨끗. 마지막 커밋에서 세 가지 테스트를 돌리려던 참 |
 | 이어서 할 때 | 같은 지침으로 이어서(검사 파일·테스트·느린 기기·스크린샷·보고) | `git status`·`git diff`로 쓰다 만 것을 먼저 읽고 이어서 | 세 가지 테스트 → 최종 보고 |
 | 포트 · scratchpad | 5303 · `build-b0a/` | 5302 · `build-s2/` | 5304 · `build-c3/` |
-| Review 지침 | 아직 안 씀 | 아직 안 씀 | 아직 안 씀 |
+| Review 지침 | [review-brief-b0a.md](games/net-workshop/review-brief-b0a.md) | [review-brief-s2.md](games/net-workshop/review-brief-s2.md) | [review-fix-brief-c3.md](games/net-workshop/review-fix-brief-c3.md) |
 
 사용자에게 물어 둔 두 가지(도움말 "펴서", 2가지일 때 [결과 보기] 버튼 모양)는 답이 오면 B0a에 넣는다(지금은 넣지 않는다고 일러 두었다).
 
