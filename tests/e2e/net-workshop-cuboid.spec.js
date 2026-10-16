@@ -109,35 +109,96 @@ async function expectToastClear(page, label = '', { required = true } = {}) {
   expect((await handle.jsonValue()).hits, label).toEqual([]);
 }
 
+// ── 잠깐만 보이는 상태: 지나갔는지와 얼마나 머물렀는지 (정육면체·직육면체 검사가 같은 도우미를 쓴다) ─────────────
 /**
- * 알림(토스트)에 뜬 글을 적어 둔다. 알림은 몇 초(1.5초 + 글자당 0.08초) 뒤에 사라지는 잠깐의 상태라, 누른 뒤에 그 글을 바로 읽으려 하면
- * 검사 쪽이 느려질 때(아주 바쁜 컴퓨터) 놓칠 수 있다 — 누르기 전에 지켜보기 시작해 뜬 글을 적어 두고, 나중에 견준다
+ * 알림(토스트)을 지켜본다: 뜬 알림마다 종류(info · correct · wrong)·글과, 뜬 때·사라진 때의 페이지 안 시각(performance.now())을
+ * window.toastLog에 적는다. 알림은 몇 초(1.5초 + 글자당 0.08초) 뒤에 스스로 사라지는 잠깐의 상태라, 누르기 전에 지켜보기 시작해 적어 두고
+ * 나중에 본다. 페이지 안에서 잰 시간은 검사 쪽이 느려도 줄지 않는다(느린 기기에서는 길어질 뿐). 부를 때마다 기록을 비운다(지켜보는 장치는 문서마다 하나)
  */
 async function watchToasts(page) {
   await page.evaluate(() => {
-    if (window.toastLog) return;
     window.toastLog = [];
-    const note = () => {
+    if (window.toastSeen) return;
+    window.toastSeen = new Map();
+    new MutationObserver(() => {
+      const now = performance.now();
       for (const toast of document.querySelectorAll('.toast')) {
-        const text = `${toast.className} ${toast.textContent}`;
-        if (window.toastLog.at(-1) !== text) window.toastLog.push(text);
+        if (window.toastSeen.has(toast)) continue;
+        const entry = { type: toast.className.match(/toast-(\w+)/)?.[1] ?? '', text: toast.textContent, shownAt: now, goneAt: null };
+        window.toastSeen.set(toast, entry);
+        window.toastLog.push(entry);
       }
-    };
-    new MutationObserver(note).observe(document.body, { childList: true, subtree: true });
+      for (const [toast, entry] of window.toastSeen) if (entry.goneAt === null && !toast.isConnected) entry.goneAt = now;
+    }).observe(document.body, { childList: true, subtree: true });
   });
 }
-/** watchToasts로 지켜본 알림 가운데 그 종류(info · correct · wrong)의 글에 text가 들어 있다 */
-const expectToasted = (page, type, text) => expect.poll(() => page.evaluate((cls) => window.toastLog.filter((t) => t.includes(cls)).join('\n'), `toast-${type}`)).toContain(text);
-/** 무대의 data-fold가 지나가는 값을 적어 둔다(window.foldLog). 잠깐만 보이는 장면(반 접힘)을 누른 뒤에 바로 보려 하지 않고, 지나간 값을 본다 */
+/**
+ * 지켜본 알림 가운데 그 종류이고 글에 text가 든 것이, 앱이 정한 시간(1.5초 + 글자당 0.08초 — feedback.js)의 70% 넘게 떠 있었다.
+ * 아직 떠 있으면 그 시간이 지날 때까지 기다린다. 70%: 적어 두는 때가 띄운 때보다 조금 늦을 수 있어(누른 처리가 끝난 뒤) 느린 기기에서도 버티게
+ */
+async function expectToastStayed(page, type, text = '') {
+  const handle = await page.waitForFunction(([kind, part]) => {
+    const e = window.toastLog.find((x) => x.type === kind && x.text.includes(part));
+    if (!e) return null;
+    const need = 0.7 * (1500 + 80 * e.text.length);
+    const upFor = (e.goneAt ?? performance.now()) - e.shownAt;
+    return e.goneAt === null && upFor < need ? null : { text: e.text, upFor: Math.round(upFor), need: Math.round(need) };
+  }, [type, text], { timeout: 15_000 }).catch(() => null);
+  expect(handle, `${type} 알림("${text}")을 지켜본 기록이 없다`).not.toBeNull();
+  const seen = await handle.jsonValue();
+  expect(seen.upFor, `${type} 알림 "${seen.text}"이 떠 있던 시간(ms) — 앱이 정한 시간의 70%는 ${seen.need}ms`).toBeGreaterThanOrEqual(seen.need);
+}
+/** 지켜본 알림 가운데 그 종류의 글에 text가 들어 있고, 그 알림이 앱이 정한 시간에 가깝게 떠 있었다 */
+async function expectToasted(page, type, text) {
+  await expect.poll(() => page.evaluate((kind) => window.toastLog.filter((x) => x.type === kind).map((x) => x.text).join('\n'), type)).toContain(text);
+  await expectToastStayed(page, type, text);
+}
+/**
+ * 무대의 data-fold가 지나가는 값과 그때의 페이지 안 시각을 적어 둔다(window.foldLog: [{ fold, at, names }]). 잠깐만 보이는 장면(반 접힘)을
+ * 누른 뒤에 바로 보려 하지 않고, 지나간 값과 머문 시간을 본다. 부를 때마다 기록을 비운다(지켜보는 장치는 무대마다 하나)
+ */
 async function watchFold(page) {
   await page.evaluate(() => {
-    const el = document.querySelector('.fold-stage');
     window.foldLog = [];
+    const el = document.querySelector('.fold-stage');
+    if (window.foldWatched === el) return;
+    window.foldWatched = el;
     new MutationObserver(() => {
       const name = el.querySelector('.net-vname');
-      window.foldLog.push({ fold: el.dataset.fold, names: name ? getComputedStyle(name).opacity : null });
+      window.foldLog.push({ fold: el.dataset.fold, at: performance.now(), names: name ? getComputedStyle(name).opacity : null });
     }).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
   });
+}
+/** foldLog에서 value 장면이 이어진 시간들(ms): 그 값이 처음 적힌 때부터 다른 값이 처음 적힌 때까지. 아직 이어지면 null */
+function dwellOf(log, value) {
+  const out = [];
+  let since = null;
+  for (const x of log) {
+    if (x.fold === value && since === null) since = x.at;
+    else if (x.fold !== value && since !== null) {
+      out.push(Math.round(x.at - since));
+      since = null;
+    }
+  }
+  if (since !== null) out.push(null);
+  return out;
+}
+/** 힌트(반만 접어 보기): 반 접힘이 한 번, 앱의 1.4초(view3d.js peek)의 70% 남짓인 1초 넘게 머물고, 반 접힘이 된 때부터 6초 안에 다 펴졌다 */
+function expectHintDwell(log) {
+  const half = dwellOf(log, 'half');
+  expect(half, '힌트의 반 접힘이 머문 시간(ms) — 앱은 1400ms').toHaveLength(1);
+  expect(half[0], '힌트의 반 접힘이 머문 시간(ms) — 앱은 1400ms').toBeGreaterThanOrEqual(1000);
+  const from = log.find((x) => x.fold === 'half').at;
+  const flat = log.find((x) => x.fold === 'flat' && x.at > from);
+  expect(flat, '힌트 뒤 다 펴졌다(flat)').toBeTruthy();
+  expect(Math.round(flat.at - from), '반 접힘부터 다 펴질 때까지(ms)').toBeLessThanOrEqual(6000);
+}
+/** 움직임 줄이기: 반 접힘 장면이 한 번, 앱의 장면 사이 시간(view3d.js SCENE_GAP 550ms)의 70%(385ms) 넘게, 3초 안에 다음 장면으로 */
+function expectSceneDwell(log) {
+  const half = dwellOf(log, 'half');
+  expect(half, '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toHaveLength(1);
+  expect(half[0], '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toBeGreaterThanOrEqual(385);
+  expect(half[0], '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toBeLessThanOrEqual(3000);
 }
 
 /** 결과 화면: "오늘의 솜씨" 칸 점수 합 + 단계 완료·별 점수 줄 = "이번에 모은 솜씨 점수" (화면 = 저장) */
@@ -324,13 +385,15 @@ test('만나는 선분: 바로 옆 선분을 고르면 까닭(가까이 있다�
   // 힌트: 반만 접었다가 편다. "반 접힘"은 1.4초 동안만 보이는 장면이라, 지나간 상태를 적어 두고 다 펴진 뒤에 본다
   await watchFold(page);
   await page.locator('.hint-btn').click();
-  await page.waitForFunction(() => window.foldLog.some((x) => x.fold === 'half') && document.querySelector('.fold-stage').dataset.fold === 'flat');
+  await page.waitForFunction(() => window.foldLog.some((x) => x.fold === 'half') && document.querySelector('.fold-stage').dataset.fold === 'flat', null, { timeout: 10_000 })
+    .catch(async () => { throw new Error(`힌트가 반 접힘을 거쳐 다 펴지지 않았다(10초): ${JSON.stringify((await page.evaluate(() => window.foldLog)).map((x) => x.fold))}`); });
   const peek = await page.evaluate(() => window.foldLog);
   const passed = peek.map((x) => x.fold);
   expect(passed.indexOf('folding')).toBeGreaterThanOrEqual(0);
   expect(passed.indexOf('half')).toBeGreaterThan(passed.indexOf('folding')); // 접는 움직임 → 반 접힘 → (펴는 움직임) → 펼침
   expect(passed.at(-1)).toBe('flat');
   expect(peek.find((x) => x.fold === 'half').names).toBe('0'); // 접혀 있는 동안 꼭짓점 이름은 숨는다
+  expectHintDwell(peek); // 반 접힘이 1초 넘게 머물고 6초 안에 다 펴졌다
   await pickEdge(page, q.answer);
   await folded(page);
   await expect(page.locator('.edge-band.is-a')).toHaveCount(2);
@@ -1433,10 +1496,12 @@ test.describe('직육면체 차시 (움직임 줄이기)', () => {
     await watchFold(page);
     await page.locator(`.answer-btn:not([data-answer="${q.expected}"])`).click();
     await folded(page);
-    const passed = (await page.evaluate(() => window.foldLog)).map((x) => x.fold);
+    const log = await page.evaluate(() => window.foldLog);
+    const passed = log.map((x) => x.fold);
     expect(passed).toContain('half');
     expect(passed).not.toContain('folding');
     expect(passed.indexOf('half')).toBeLessThan(passed.lastIndexOf('done'));
+    expectSceneDwell(log); // 반 접힘 장면이 건너뛰듯 지나가지 않는다
     await page.goto(STAGE_URL('cuboid-free'));
     const board = boardOf(page);
     await buildNet(page, netRects('123-10', board));
