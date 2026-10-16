@@ -586,10 +586,18 @@ test('그리기: 틀린 [확인하기]도 기록되고(고치지 않고 또 누�
   await expect(page.locator('.blk-pcell').first()).toBeDisabled();
   await next(testInfo, page);
   await solveDraw(page, testInfo, q2);
-  // 위·앞·옆 셋: 위에서 본 모양은 매트 왼쪽, 앞·옆은 작업 지시서에
+  // 위·앞·옆 셋: 위에서 본 모양은 매트 왼쪽, 앞은 작업 지시서에. 옆은 판이 매트 옆에 있는 크롬북에서는 매트 오른쪽("옆" 쪽),
+  // 판이 매트 아래로 가는 태블릿 세로에서는 작업 지시서에 (review-blocks-s2 S2-3 — 1001~1279px에서 판을 1·2차시처럼 좁힌다)
   await expect(page.locator('.blk-mat .blk-paint[data-kind="top"]')).toBeVisible();
   await expect(page.locator('.blk-panel .blk-paint[data-kind="front"]')).toBeVisible();
-  await expect(page.locator('.blk-panel .blk-paint[data-kind="side"]')).toBeVisible();
+  if (isTouch(testInfo)) await expect(page.locator('.blk-panel .blk-paint[data-kind="side"]')).toBeVisible();
+  else {
+    await expect(page.locator('.blk-mat .blk-paintbox.is-side .blk-paint[data-kind="side"]')).toBeVisible();
+    // 옆 모눈 상자는 매트 오른쪽 — 무대 가운데보다 오른쪽, 위 모눈 상자는 왼쪽
+    const [topBox, sideBox, stageBox] = await Promise.all(['.blk-paintbox:not(.is-side)', '.blk-paintbox.is-side', '.blk-stage'].map((sel) => page.locator(sel).boundingBox()));
+    expect(sideBox.x).toBeGreaterThan(stageBox.x + stageBox.width / 2);
+    expect(topBox.x + topBox.width).toBeLessThan(stageBox.x + stageBox.width / 2);
+  }
   // 앞과 옆을 바꿔 칠하면 "앞과 옆"
   await paint(page, testInfo, 'top', q3.views.top);
   await paint(page, testInfo, 'front', q3.views.side);
@@ -624,6 +632,11 @@ test('위, 앞, 옆을 보고 쌓기: 틀리면 다른 그림에 ✗와 무대�
         await expect(page.locator('.reason')).toContainText('세 그림과 견줘 보면 달라요.');
         const marked = r.diff.top.length + r.diff.front.length + r.diff.side.length;
         expect(await page.locator('.blk-views .blk-grid-diff').count()).toBe(marked);
+        // 내 쌓기와 같은 그림은 이름표 옆에 ✓, 다른 그림은 칸에 ✗ (review-blocks-s2 S2-7)
+        const figs = await page.locator('.blk-views .blk-view-fig').evaluateAll((els) => els.map((f) => ({ check: Boolean(f.querySelector('figcaption .blk-same')), x: f.querySelectorAll('.blk-grid-diff').length })));
+        expect(figs.map((f) => f.check)).toEqual(['top', 'front', 'side'].map((k) => r.diff[k].length === 0));
+        expect(figs.map((f) => f.x)).toEqual(['top', 'front', 'side'].map((k) => r.diff[k].length));
+        expect(figs.some((f) => f.check)).toBe(true);
         await expect(stageEl(page)).toHaveAttribute('data-facing', /^(top|front|side)$/);
         await calm(page);
         expect(await page.locator('.blk-stage .blk-over').count()).toBeGreaterThan(0);
@@ -1114,6 +1127,116 @@ test('폭 901~1000px의 낮은 가로 화면(960×768): 판이 아래로 가는 
     expect(m.unit).toBeGreaterThanOrEqual(40);
     await expectNoOverlap(page, id);
   }
+  expect(errors).toEqual([]);
+});
+
+test('폭 901~1000px의 낮은 가로 화면(960×768)에서 칠하는 단계: 처음부터 세로 스크롤이 없어 모눈을 칠하고 [확인하기]를 누르는 데 화면을 움직이지 않는다 (review-blocks-s2 S2-3ⓐ)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 960, height: 768 });
+  /** 모눈 칸과 [확인하기]가 모두 화면 안(0~768px)에 있고 48px이다 */
+  const allInView = () => page.evaluate(() => {
+    const els = [...document.querySelectorAll('.blk-pcell'), document.querySelector('.blk-check')].filter((el) => el && el.getClientRects().length > 0);
+    return {
+      n: els.length,
+      out: els.filter((el) => { const r = el.getBoundingClientRect(); return r.top < 0 || r.bottom > window.innerHeight || r.left < 0 || r.right > window.innerWidth; }).length,
+      small: els.filter((el) => { const r = el.getBoundingClientRect(); return r.width < 48 || r.height < 48; }).length,
+    };
+  });
+  for (const id of ['blocks-draw', 'blocks-numviews']) {
+    await open(page, id);
+    const qs = questionsFor(id);
+    let mat = null;
+    for (const [i, q] of qs.entries()) {
+      if (q.kind === 'pick') break;
+      await calm(page);
+      // 매트는 단계 안에서 움직이지 않는다(문항마다 같은 자리·크기)
+      mat ??= await page.locator('.blk-mat').boundingBox();
+      expect(await page.locator('.blk-mat').boundingBox()).toEqual(mat);
+      await noScroll(page, `${id} ${i + 1}`);
+      expect(await allInView(), `${id} ${i + 1}`).toEqual({ n: q.kinds.length * 9 + 1, out: 0, small: 0 });
+      await expectNoOverlap(page, `${id} ${i + 1}`);
+      if (id === 'blocks-draw') expect(parseFloat(await stageEl(page).evaluate((el) => el.style.getPropertyValue('--blk-unit')))).toBeGreaterThanOrEqual(36);
+      // 칠하고 확인한다(틀린 칠하기 — 까닭이 나와도 모눈·[확인하기]는 그 자리)
+      for (const kind of q.kinds) await paint(page, testInfo, kind, mirrorCells(q.views[kind]));
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+      await check(testInfo, page);
+      await expect(page.locator('.reason')).toBeVisible();
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+      for (const kind of q.kinds) await paint(page, testInfo, kind, q.views[kind]);
+      await check(testInfo, page);
+      await expect(page.locator('.reason')).toContainText('맞아요!');
+      // 맞힌 뒤에는 까닭 쪽지·[다음 문제]만큼 판이 길어질 수 있다(읽고 넘어가는 장면) — 다음 문항은 맨 위에서
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await next(testInfo, page);
+    }
+  }
+  expect(errors).toEqual([]);
+});
+
+test('폭 1001~1279px(1024×768): 3·4차시도 판의 폭과 쌓기나무 크기가 1·2차시와 같다 (review-blocks-s2 S2-3ⓑ)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  test.setTimeout(60_000);
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  const measure = () => page.evaluate(() => ({ panel: Math.round(document.querySelector('.blk-panel').getBoundingClientRect().width), unit: document.querySelector('.blk-stage')?.style.getPropertyValue('--blk-unit') ?? null }));
+  await open(page, 'blocks-copy');
+  await calm(page);
+  const s1 = await measure();
+  expect(parseFloat(s1.unit)).toBeGreaterThanOrEqual(46);
+  for (const id of ['blocks-flip', 'blocks-draw', 'blocks-build', 'blocks-write', 'blocks-fromnum', 'blocks-numviews']) {
+    await open(page, id);
+    await calm(page);
+    const m = await measure();
+    expect(m.panel, id).toBe(s1.panel);
+    if (id !== 'blocks-numviews') expect(m.unit, id).toBe(s1.unit);
+    await noScroll(page, id);
+    await expectFits(page, id);
+    await expectNoOverlap(page, id);
+  }
+  expect(errors).toEqual([]);
+});
+
+test('낮은 화면(1366×680)에서 답하기 전 그림의 이름표가 쌓기나무를 가리지 않는다: 뒷줄이 3층인 모양 (review-blocks-s2 S2-6)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  await page.setViewportSize({ width: 1366, height: 680 });
+  /** 이름표 상자 안에 들어온 쌓기나무 면의 깊이(px): 면(다각형)마다 이름표 안의 점이 다각형 안에 있는지 본다 */
+  const covered = () => page.evaluate(() => {
+    const t = document.querySelector('.blk-mat .blk-tag').getBoundingClientRect();
+    const ctm = document.querySelector('.blk-stage svg').getScreenCTM();
+    let depth = 0;
+    for (const p of document.querySelectorAll('.blk-stage .blk-face')) {
+      const pts = p.getAttribute('points').trim().split(/\s+/).map((xy) => xy.split(',').map(Number)).map(([x, y]) => [ctm.a * x + ctm.e, ctm.d * y + ctm.f]);
+      const inside = (x, y) => {
+        let c = false;
+        for (let a = 0, b = pts.length - 1; a < pts.length; b = a, a += 1) {
+          if ((pts[a][1] > y) !== (pts[b][1] > y) && x < ((pts[b][0] - pts[a][0]) * (y - pts[a][1])) / (pts[b][1] - pts[a][1]) + pts[a][0]) c = !c;
+        }
+        return c;
+      };
+      for (let y = Math.ceil(t.top); y < t.bottom; y += 1) for (let x = Math.ceil(t.left); x < t.right; x += 2) if (inside(x, y)) depth = Math.max(depth, t.bottom - y);
+    }
+    return Math.round(depth);
+  });
+  // 시드 5: 앞과 뒤 2번 · 그리기 1·2번이 뒷줄 3층(가운데 위의 이름표가 윗면을 9px 가리던 장면)
+  let tall = 0;
+  for (const id of ['blocks-flip', 'blocks-draw']) {
+    await open(page, id, { seed: 5 });
+    for (const [i, q] of questionsFor(id, 5).entries()) {
+      await expect(stageEl(page)).toHaveClass(/is-frozen/);
+      await expect(page.locator('.blk-mat .blk-tag')).toBeVisible();
+      await calm(page);
+      expect(await covered(), `${id} ${i + 1}`).toBe(0);
+      if (q.target.some((row, y) => y === 2 && row.some((v) => v === 3))) tall += 1;
+      await expectNoOverlap(page, `${id} ${i + 1}`);
+      if (id === 'blocks-flip') await solveFlip(page, testInfo, q);
+      else await solveDraw(page, testInfo, q);
+    }
+  }
+  expect(tall).toBeGreaterThanOrEqual(2);
   expect(errors).toEqual([]);
 });
 

@@ -51,8 +51,13 @@ export const BLOCK_LESSONS = [
   { id: 'blocks-number', title: '위에서 본 모양에 수 쓰기', chip: '쌓기나무 4차시', minutes: 7, note: BLOCK_UNIT },
 ];
 
-/** 놀이 방법에 덧붙이는 쌓기나무 줄 (main.js의 howTo 끝에) */
+/**
+ * 놀이 방법에 덧붙이는 쌓기나무 줄 (main.js의 howTo 끝에): 3·4차시의 모눈 칠하기·수 쓰기 둘(review-blocks-s2 S2-12) + 쌓기·돌려 보기 둘.
+ * (쌓기·돌려 보기 두 줄이 맨 끝이다 — 처음 화면의 놀이 방법 검사가 그 두 줄을 끝에서 찾는다)
+ */
 export const BLOCK_HOW_TO = [
+  '위, 앞, 옆에서 본 모양은 모눈의 칸을 눌러 칠하고, 한 번 더 누르면 지워요.',
+  '위에서 본 모양에 수를 쓸 때는 칸을 누를 때마다 1, 2, 3으로 바뀌어요. [내리기] [올리기]로도 고쳐요.',
   '쌓기나무 차시에서는 판을 짧게 누르면 쌓이고, [빼기]를 누른 다음 누르면 빠져요. "위에서 본 판"의 칸을 눌러도 돼요.',
   '쌓기나무는 끌어서 여러 방향으로 돌려 보고, [위] [앞] [옆]을 누르면 그 방향에서 본 모양이 돼요.',
 ];
@@ -838,27 +843,46 @@ export function flipKindOf(v) {
   return new Set(v).size < v.length ? 'rep' : 'dist';
 }
 /**
- * 문항마다 주어진 그림의 꼴을 뽑는 무게 pal : rep : dist = 3 : 4 : 2.
- * 보기 셋은 늘 주어진 그림과 같은 높이들을 줄 세운 것이다. 좌우가 같은 그림(pal)은 반대쪽도 같아서 "주어진 그림과 똑같은 보기"가 정답이고,
- * 나머지 둘은 서로 좌우로 뒤집은 짝이다. 그 밖의 문항은 정답(뒤집은 것) · 주어진 그림 그대로(오개념) · 다른 줄 세움이다.
- * 이렇게 섞어야 그림을 견주지 않고 보기의 꼴만 보는 규칙(주어진 것과 같은 보기 피하기, 서로 뒤집힌 짝 고르기, 좌우가 같은 보기 고르기 …)이
- * 찍기(1/3)에서 ±10%p 안이다 — 단위 검사가 시드 1,000개로 잰다.
+ * 문항마다 [주어진 그림의 꼴, 보기 묶음]을 뽑는 주머니(24개). 보기 셋은 늘 주어진 그림과 같은 높이들을 줄 세운 것이라
+ * 왼쪽·오른쪽 차례로만 갈린다(앞과 뒤가 좌우로 뒤집힌 사이인 것을 생각해야 고를 수 있다).
+ *   pal(좌우가 같다 — 반대쪽에서 봐도 같다) 3: 정답 = 주어진 그림과 똑같은 보기 + 나머지 둘(늘 서로 좌우로 뒤집은 짝)
+ *   rep(같은 높이가 둘) 2: 정답 + 주어진 그림 그대로(오개념) + 좌우가 같은 줄 세움 — 셋뿐이라 정해진다
+ *   dist(높이가 모두 다르다) 19: 정답 + 다른 둘 — same 5(주어진 그림 그대로 + 다른 줄 세움) · pair 3(서로 뒤집은 짝) · apart 11(짝이 아닌 둘)
+ * 이렇게 섞어야 그림을 견주지 않고 보기의 꼴만 보는 규칙(주어진 것과 같은 보기 피하기, 서로 뒤집힌 짝 고르기, 좌우가 같은 보기 고르기,
+ * "좌우가 같은 보기, 없으면 짝" · "주어진 그림과 다르고 좌우가 같지 않은 보기" …)이 모두 찍기(1/3)에서 ±10%p 안이다 — 단위 검사가 시드 1,000개로 잰다.
+ * (꼴만 보는 두 규칙은 pal·rep 문항에서 반드시 맞고 반드시 틀리는 짝이라, 주어진 그림 그대로가 없는 dist 문항(pair·apart)을 섞어 둘 다 낮춘다 — review-blocks-s2 S2-2)
  */
-const FLIP_BAG = ['pal', 'pal', 'pal', 'rep', 'rep', 'rep', 'rep', 'dist', 'dist'];
+const FLIP_BAG = [
+  ...Array(3).fill(['pal', 'pal']),
+  ...Array(2).fill(['rep', 'same']),
+  ...Array(5).fill(['dist', 'same']),
+  ...Array(3).fill(['dist', 'pair']),
+  ...Array(11).fill(['dist', 'apart']),
+];
 /** 조건에 맞는 모양이 뽑히지 않을 때의 모양(숨겨진 쌓기나무 없음) — [주어진 쪽][꼴] */
 const FLIP_FALLBACKS = {
   front: { pal: [[1, 2, 1], [0, 0, 0], [0, 0, 0]], rep: [[1, 1, 2], [0, 0, 0], [0, 0, 0]], dist: [[1, 2, 3], [0, 0, 0], [0, 0, 0]] },
   side: { pal: [[1, 0, 0], [2, 0, 0], [1, 0, 0]], rep: [[1, 0, 0], [1, 0, 0], [2, 0, 0]], dist: [[1, 0, 0], [2, 0, 0], [3, 0, 0]] },
 };
 
-/** 보기 셋: [{ heights(왼쪽부터 세로줄 높이), role: 'answer' | 'same'(주어진 그림 그대로) | 'other' }] (차례는 섞는다) */
-function flipOptions(rng, view) {
+/**
+ * 보기 셋: [{ heights(왼쪽부터 세로줄 높이), role: 'answer' | 'same'(주어진 그림 그대로) | 'other' }] (차례는 섞는다)
+ * set: pal(좌우가 같은 그림) · same(정답 + 그대로 + 다른 줄 세움) · pair(정답 + 서로 뒤집은 짝) · apart(정답 + 짝이 아닌 다른 줄 세움 둘)
+ */
+function flipOptions(rng, view, set) {
   const answer = flipLR(view);
   const others = arrangementsOf(view).filter((a) => a.join() !== view.join() && a.join() !== answer.join());
-  const list = isPalindrome(view)
-    ? [{ heights: answer, role: 'answer' }, ...rng.shuffle(others).slice(0, 2).map((heights) => ({ heights, role: 'other' }))]
-    : [{ heights: answer, role: 'answer' }, { heights: [...view], role: 'same' }, { heights: rng.pick(others), role: 'other' }];
-  return rng.shuffle(list);
+  const other = (heights) => ({ heights, role: 'other' });
+  let rest;
+  if (isPalindrome(view)) rest = rng.shuffle(others).slice(0, 2).map(other);
+  else if (set === 'same') rest = [{ heights: [...view], role: 'same' }, other(rng.pick(others))];
+  else {
+    const first = rng.pick(others);
+    const mirror = flipLR(first).join();
+    const second = set === 'pair' ? flipLR(first) : rng.pick(others.filter((a) => a.join() !== first.join() && a.join() !== mirror));
+    rest = [other(first), other(second)];
+  }
+  return rng.shuffle([{ heights: answer, role: 'answer' }, ...rest]);
 }
 
 function makeFlipQuestions(stage, rng) {
@@ -866,7 +890,7 @@ function makeFlipQuestions(stage, rng) {
   const givens = rng.shuffle(['front', 'side', rng.pick(['front', 'side'])]);
   const used = new Set();
   return givens.slice(0, stage.count).map((given, i) => {
-    const want = rng.pick(FLIP_BAG);
+    const [want, set] = rng.pick(FLIP_BAG);
     const target = drawShape(rng, {
       cells: [3, 6],
       counts: [4, 9],
@@ -880,7 +904,7 @@ function makeFlipQuestions(stage, rng) {
     });
     used.add(mapKey(target));
     const view = viewHeights(target, given);
-    const options = flipOptions(rng, view);
+    const options = flipOptions(rng, view, set);
     return {
       itemId: `${stage.id}:${i + 1}`,
       target,
@@ -888,6 +912,7 @@ function makeFlipQuestions(stage, rng) {
       ask: FLIP_ASK[given],
       view,
       kind: want,
+      set,
       options,
       expected: options.findIndex((o) => o.role === 'answer') + 1,
     };
@@ -921,6 +946,11 @@ export function nearIsLower(h, kind) {
 }
 /** 그 그림이 좌우로 뒤집어도 같은가(판 위 자리와 상관없이) */
 export const symmetricView = (g, kind) => sameView(g, mirrorCells(g), kind);
+/**
+ * 앞(옆)에서 본 모양을 좌우로 뒤집은 것이 마침 옆(앞)에서 본 모양과 같은가 — 그러면 뒤집어 그린 그림이 "앞과 옆을 바꿔 그린 것"으로 채점되어
+ * 좌우가 뒤집힌 까닭을 만날 수 없다. 그리는 문항은 이런 모양을 내지 않는다 (review-blocks-s2 S2-4)
+ */
+export const mirrorIsOther = (h, kind) => sameView(mirrorCells(viewCells(h, kind)), viewCells(h, kind === 'front' ? 'side' : 'front'), 'front');
 /** 그리는 문항: 앞 1 · 옆 1 · 위·앞·옆 모두 1 */
 const DRAW_PLAN = [['front'], ['side'], ['top', 'front', 'side']];
 const DRAW_FALLBACKS = [[[1, 1, 0], [1, 2, 3], [0, 0, 0]], [[2, 1, 0], [3, 0, 0], [1, 0, 0]], [[1, 1, 1], [2, 0, 0], [0, 0, 0]]];
@@ -933,8 +963,8 @@ function drawable(h, kinds) {
   if (sameView(front, side, 'front')) return false; // 앞과 옆을 바꿔 그려도 맞으면 그 오개념을 만날 수 없다
   if (kinds.length === 1) {
     const [kind] = kinds;
-    // 좌우로 뒤집어 그린 것이 틀린 답이 되고, 가까운 쌓기나무보다 뒤의 쌓기나무가 높은 세로줄이 있다
-    return !symmetricView(kind === 'front' ? front : side, kind) && nearIsLower(h, kind);
+    // 좌우로 뒤집어 그린 것이 틀린 답(까닭: 좌우 뒤집힘)이 되고, 가까운 쌓기나무보다 뒤의 쌓기나무가 높은 세로줄이 있다
+    return !symmetricView(kind === 'front' ? front : side, kind) && !mirrorIsOther(h, kind) && nearIsLower(h, kind);
   }
   return !symmetricView(viewCells(h, 'top'), 'top');
 }
@@ -954,7 +984,30 @@ function makeDrawQuestions(stage, rng) {
   });
 }
 
-/** 그린 그림 하나가 틀린 까닭 (from: 'picture' 입체 그림을 보고 · 'numbers' 수를 쓴 그림을 보고) */
+/**
+ * "가장 높은 층" 까닭(입체 그림을 보고 그린 앞·옆): 덜 칠했으면(under — 가까운 쌓기나무만 그림) 뒤의 높은 쌓기나무도 보인다고,
+ * 더 칠했으면(over) 가장 높은 층까지만 칠한다고, 둘 다면(mixed) 규칙만 (review-blocks-s2 S2-5)
+ */
+const TALLEST_NOTE = {
+  front: {
+    under: '앞에서 보면 세로줄마다 가장 높은 층까지 보여요. 뒤에 있는 높은 쌓기나무도 보여요.',
+    over: '앞에서 본 모양은 세로줄마다 가장 높은 층까지만 칠해요.',
+    mixed: '앞에서 보면 세로줄마다 가장 높은 층까지 보여요.',
+  },
+  side: {
+    under: '옆에서 보면 세로줄마다 가장 높은 층까지 보여요. 안쪽에 있는 높은 쌓기나무도 보여요.',
+    over: '옆에서 본 모양은 세로줄마다 가장 높은 층까지만 칠해요.',
+    mixed: '옆에서 보면 세로줄마다 가장 높은 층까지 보여요.',
+  },
+};
+/** 다른 칸들이 덜 칠한 것뿐인가(under), 더 칠한 것뿐인가(over), 섞였나(mixed) */
+const moreOf = (diff) => {
+  const extra = diff.some((d) => d.state === 'extra');
+  const missing = diff.some((d) => d.state === 'missing');
+  return extra && !missing ? 'over' : missing && !extra ? 'under' : 'mixed';
+};
+
+/** 그린 그림 하나가 틀린 까닭 (from: 'picture' 입체 그림을 보고 · 'numbers' 수를 쓴 그림을 보고 · more: 덜/더 칠함) */
 const VIEW_NOTES = {
   top: {
     [BLOCK_TAGS.floor]: () => '위에서 본 모양은 바닥에 닿은 면의 모양이에요. 쌓인 자리를 모두 칠해요.',
@@ -963,12 +1016,16 @@ const VIEW_NOTES = {
   front: {
     [BLOCK_TAGS.frontSide]: (from) => (from === 'numbers' ? '그린 것은 옆에서 본 모양이에요. 수를 쓴 그림의 아래쪽이 앞이에요.' : '그린 것은 옆에서 본 모양이에요. 판의 "앞" 글자 쪽에서 봐야 해요.'),
     [BLOCK_TAGS.mirror]: () => '왼쪽과 오른쪽이 뒤집혔어요. 앞에서 볼 때 왼쪽에 있는 세로줄부터 그려요.',
-    [BLOCK_TAGS.tallest]: (from) => (from === 'numbers' ? '앞에서 보면 세로줄마다 가장 큰 수만큼 보여요.' : '앞에서 보면 세로줄마다 가장 높은 층까지 보여요. 뒤에 있는 높은 쌓기나무도 보여요.'),
+    [BLOCK_TAGS.tallest]: (from, more) => (from === 'numbers'
+      ? `앞에서 보면 세로줄마다 가장 큰 수만큼${more === 'over' ? '만' : ''} 보여요.`
+      : TALLEST_NOTE.front[more]),
   },
   side: {
     [BLOCK_TAGS.frontSide]: (from) => (from === 'numbers' ? '그린 것은 앞에서 본 모양이에요. 옆은 오른쪽이에요. 수를 쓴 그림의 오른쪽에서 봐요.' : '그린 것은 앞에서 본 모양이에요. 옆은 오른쪽이에요. 판의 "옆" 글자 쪽에서 봐야 해요.'),
     [BLOCK_TAGS.mirror]: () => '왼쪽과 오른쪽이 뒤집혔어요. 옆(오른쪽)에서 보면 앞줄이 왼쪽에 보여요.',
-    [BLOCK_TAGS.tallest]: (from) => (from === 'numbers' ? '옆에서 보면 줄마다 가장 큰 수만큼 보여요. 앞줄이 왼쪽이에요.' : '옆에서 보면 세로줄마다 가장 높은 층까지 보여요. 안쪽에 있는 높은 쌓기나무도 보여요.'),
+    [BLOCK_TAGS.tallest]: (from, more) => (from === 'numbers'
+      ? `옆에서 보면 줄마다 가장 큰 수만큼${more === 'over' ? '만' : ''} 보여요. 앞줄이 왼쪽이에요.`
+      : TALLEST_NOTE.side[more]),
   },
 };
 
@@ -988,7 +1045,8 @@ export function judgeView(q, kind, mine, { from = 'picture' } = {}) {
     else if (!symmetricView(target, kind) && sameView(mine, mirrorCells(target), kind)) tag = BLOCK_TAGS.mirror;
     else tag = BLOCK_TAGS.tallest;
   }
-  return { correct: false, tag, diff: viewDiff(mine, target, kind), note: VIEW_NOTES[kind][tag](from) };
+  const diff = viewDiff(mine, target, kind);
+  return { correct: false, tag, diff, note: VIEW_NOTES[kind][tag](from, moreOf(diff)) };
 }
 
 /**
@@ -1349,7 +1407,7 @@ function makeNumViewQuestions(stage, rng) {
         if (kind === 'pick') return !sameMap(toCorner(h), toCorner(turnMap(h))) && lookKey(h) !== lookKey(turnMap(h));
         const front = viewCells(h, 'front');
         const side = viewCells(h, 'side');
-        return !sameView(front, side, 'front') && !symmetricView(kind === 'front' ? front : side, kind) && nearIsLower(h, kind);
+        return !sameView(front, side, 'front') && !symmetricView(kind === 'front' ? front : side, kind) && !mirrorIsOther(h, kind) && nearIsLower(h, kind);
       },
       fallback: NUMVIEW_FALLBACKS[i],
     });
@@ -1378,11 +1436,13 @@ export function judgeNumPick(q, choice) {
       message: `고른 그림은 ${spotName(x, y)} 자리에 쌓기나무가 ${countWord(q.target[y][x] + option.delta)}예요. 수를 쓴 그림에는 ${josa(q.target[y][x], '이라고/라고')} 쓰여 있어요.`,
     };
   }
+  // 앞과 옆이 바뀐 것(turn) · 앞과 옆이 바뀌고 한 자리의 수도 다른 것(turn-other — 그 자리를 말한다)
+  const also = option?.role === 'turn-other' ? `바뀌었고, ${spotName(option.spot[0], option.spot[1])} 자리의 수도 달라요.` : '바뀐 모양이에요.';
   return {
     correct,
     tag: BLOCK_TAGS.frontSide,
     expected: q.expected,
-    message: '고른 그림은 앞과 옆이 바뀐 모양이에요. 수를 쓴 그림의 아래쪽이 앞, 오른쪽이 옆이에요.',
+    message: `고른 그림은 앞과 옆이 ${also} 수를 쓴 그림의 아래쪽이 앞, 오른쪽이 옆이에요.`,
   };
 }
 

@@ -215,6 +215,9 @@ test('blocks-draw 문제 만들기 (시드 300개): 앞 1 · 옆 1 · 위·앞·
         const [kind] = q.kinds;
         const cells = indepCells(q.target, kind);
         assert.ok(!indepSameShape(cells, mirror(cells), kind), '좌우로 뒤집어 그리면 틀린 답이 된다');
+        // 뒤집은 그림이 다른 쪽(앞 ↔ 옆) 그림과 같지 않다 — 뒤집어 그린 학생은 늘 "좌우 뒤집힘" 까닭을 만난다 (review-blocks-s2 S2-4)
+        assert.ok(!indepSameShape(mirror(cells), indepCells(q.target, kind === 'front' ? 'side' : 'front'), kind), `${seed} ${kind} 뒤집은 그림 = 다른 쪽`);
+        assert.equal(judgeView(q, kind, mirror(cells)).tag, BLOCK_TAGS.mirror);
         // 가장 가까운 쌓기나무보다 뒤(안쪽)의 쌓기나무가 높은 세로줄이 있다 — "가장 높은 층"을 만난다
         const lines = R.map((i) => R.map((k) => (kind === 'front' ? q.target[k][i] : q.target[i][2 - k])));
         assert.ok(lines.some((line) => {
@@ -231,6 +234,7 @@ test('blocks-draw 문제 만들기 (시드 300개): 앞 1 · 옆 1 · 위·앞·
 test('blocks-draw · blocks-numviews 채점: 무작위 그림 3,000장이 독립 계산과 같고, tag는 앞과 옆 → 좌우 뒤집힘 → 가장 높은 층(위는 바닥에 닿은 면)', () => {
   const rng = createRng('draw-judge');
   let checked = 0;
+  const seen = { over: 0, under: 0 };
   for (const seed of SEEDS.slice(0, 100)) {
     for (const q of [...questions('blocks-draw', seed), ...questions('blocks-numviews', seed).filter((x) => x.kind === 'paint')]) {
       for (const kind of q.kinds) {
@@ -257,6 +261,27 @@ test('blocks-draw · blocks-numviews 채점: 무작위 그림 3,000장이 독립
           if (!indepSameShape(mirror(target), target, kind) && !indepSameShape(mirror(target), other, kind)) assert.equal(judgeView(q, kind, mirror(target)).tag, BLOCK_TAGS.mirror);
         } else if (!indepSameShape(mirror(target), target, 'top')) assert.equal(judgeView(q, 'top', mirror(target)).tag, BLOCK_TAGS.mirror);
       }
+      // "가장 높은 층" 까닭은 덜 칠했는지·더 칠했는지에 따라 (review-blocks-s2 S2-5 ①): 9칸 모두 칠함 → 더 칠함
+      for (const kind of q.kinds.filter((k) => k !== 'top')) {
+        const full = [[1, 1, 1], [1, 1, 1], [1, 1, 1]];
+        const over = judgeView(q, kind, full);
+        const from = q.itemId.startsWith('blocks-numviews') ? 'numbers' : 'picture';
+        const overNote = judgeView(q, kind, full, { from });
+        if (over.tag === BLOCK_TAGS.tallest) {
+          assert.ok(over.diff.every((d) => d.state === 'extra'));
+          assert.equal(over.note, `${kind === 'front' ? '앞' : '옆'}에서 본 모양은 세로줄마다 가장 높은 층까지만 칠해요.`);
+          assert.match(overNote.note, from === 'numbers' ? /가장 큰 수만큼만 보여요\./ : /가장 높은 층까지만 칠해요\.$/);
+          seen.over += 1;
+        }
+        // 맨 아래 층만(덜 칠함): 뒤(안쪽)의 높은 쌓기나무도 보인다
+        const low = q.views[kind].map((row, z) => row.map((v) => (z === 0 ? v : 0)));
+        const under = judgeView(q, kind, low);
+        if (!under.correct && under.tag === BLOCK_TAGS.tallest) {
+          assert.ok(under.diff.every((d) => d.state === 'missing'));
+          assert.match(under.note, /(뒤|안쪽)에 있는 높은 쌓기나무도 보여요\.$/);
+          seen.under += 1;
+        }
+      }
       // 여러 장을 한 번에: 모두 맞아야 맞음, 앞·옆을 바꿔 그리면 앞과 옆
       const right = Object.fromEntries(q.kinds.map((k) => [k, q.views[k]]));
       assert.equal(judgeDrawing(q, right).correct, true);
@@ -272,6 +297,7 @@ test('blocks-draw · blocks-numviews 채점: 무작위 그림 3,000장이 독립
     }
   }
   assert.ok(checked > 3000);
+  assert.ok(seen.over > 200 && seen.under > 100, JSON.stringify(seen));
 });
 
 test('그리기 힌트: 처음으로 다른 그림의 세로줄 하나(위는 자리 수만), 맞은 그림은 건너뛴다', () => {
@@ -312,10 +338,24 @@ test('blocks-flip 문제 만들기 (시드 1,000개): 반대쪽 모양이 독립
       for (const o of q.options) assert.deepEqual([...o.heights].sort(), [...q.view].sort());
       assert.deepEqual(q.options[q.expected - 1].heights, indepHeights(q.target, q.ask));
       assert.equal(q.options.filter((o) => o.role === 'answer').length, 1);
-      // 좌우가 같은 그림이면 정답이 주어진 그림과 같고, 아니면 "주어진 그림 그대로"가 오개념 보기로 들어 있다
+      // 좌우가 같은 그림이면 정답이 주어진 그림과 같고 나머지 둘은 서로 뒤집은 짝. 아니면 묶음(set)대로:
+      // same = "주어진 그림 그대로"(오개념) + 다른 줄 세움 · pair = 서로 뒤집은 짝 둘 · apart = 짝이 아닌 둘 (review-blocks-s2 S2-2)
       const same = q.options.filter((o) => o.heights.join() === q.view.join());
-      if (q.kind === 'pal') assert.equal(same[0].role, 'answer');
-      else assert.equal(same[0].role, 'same');
+      const rest = q.options.filter((o) => o.role !== 'answer').map((o) => o.heights);
+      const paired = rest[0].join() === reverse(rest[1]).join();
+      if (q.kind === 'pal') {
+        assert.equal(q.set, 'pal');
+        assert.equal(same[0].role, 'answer');
+        assert.ok(paired);
+      } else if (q.set === 'same') {
+        assert.equal(same.length, 1);
+        assert.equal(same[0].role, 'same');
+      } else {
+        assert.equal(q.kind, 'dist');
+        assert.equal(same.length, 0);
+        assert.equal(paired, q.set === 'pair', `${q.set} ${rest}`);
+      }
+      if (q.kind === 'rep') assert.equal(q.set, 'same');
       for (let c = 1; c <= 3; c += 1) {
         const r = judgeFlip(q, c);
         assert.equal(r.correct, c === q.expected);
@@ -331,8 +371,13 @@ test('blocks-flip 문제 만들기 (시드 1,000개): 반대쪽 모양이 독립
 test('blocks-flip 보기의 자리와 꼴 (시드 1,000개 · 3,000문항): 정답 자리가 고르고, 그림을 견주지 않고 보기의 꼴만 보는 규칙은 찍기(1/3)에서 ±10%p 안', () => {
   const rng = createRng('flip-rules');
   const pos = [0, 0, 0];
-  const rules = { sameAsGiven: 0, notSameAsGiven: 0, mirrorPair: 0, notInPair: 0, palindrome: 0, notPalindrome: 0, oddMiddle: 0, shareMiddle: 0, sameNumbers: 0 };
+  const rules = {
+    sameAsGiven: 0, notSameAsGiven: 0, mirrorPair: 0, notInPair: 0, palindrome: 0, notPalindrome: 0, oddMiddle: 0, shareMiddle: 0, sameNumbers: 0, tallMiddle: 0,
+    // review-blocks-s2 S2-2의 두 규칙과, 꼴 두 가지를 함께 보는 규칙
+    palElsePair: 0, notGivenNotPal: 0, palAndGiven: 0, pairNotPal: 0, apartNotPal: 0,
+  };
   const kinds = { pal: 0, rep: 0, dist: 0 };
+  let withSame = 0;
   let n = 0;
   const key = (v) => v.join();
   for (let seed = 1; seed <= 1000; seed += 1) {
@@ -360,13 +405,22 @@ test('blocks-flip 보기의 자리와 꼴 (시드 1,000개 · 3,000문항): 정�
       rules.oddMiddle += chance(all.filter((i) => mids.filter((m) => m === mids[i]).length === 1));
       rules.shareMiddle += chance(all.filter((i) => mids.filter((m) => m === mids[i]).length > 1));
       rules.sameNumbers += chance(all.filter((i) => key(o[i]) !== key(q.view) && key([...o[i]].sort()) === key([...q.view].sort())));
+      rules.tallMiddle += chance(all.filter((i) => o[i][1] > o[i][0] && o[i][1] > o[i][2]));
+      const same = all.filter((i) => key(o[i]) === key(q.view));
+      rules.palElsePair += chance(pals.length ? pals : paired);
+      rules.notGivenNotPal += chance(all.filter((i) => !same.includes(i) && !pals.includes(i)));
+      rules.palAndGiven += chance(all.filter((i) => pals.includes(i) && same.includes(i)));
+      rules.pairNotPal += chance(all.filter((i) => paired.includes(i) && !pals.includes(i)));
+      rules.apartNotPal += chance(all.filter((i) => !paired.includes(i) && !pals.includes(i)));
+      if (q.options.some((x) => x.role === 'same')) withSame += 1;
     }
   }
   assert.equal(n, 3000);
   for (const p of pos) assert.ok(p / n > 0.25 && p / n < 0.42, `정답 자리 ${pos}`);
   for (const [name, v] of Object.entries(rules)) assert.ok(v / n > 0.2333 && v / n < 0.4333, `${name} ${(v / n).toFixed(3)}`);
-  // 꼴의 비율: 좌우가 같은 그림 약 1/3
-  assert.ok(kinds.pal / n > 0.27 && kinds.pal / n < 0.4, JSON.stringify(kinds));
+  // 꼴의 비율(주머니 24개 가운데): 좌우가 같은 그림 3 · "주어진 그림 그대로" 보기가 있는 문항 7
+  assert.ok(kinds.pal / n > 0.08 && kinds.pal / n < 0.17, JSON.stringify(kinds));
+  assert.ok(withSame / n > 0.24 && withSame / n < 0.35, `${withSame}`);
   assert.ok(rng);
 });
 
@@ -554,7 +608,14 @@ test('blocks-numviews (시드 1,000개): 칠하기 둘(앞 · 옆)과 고르기 
   for (let seed = 1; seed <= 1000; seed += 1) {
     const [front, side, pick] = questions('blocks-numviews', seed);
     assert.deepEqual([front.kind, front.kinds, side.kind, side.kinds, pick.kind], ['paint', ['front'], 'paint', ['side'], 'pick']);
-    for (const q of [front, side]) for (const k of ['top', 'front', 'side']) assert.deepEqual(q.views[k], indepCells(q.target, k));
+    for (const q of [front, side]) {
+      for (const k of ['top', 'front', 'side']) assert.deepEqual(q.views[k], indepCells(q.target, k));
+      // 뒤집은 그림 ≠ 다른 쪽 그림 (review-blocks-s2 S2-4): 뒤집어 칠하면 늘 "좌우 뒤집힘"
+      const [kind] = q.kinds;
+      const cells = indepCells(q.target, kind);
+      assert.ok(!indepSameShape(mirror(cells), indepCells(q.target, kind === 'front' ? 'side' : 'front'), kind), `${seed} ${kind}`);
+      assert.equal(judgeView(q, kind, mirror(cells), { from: 'numbers' }).tag, BLOCK_TAGS.mirror);
+    }
     assert.equal(pick.options.length, 4);
     assert.equal(new Set(pick.options.map((o) => lookKey(o.map))).size, 4);
     assert.equal(mapKey(pick.options[pick.expected - 1].map), mapKey(pick.target));
@@ -585,8 +646,11 @@ test('blocks-numviews (시드 1,000개): 칠하기 둘(앞 · 옆)과 고르기 
     for (let c = 1; c <= 4; c += 1) {
       const r = judgeNumPick(pick, c);
       assert.equal(r.correct, c === pick.expected);
-      const role = pick.options[c - 1].role;
-      assert.equal(r.tag, r.correct ? null : role === 'other' ? BLOCK_TAGS.numberMeaning : BLOCK_TAGS.frontSide);
+      const o = pick.options[c - 1];
+      assert.equal(r.tag, r.correct ? null : o.role === 'other' ? BLOCK_TAGS.numberMeaning : BLOCK_TAGS.frontSide);
+      // 앞과 옆이 바뀌고 한 자리도 다른 보기: 그 자리를 말한다 (review-blocks-s2 S2-5 ②)
+      if (o.role === 'turn') assert.equal(r.message, '고른 그림은 앞과 옆이 바뀐 모양이에요. 수를 쓴 그림의 아래쪽이 앞, 오른쪽이 옆이에요.');
+      if (o.role === 'turn-other') assert.equal(r.message, `고른 그림은 앞과 옆이 바뀌었고, ${o.spot[1] + 1}줄 ${o.spot[0] + 1}칸 자리의 수도 달라요. 수를 쓴 그림의 아래쪽이 앞, 오른쪽이 옆이에요.`);
     }
   }
   for (const p of pos) assert.ok(p / 1000 > 0.15 && p / 1000 < 0.35, `정답 자리 ${pos}`);

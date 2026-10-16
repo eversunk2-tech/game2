@@ -328,10 +328,36 @@
 }
 
 /* ══ S2: 3·4차시 (위·앞·옆에서 본 모양, 수 쓰기) ══════════════════ */
-/* 작업 지시서에 모눈 그림이 더 들어가는 화면: 폭 1001~1279px에서 판의 폭을 340px로 고정(단계 안에서는 바뀌지 않는다) */
+/* 폭 1001~1279px: 판의 폭은 1·2차시와 같다(300~372px — 쌓기나무가 같은 크기). 판 안쪽 여백만 줄여 모눈·보기에 자리를 낸다.
+   (위·앞·옆을 모두 칠하는 문항의 옆 모눈은 매트 오른쪽에 둔다 — play-views.js createPaints, review-blocks-s2 S2-3) */
 @media (min-width: 1001px) and (max-width: 1279px) {
-  .workbench.blk-bench.blk-wide { grid-template-columns: minmax(0, 1fr) 340px; }
   .blk-wide .blk-panel.net-panel { padding-left: 16px; padding-right: 16px; }
+  /* 위·앞·옆 그림 셋(위, 앞, 옆을 보고 쌓기)이 판 안쪽 폭(268px)에 한 줄로: 그림을 조금 줄이고 여백을 좁힌다 */
+  .blk-wide .blk-view-fig { padding: 4px 4px 3px; }
+  .blk-wide .blk-view-fig .blk-grid-pic { width: 66px; }
+  .blk-wide .blk-view-fig .blk-grid-pic.is-top { width: 80px; }
+}
+/* 낮은 화면(1366×680, 960×768 등): 답하기 전 멈춘 그림의 이름표를 매트 왼쪽 위(방향 버튼 자리 — 답하기 전에는 비어 있다)로 옮기고 한 줄로 둔다.
+   가운데 위에 두면 뒷줄 3층 쌓기나무의 윗면을 가린다 (review-blocks-s2 S2-6) */
+@media (min-width: 1001px) and (max-height: 720px), (max-width: 1000px) and (min-width: 561px) and (max-height: 820px) {
+  .blk-wide .blk-mat:has(> .blk-stage.is-frozen) > .blk-tag { left: 14px; transform: none; max-width: calc(100% - 240px); }
+}
+/* 매트 오른쪽(조작판 아래, 주어진 그림 카드 자리)의 옆 모눈 상자 */
+.blk-padbox.blk-paintbox.is-side { left: auto; right: 14px; top: 186px; }
+/* 판이 매트 아래로 가는 배치인데 화면이 낮은 기기(960×768 등)에서 모눈을 칠하는 단계: 매트를 낮추고(360px까지 — 화면 높이에서 머리와
+   작업 지시서의 모눈 한 줄(약 352px)을 뺀 만큼, 단계 목표가 두 줄이면 그만큼 더 낮게), 작업 지시서는 모눈을 맨 위부터(머리 줄은 오른쪽 칸으로) —
+   모눈 세 줄과 매트 띠의 [확인하기]가 스크롤 없이 한 화면에 (review-blocks-s2 S2-3) */
+@media (max-width: 1000px) and (min-width: 561px) and (max-height: 820px) {
+  .blk-paint-bench .mat.blk-mat {
+    height: clamp(320px, calc(100vh - var(--play-header-h, 56px) - 352px), 360px);
+    height: clamp(320px, calc(100dvh - var(--play-header-h, 56px) - 352px), 360px);
+  }
+  .blk-paint-bench .blk-panel.has-paints > .order-head { grid-column: 2; }
+  .blk-paint-bench .blk-panel.has-paints > .blk-answer { grid-row: 1 / span 8; }
+}
+/* 901~1000px는 알림이 매트 안 도구 띠 위에 뜬다 — 낮춘 매트에서도 그 자리(띠 위 54px)는 비워 두고 무대를 넓힌다 */
+@media (max-width: 1000px) and (min-width: 901px) and (max-height: 820px) {
+  .blk-paint-bench .blk-stage { inset: 14px 0 120px; }
 }
 
 /* ── 반듯한 모눈 그림(위·앞·옆에서 본 모양, 수를 쓴 위에서 본 모양) ── */
@@ -347,6 +373,8 @@
 /* 위·앞·옆 그림 셋을 한 줄로 (위, 앞, 옆을 보고 쌓기) */
 .blk-views { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 6px; }
 .blk-view-fig { padding: 4px 6px 3px; }
+/* 쌓기 틀림: 내 쌓기와 같은 그림의 이름표 옆 ✓ (다른 그림은 칸에 ✗) */
+.blk-view-fig .blk-same { color: var(--correct); font-weight: 900; }
 
 /* ── 모눈 칠하기 ─────────────────────────── */
 /* 앞·옆 두 장이 한 줄에(모눈 148px × 2 + 6px — 판 안쪽 폭 300px 이상이면) */

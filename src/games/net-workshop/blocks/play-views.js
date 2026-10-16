@@ -67,12 +67,16 @@ const VIEW_SNAP = { top: 'top', front: 'front', side: 'side' };
 const VIEW_SHORT = { top: '위', front: '앞', side: '옆' };
 
 /**
- * 작업대 표시: 3·4차시 화면은 작업 지시서에 모눈 그림을 둘 자리가 더 필요하다 — 폭 1001~1279px에서 판의 폭을 340px로 고정한다(blocks.css).
- * (판의 폭은 단계 안에서 바뀌지 않는다 — 머리와 매트가 움직이지 않게)
+ * 작업대 표시: 3·4차시 화면(blocks.css의 .blk-wide — 폭 1001~1279px에서 판 안쪽 여백을 줄인다).
+ * paint: 모눈을 칠하는 단계(그리기·수만 보고) — 판이 매트 아래로 가는 낮은 화면(960×768 등)에서 매트를 낮춰 모눈과 [확인하기]가 한 화면에 들어오게 한다
+ * (판의 폭·매트의 높이는 단계 안에서 바뀌지 않는다 — 머리와 매트가 움직이지 않게)
  */
-function wideBench(bench) {
+function wideBench(bench, { paint = false } = {}) {
   bench.mat.parentElement.classList.add('blk-wide');
+  if (paint) bench.mat.parentElement.classList.add('blk-paint-bench');
 }
+/** 판이 매트 옆에 있는 두 칸 배치(blocks.css와 같은 1001px) */
+const TWO_COLUMNS = '(min-width: 1001px)';
 
 /** 내가 그린 그림을 목표가 놓인 자리로 옮겨 무대에 겹칠 칸: [{ r, c, state }] */
 function overlayCells(mine, target, kind) {
@@ -229,25 +233,45 @@ function createPaints({ ctx, bench }) {
   const grids = Object.fromEntries(['top', 'front', 'side'].map((kind) => [kind, createPaintGrid({ ctx, kind })]));
   const topBox = h('div', { class: 'blk-padbox blk-paintbox', hidden: true }, grids.top.el);
   bench.controls.dirs.after(topBox);
+  // 위·앞·옆을 모두 칠하는 문항에서 판이 매트 옆에 있으면(두 칸 배치) 옆 모눈은 매트 오른쪽(조작판 아래, "옆" 쪽)에 둔다 —
+  // 작업 지시서에 모눈 두 장이 나란히 들어가지 않는 폭(1001~1279px, 판 300px)에서도 판을 1·2차시처럼 좁힐 수 있게 (review-blocks-s2 S2-3)
+  const sideBox = h('div', { class: 'blk-padbox blk-paintbox is-side', hidden: true });
+  bench.controls.pad.after(sideBox);
   const paintRow = h('div', { class: 'blk-paints' });
   bench.answerBox.append(paintRow);
+  const wide = globalThis.matchMedia?.(TWO_COLUMNS);
+  let shown = null;
+  function place() {
+    if (!shown) return;
+    const sideInMat = shown.includes('top') && shown.includes('side') && Boolean(wide?.matches);
+    sideBox.hidden = !sideInMat;
+    sideBox.replaceChildren(...(sideInMat ? [grids.side.el] : []));
+    paintRow.replaceChildren(...shown.filter((k) => k !== 'top' && !(sideInMat && k === 'side')).map((k) => grids[k].el));
+    paintRow.hidden = paintRow.childElementCount === 0;
+    // 판이 매트 아래로 가는 배치(태블릿 세로 등)에서는 모눈을 왼쪽 칸에, 물음·까닭·[다음 문제]를 오른쪽 칸에 둔다(blocks.css)
+    bench.panel.classList.toggle('has-paints', !paintRow.hidden);
+  }
+  wide?.addEventListener?.('change', place);
   return {
     grids,
     show(kinds) {
+      shown = [...kinds];
       topBox.hidden = !kinds.includes('top');
-      paintRow.replaceChildren(...kinds.filter((k) => k !== 'top').map((k) => grids[k].el));
-      paintRow.hidden = paintRow.childElementCount === 0;
-      // 판이 매트 아래로 가는 배치(태블릿 세로 등)에서는 모눈을 왼쪽 칸에, 물음·까닭·[다음 문제]를 오른쪽 칸에 둔다(blocks.css)
-      bench.panel.classList.toggle('has-paints', !paintRow.hidden);
+      place();
       for (const grid of Object.values(grids)) {
         grid.set();
         grid.lock(false);
       }
     },
     hide() {
+      shown = null;
       topBox.hidden = true;
+      sideBox.hidden = true;
       paintRow.hidden = true;
       bench.panel.classList.remove('has-paints');
+    },
+    destroy() {
+      wide?.removeEventListener?.('change', place);
     },
     get: (kinds) => Object.fromEntries(kinds.map((k) => [k, grids[k].get()])),
     lock(value) {
@@ -330,7 +354,7 @@ function checkPaint({ ctx, bench, paints, checker, q, state, reveal, from }) {
 function playDraw(stage, ctx, questions) {
   const bench = createBench({ ctx, total: questions.length });
   const { view } = bench;
-  wideBench(bench);
+  wideBench(bench, { paint: true });
   const paints = createPaints({ ctx, bench });
   const checker = createChecker({ ctx, bench, onCheck: () => check(), onHint: () => drawHint(questions[index], paints.get(questions[index].kinds)) });
   let index = 0;
@@ -389,7 +413,10 @@ function playDraw(stage, ctx, questions) {
   }
 
   showQuestion();
-  return () => bench.destroy();
+  return () => {
+    paints.destroy();
+    bench.destroy();
+  };
 }
 
 // ── 위, 앞, 옆을 보고 쌓기 ──────────────────
@@ -422,7 +449,11 @@ function playViewBuild(stage, ctx, questions) {
       const cells = viewCells(q.target, kind);
       const hint = kind === 'top' && hinted ? { r: hinted.y, c: hinted.x, text: hinted.value } : null;
       // 이름표는 짧게("위에서") — 셋이 한 줄에 들어가게. 그림의 글 이름은 "위에서 본 모양: …"
-      return figure(h, `${VIEW_SHORT[kind]}에서`, createGridPicture({ kind, cells, cell: 22, diff: diff?.[kind] ?? [], hint, label: describeView(cells, kind) }), 'blk-view-fig');
+      // 틀린 뒤: 다른 그림은 칸에 ✗, 내 쌓기와 같은 그림은 이름표 옆에 ✓ (review-blocks-s2 S2-7)
+      const same = diff && diff[kind].length === 0;
+      const caption = same ? [`${VIEW_SHORT[kind]}에서 `, h('span', { class: 'blk-same', title: '내 쌓기와 같아요' }, '✓')] : `${VIEW_SHORT[kind]}에서`;
+      const label = `${describeView(cells, kind)}${same ? '. 내 쌓기와 같아요' : diff ? '. 내 쌓기와 다른 칸에 ✗' : ''}`;
+      return figure(h, caption, createGridPicture({ kind, cells, cell: 22, diff: diff?.[kind] ?? [], hint, label }), 'blk-view-fig');
     }));
   }
 
@@ -811,7 +842,7 @@ function playNumViews(stage, ctx, questions) {
   const { h } = ctx;
   const bench = createBench({ ctx, total: questions.length });
   const { view } = bench;
-  wideBench(bench);
+  wideBench(bench, { paint: true });
   // 답하기 전에는 입체가 없다: 무대는 답한 뒤에 매트에 붙인다. 그 전에는 수를 쓴 위에서 본 모양이 매트 가운데에 크게 놓인다
   view.el.remove();
   const planCard = h('div', { class: 'blk-photo blk-plan-card' });
@@ -919,7 +950,10 @@ function playNumViews(stage, ctx, questions) {
   }
 
   showQuestion();
-  return () => bench.destroy();
+  return () => {
+    paints.destroy();
+    bench.destroy();
+  };
 }
 
 const SCREENS = { flip: playFlip, draw: playDraw, build: playViewBuild, write: playWrite, fromnum: playFromNum, numviews: playNumViews };

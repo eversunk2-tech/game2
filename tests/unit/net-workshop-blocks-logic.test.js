@@ -136,8 +136,13 @@ test('단계 목록: 교과서 1~4차시와 짝지은 네 차시 × 세 단계, 
     ['쌓기나무 4차시', 7, '6학년 2학기 · 공간과 입체'],
   ]);
   assert.equal(BLOCK_UNIT, '6학년 2학기 · 공간과 입체');
-  assert.equal(BLOCK_HOW_TO.length, 2);
-  for (const line of BLOCK_HOW_TO) assert.match(line, /쌓기나무.*요\.$/);
+  // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) 다음에 쌓기·돌려 보기 두 줄이 맨 끝(처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
+  assert.equal(BLOCK_HOW_TO.length, 4);
+  for (const line of BLOCK_HOW_TO) assert.match(line, /요\.$/);
+  for (const line of BLOCK_HOW_TO.slice(-2)) assert.match(line, /쌓기나무.*요\.$/);
+  for (const line of BLOCK_HOW_TO.slice(0, 2)) assert.doesNotMatch(line, /쌓기나무/);
+  assert.match(BLOCK_HOW_TO[0], /모눈의 칸을 눌러 칠하고/);
+  assert.match(BLOCK_HOW_TO[1], /1, 2, 3.*\[내리기\] \[올리기\]/);
   // 별을 틀린 횟수로 정하는 단계: 한 번만 틀려도 정답률로 바로 ★1이 되는 단계(사용자 결정 2026-10-11, spec-grade6 15-3) — S1의 둘 + S2의 셋.
   // 나머지는 엔진의 정답률 기준(S2 단계는 net-workshop-blocks-s2.test.js의 "별(S2)"이 모든 답 순서를 나열해 고정한다)
   assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy === 'wrong').map((s) => [s.id, s.count]), [['blocks-scene', 3], ['blocks-copy', 2], ['blocks-flip', 3], ['blocks-fromnum', 2], ['blocks-numviews', 3]]);
