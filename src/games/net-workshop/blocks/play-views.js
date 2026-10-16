@@ -15,6 +15,7 @@
  */
 import { cellsOf, count, emptyMap, hiddenCells, mapKey } from './blocks.js';
 import {
+  BLOCK_TAGS,
   FLIP_NAMES,
   alignCells,
   alignMap,
@@ -80,6 +81,20 @@ function overlayCells(mine, target, kind) {
   const out = [];
   t.forEach((row, r) => row.forEach((on, c) => {
     if (on || m[r][c]) out.push({ r, c, state: on && m[r][c] ? 'ok' : on ? 'missing' : 'extra' });
+  }));
+  return out;
+}
+
+/**
+ * 주어진 그림(목표의 그 방향 모양)을 내 쌓기 위에 겹칠 칸: 주어진 그림을 내 쌓기의 자리로 옮겨 견준다 → [{ r, c, state }]
+ * (missing: 주어진 그림에는 있는데 내 쌓기에는 없는 칸 · extra: 내 쌓기에만 있는 칸)
+ */
+function givenOverlay(mine, target, kind) {
+  const m = viewCells(mine, kind);
+  const t = alignCells(viewCells(target, kind), m, kind);
+  const out = [];
+  m.forEach((row, r) => row.forEach((on, c) => {
+    if (on || t[r][c]) out.push({ r, c, state: on && t[r][c] ? 'ok' : t[r][c] ? 'missing' : 'extra' });
   }));
   return out;
 }
@@ -157,9 +172,10 @@ function playFlip(stage, ctx, questions) {
     buttons = q.options.map((o, i) => choiceButton(h, {
       value: i + 1,
       cls: 'blk-option',
-      content: [h('b', null, `${i + 1}번`), createGridPicture({ kind: q.ask, cells: columnsToCells(o.heights), cell: 24, label: flipLabel(o.heights, `${i + 1}번`) })],
+      content: [h('b', null, `${i + 1}번`), createGridPicture({ kind: q.ask, cells: columnsToCells(o.heights), cell: 24, label: `${i + 1}번: 왼쪽부터 ${o.heights.map((n) => `${n}층`).join(', ')}` })],
       onclick: () => answer(i + 1),
     }));
+    optionRow.classList.remove('is-answered');
     optionRow.replaceChildren(...buttons);
     // 답하기 전: 보이는 면만 있는 멈춘 그림(판 없음). 방향 버튼·조작판이 없다 (돌리면 반대쪽 모습이 보인다)
     bench.setTag('그림이에요. 답한 뒤에 돌려 볼 수 있어요.', 'lock');
@@ -177,6 +193,8 @@ function playFlip(stage, ctx, questions) {
     const q = questions[index];
     const result = judgeFlip(q, choice);
     markChoice(buttons, choice, q.expected, result.correct);
+    // 답한 뒤에는 보기를 작게 줄여 까닭 쪽지에 자리를 낸다(이쪽에서 보면?과 같게)
+    optionRow.classList.add('is-answered');
     // 답한 뒤: 입체가 되어 주어진 쪽에서 본 뒤 반대쪽으로 돈다 — 두 모습이 좌우로 뒤집힌 사이인 것을 차례로 본다
     bench.setTag(null);
     view.setFrozen(false, { board: true });
@@ -284,7 +302,7 @@ function checkPaint({ ctx, bench, paints, checker, q, state, reveal, from }) {
     ctx.log.answer({ itemId: q.itemId, correct: false, tag: result.tag, given: key, expected: result.expected });
     ctx.sfx.play('wrong');
     ctx.feedback.wrong(toastOf(result.message));
-    bench.showNote(result.message, false, { tip: '무대와 견줘 보고, 고쳐서 다시 확인해요.' });
+    bench.showNote(result.message, false);
     if (checker.wrong()) bench.showBounce({ retry: true });
     return false;
   }
@@ -320,7 +338,7 @@ function playDraw(stage, ctx, questions) {
     state.solved = false;
     state.checked = null;
     const what = q.kinds.length > 1 ? '위, 앞, 옆에서 본 모양' : viewTitle(q.kinds[0]);
-    bench.setQuestion(index + 1, `${what}을 모눈에 칠해 봐요.`);
+    bench.setQuestion(index + 1, `${what}을 칠해 봐요.`);
     paints.show(q.kinds);
     checker.reset();
     // 답하기 전: 보이는 면만 있는 멈춘 그림(숨겨진 쌓기나무가 없는 모양 — 개수를 알려 준다). 방향 버튼·조작판이 없다
@@ -418,6 +436,7 @@ function playViewBuild(stage, ctx, questions) {
     resetChoices([yes, no]);
     view.home();
     view.setMarks({});
+    view.setOverlay([]);
     tools.load(emptyMap());
     tools.lock(false);
     view.setViewEnabled(true);
@@ -434,6 +453,7 @@ function playViewBuild(stage, ctx, questions) {
   tools.onChange(() => {
     if (phase !== 'build' && phase !== 'other') return;
     view.setMarks({});
+    view.setOverlay([]);
     drawGiven(questions[index]);
   });
 
@@ -445,8 +465,11 @@ function playViewBuild(stage, ctx, questions) {
       ctx.sfx.play('wrong');
     }
     drawGiven(q, { diff: result.diff });
-    // 처음으로 다른 그림의 방향에서 내 쌓기를 보인다(위 → 앞 → 옆)
-    const kind = ['top', 'front', 'side'].find((k) => result.diff[k].length > 0) ?? 'front';
+    // 처음으로 다른 그림의 방향에서 내 쌓기를 보이고, 주어진 그림을 그 위에 겹친다(위 → 앞 → 옆)
+    // 좌우가 뒤집혔거나 앞과 옆이 바뀌었으면 앞에서, 그 밖에는 처음으로 다른 그림의 방향에서
+    const differs = ['top', 'front', 'side'].filter((k) => result.diff[k].length > 0);
+    const kind = (result.tag === BLOCK_TAGS.mirror || result.tag === BLOCK_TAGS.frontSide) && differs.includes('front') ? 'front' : differs[0] ?? 'front';
+    view.setOverlay(['top', 'front', 'side'].map((k) => ({ dir: k, cells: givenOverlay(mine, q.target, k) })));
     view.snapTo(VIEW_SNAP[kind], { force: true, quiet: true });
     if (again) {
       ctx.feedback.info(SAME_CHECK_TEXT);
@@ -479,6 +502,7 @@ function playViewBuild(stage, ctx, questions) {
       checked = null;
       drawGiven(q);
       view.setMarks({});
+      view.setOverlay([]);
       bench.clearBonus();
       bench.showNote(result.message, true);
       // 예상하는 동안은 쌓기를 잠근다(먼저 생각한다). 돌려 보기는 그대로 된다
@@ -503,6 +527,7 @@ function playViewBuild(stage, ctx, questions) {
     ctx.sfx.play('correct');
     ctx.feedback.correct(toastOf(result.message));
     bench.clearBonus();
+    view.setOverlay([]);
     drawGiven(q);
     // 많은 쪽 쌓기를 보이고, 적은 쪽에 없는 쌓기나무(달라진 자리)를 점선으로 표시한다
     const [few, many] = count(mine) > count(first) ? [first, mine] : [mine, first];
@@ -600,6 +625,7 @@ function playWrite(stage, ctx, questions) {
     view.home();
     view.setMarks({});
     delete view.el.dataset.counted;
+    view.setBare(true); // 답하기 전: 면에 자리 값(높이)을 싣지 않는다
     view.setFrozen(false, { board: true });
     view.setViewEnabled(true);
     bench.controls.lock(false);
@@ -651,6 +677,7 @@ function playWrite(stage, ctx, questions) {
     grid.lock(true);
     checker.hide();
     bench.clearBonus();
+    view.setBare(false); // 맞힌 뒤: 쌓기나무를 누르면 그 자리의 수가 뜬다
     bench.showNote(result.message, true, { tip: '쌓기나무를 누르면 그 자리의 수가 나와요.' });
     // 자리마다 아래부터 하나씩 세어 보이고, 다 세면 모두 몇 개인지
     countUp(bench, q.target, spotsOf(q.target), null);
@@ -800,7 +827,7 @@ function playNumViews(stage, ctx, questions) {
     state.solved = false;
     state.checked = null;
     const paint = q.kind === 'paint';
-    bench.setQuestion(index + 1, paint ? `${viewTitle(q.kinds[0])}을 모눈에 칠해 봐요.` : '수에 맞게 만든 모양을 골라 봐요.');
+    bench.setQuestion(index + 1, paint ? `${viewTitle(q.kinds[0])}을 칠해 봐요.` : '수에 맞게 만든 모양을 골라 봐요.');
     // 답하기 전: 입체가 없다(무대 요소를 매트에서 떼어 둔다)
     view.el.remove();
     bench.controls.lock(true);

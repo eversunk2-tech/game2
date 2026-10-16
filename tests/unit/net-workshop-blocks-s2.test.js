@@ -266,7 +266,7 @@ test('blocks-draw · blocks-numviews 채점: 무작위 그림 3,000장이 독립
         assert.equal(r.correct, false);
         assert.equal(r.tag, BLOCK_TAGS.frontSide);
         assert.deepEqual(r.wrongKinds, ['front', 'side']);
-        assert.match(r.message, /^앞에서 본 모양, 옆에서 본 모양에 다른 칸이 있어요\. /);
+        assert.match(r.message, /^앞, 옆에서 본 모양에 다른 칸이 있어요\. /);
         assert.equal(judgeDrawing(q, { ...right, top: GRIDS[0] }).empty, true);
       }
     }

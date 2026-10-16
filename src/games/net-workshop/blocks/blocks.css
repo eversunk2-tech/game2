@@ -282,6 +282,11 @@
   .blk-options, .blk-options.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   .blk-option .blk-flat { width: 108px; }
 }
+/* 판이 아래로 가는 배치인데 화면이 낮은 기기(가로로 든 작은 태블릿 960×768 등 — 높이 820px 이하): 매트를 440px까지만 높여
+   아래 판의 물음·까닭·[다음 문제]가 조금이라도 더 한 화면에 들어오게 한다(review-blocks S1b-3). 쌓기나무 크기·조작 칸 자리는 그대로 들어간다 */
+@media (max-width: 1000px) and (min-width: 561px) and (max-height: 820px) {
+  .mat.blk-mat { height: clamp(380px, min(60vw, 440px), 500px); }
+}
 /* 900px 이하는 알림이 매트 밖(바로 밑)에 뜨므로 무대를 도구 띠까지 쓴다 (901~1000px는 알림이 매트 안 도구 띠 위에 뜬다 — 자리를 비워 둔다) */
 @media (max-width: 900px) {
   .blk-stage { inset: 14px 0 72px; }
@@ -418,6 +423,9 @@
 /* ── 보기 셋(모눈 그림) · 보기 넷(입체 그림) ───────── */
 .blk-options.blk-options-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .blk-options-3 .answer-btn.blk-option { min-height: 112px; }
+.blk-options-3.is-answered { gap: 6px; }
+.blk-options-3.is-answered .answer-btn.blk-option { min-height: 0; flex-direction: row; gap: 6px; padding: 4px 6px; }
+.blk-options-3.is-answered .blk-grid-pic { width: 46px; }
 .blk-options.blk-pictures .answer-btn.blk-option { min-height: 104px; }
 .blk-options.blk-pictures .blk-picture { width: 92px; }
 .blk-options.blk-pictures.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }

@@ -269,6 +269,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let view = homeView(); // 학생 보기 { spin(쓰지 않음), roll, zoom }
   let shown = { roll: [...view.roll], zoom: view.zoom }; // 지금 화면의 모습 (돌아가는 움직임 도중에는 view와 다르다)
   let frozen = still; // 멈춘 그림처럼 그리는 중(답하기 전)
+  let bare = false; // 돌려 볼 수는 있지만 면에 자리 값(data-*)을 싣지 않는다 — 보고 세는 것이 과제인 문항의 답하기 전(수 쓰기)
   let withBoard = board;
   let editable = false;
   let viewOn = false;
@@ -327,7 +328,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       if (!node) {
         // 자리 값(data-*)과 색은 만들 때 한 번만 싣는다. 멈춘 그림에는 자리 값을 싣지 않는다
         // (보이는 면이 어느 깊이의 쌓기나무인지는 그림이 알려 주지 않는 것이다)
-        node = svgEl('polygon', frozen ? {} : { 'data-kind': s.kind, 'data-x': s.x, 'data-y': s.y, 'data-z': s.z, 'data-face': s.face });
+        node = svgEl('polygon', frozen || bare ? {} : { 'data-kind': s.kind, 'data-x': s.x, 'data-y': s.y, 'data-z': s.z, 'data-face': s.face });
         if (s.kind === 'face') node.style.fill = palette(tokenAt(s.x, s.y), s.face);
         shapeEls.set(key, node);
       }
@@ -376,8 +377,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     }
     renderGhost(pose, d, at);
     renderMarks(pose, d, at, k);
-    // 내가 쌓은 개수(검사용). 멈춘 그림에는 싣지 않는다
-    if (frozen) delete el.dataset.count;
+    // 내가 쌓은 개수(검사용). 멈춘 그림·자리 값을 싣지 않는 무대에는 싣지 않는다
+    if (frozen || bare) delete el.dataset.count;
     else el.dataset.count = String(count(map));
   }
 
@@ -882,6 +883,15 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       resetNodes();
       syncClasses();
       emitView();
+      render();
+    },
+    /**
+     * 자리 값을 싣지 않는 무대 ↔ 보통 무대: 돌려 보며 세는 것이 과제인 문항(수 쓰기)은 답하기 전에 면의 자리 값(data-x·y·z)과 개수(data-count)가
+     * DOM에 없게 한다(높이가 곧 답이다). 그동안은 면을 눌러도 아무 일이 없다
+     */
+    setBare(value) {
+      bare = Boolean(value);
+      resetNodes();
       render();
     },
     /** 무대의 이름(화면 읽기)을 단계의 말로 바꾼다. null이면 기본 이름으로 */

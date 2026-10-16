@@ -46,8 +46,8 @@ export const BLOCK_UNIT = '6학년 2학기 · 공간과 입체';
 export const BLOCK_LESSONS = [
   { id: 'blocks-look', title: '어느 방향에서 보았을까', chip: '쌓기나무 1차시', minutes: 6, note: BLOCK_UNIT },
   { id: 'blocks-top', title: '만든 모양과 위에서 본 모양', chip: '쌓기나무 2차시', minutes: 8, note: BLOCK_UNIT },
-  // S2: 교과서 3·4차시 (60~65쪽). 시간은 문항 수와 직접 해 본 걸음으로 어림했다(build-brief-s2.md 보고)
-  { id: 'blocks-three', title: '위, 앞, 옆에서 본 모양', chip: '쌓기나무 3차시', minutes: 9, note: BLOCK_UNIT },
+  // S2: 교과서 3·4차시 (60~65쪽). 시간은 문항마다 어림(고르기 25~35초 · 칠하기·수 쓰기 35~55초 · 쌓기 45~80초, 위·앞·옆 세 장 칠하기는 그 두 배쯤)으로: 3차시 8~12분 · 4차시 6~9분
+  { id: 'blocks-three', title: '위, 앞, 옆에서 본 모양', chip: '쌓기나무 3차시', minutes: 10, note: BLOCK_UNIT },
   { id: 'blocks-number', title: '위에서 본 모양에 수 쓰기', chip: '쌓기나무 4차시', minutes: 7, note: BLOCK_UNIT },
 ];
 
@@ -1010,7 +1010,7 @@ export function judgeDrawing(q, drawings, { from = 'picture' } = {}) {
   }
   const lead = wrong.find((p) => p.tag === BLOCK_TAGS.frontSide) ?? wrong[0];
   // 그림이 여럿이면 어느 그림이 다른지부터(한 장이면 그 그림의 ✗가 알려 준다)
-  const where = q.kinds.length > 1 ? `${wrong.map((p) => viewTitle(p.kind)).join(', ')}에 다른 칸이 있어요. ` : '';
+  const where = q.kinds.length > 1 ? `${wrong.map((p) => VIEW_NAMES[p.kind]).join(', ')}에서 본 모양에 다른 칸이 있어요. ` : '';
   return { correct: false, tag: lead.tag, diff, wrongKinds: wrong.map((p) => p.kind), expected: q.expected, message: `${where}${lead.note}` };
 }
 /**
