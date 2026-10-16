@@ -468,6 +468,8 @@ createGameApp({
     // label: '노트',  // 선택: 짧은 이름. 있으면 "도감 n / m"에 합치지 않고 따로 "노트 n / m"으로 보인다 (icon: 그 칩의 아이콘 이름, 기본 책)
     // quiet: true,    // 선택: 화면에 보이지 않는 모음 (아래 "보이지 않는 모음")
     // xpAfter: { count: 10, xp: 1 },  // 선택: 칸이 count개 찬 뒤에 등록하는 칸의 점수 (아래 "칸이 많은 모음의 점수")
+    //   with: ['other-id'],           //   선택: 몇 번째인지를 다른 모음의 칸까지 합쳐 센다
+    // report: true,   // 선택: 보이지 않는 모음이라도 결과 복사 문장에 "제목 n/m" (찾은 칸이 있을 때만)
   }],
   playStage(stage, ctx) {
     const { isNew, count, total } = ctx.collect('cube-nets', '1-4-1a'); // 처음이면 isNew, +5, 안내·소리
@@ -491,6 +493,11 @@ createGameApp({
 처음 10가지는 +5, 그 뒤는 +1. 몇 번째인지는 등록하는 순간 그 모음에 든 칸 수로 센다(`ctx.collect`가 돌려주는 `count`) — 어떤 칸을 먼저 찾든, 몇 판에 나눠 찾든
 점수의 합이 같고, 점수와 모음은 늘 한 쌍으로 저장되므로 경계(10번째)에서 두 번 받거나 못 받는 일이 없다. 답 기록의 점수까지 줄이려면 게임이 같은 `count`로
 `ctx.log.answer({ scored })`를 정한다(`count`를 넘으면 `scored: false`). `core/collection.js`의 `collectionXp(def, count)`.
+**모음 여러 개를 한 묶음으로 셀 때 (`xpAfter.with: [모음 id]`)**: 몇 번째인지를 그 모음들에 든 칸까지 합쳐 센다(`core/collection.js`의 `xpAfterCount(state, defs, def)`).
+묶음의 모음끼리 서로 적어 두면(예: 직육면체 전개도 54가지 ↔ 두 길이가 같은 직육면체 전개도 29가지) 어느 모음에 먼저 넣든 "처음 10가지"의 경계가 같고, 점수의 합도 같다.
+이때 `ctx.collect`가 돌려주는 `count`는 그 모음 하나의 칸 수이므로, 답 기록의 점수를 줄이는 게임은 묶음의 칸 수(두 모음의 `ctx.collection(id).found.size` 합)로 정한다.
+**결과 복사에 넣는 보이지 않는 모음 (`report: true`)**: `quiet` 모음은 화면 어디에도 나오지 않지만, `report`가 있으면 학습 기록의 [결과 복사] 문장 끝줄에
+"제목 n/m"을 한 칸 더한다(찾은 칸이 하나라도 있을 때만 — 그 모음을 쓰지 않은 학생의 문장은 그대로다). `core/collection.js`의 `reportedQuiet(state, defs)`.
 
 **한 차시만 열었을 때의 도감 칩 (`?lesson=<차시 id>`)**: 단계 지도 머리와 처음 화면 내 공방 카드에는 그 차시의 도감(과 `lesson`이 없는 도감)만 보인다 —
 다른 차시(`lessons`에 있는 차시)에 딸린 도감은 그 화면에 그 차시가 없어 무엇을 채우는지 알 수 없으므로 뺀다. 차시를 고르지 않은 화면과 `lessons`가 없는 게임,
