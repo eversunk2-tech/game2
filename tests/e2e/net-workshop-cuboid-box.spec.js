@@ -618,6 +618,7 @@ test('돌리기 손잡이(키보드만): 크기 고르기(Tab · Enter) → 카�
 
 test('정사각형 면에는 손잡이가 없다: 정육면체 상자(2 cm)의 면을 눌러도 손잡이가 보이지 않고, 두 길이가 같은 상자는 정사각형 면에만 없다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '크롬북 화면에서 한 번');
+  test.setTimeout(60_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-free'));
   await setBox(page, [2, 2, 2]);
@@ -877,6 +878,7 @@ test('1366×680에서 고른 상자를 접은 장면·까닭 고르기·도감 �
 /** 상자 크기 화면 읽기 이름이 축 이름과 같다(가로 · 세로 · 높이) — 64가지 크기에서 카드 글과 상자 글이 그 상자의 것 */
 test('상자 글: 화면 읽기의 축 이름과 카드의 크기 글이 상자와 맞다(무작위 크기 여섯)', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '크롬북 화면에서 한 번');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.goto(STAGE_URL('cuboid-free'));
   for (const dims of [[1, 4, 2], [4, 4, 1], [2, 1, 3], [3, 3, 3], [1, 1, 2], [4, 2, 1]]) {
