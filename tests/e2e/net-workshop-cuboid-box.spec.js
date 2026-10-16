@@ -855,7 +855,9 @@ test('1366×680에서 고른 상자를 접은 장면·까닭 고르기·도감 �
         return f ? Math.hypot(f.at[0] - t.at[0], f.at[1] - t.at[1]) : 999;
       })) * 100) / 100;
     });
-    expect(drift, `${dims} 판 → 무대`).toBe(0);
+    // 0.01px까지: 글자가 넓은 기기에서는 이 단계의 머리 높이가 1/64px 단위라 판이 소수 자리에 놓이고, 3D 무대는 1/128px(0.0078px) 차이로 그린다
+    // (처음 상자에서도 같다 — 상자 크기와 무관). 보통 실행에서는 0이다
+    expect(drift, `${dims} 판 → 무대`).toBeLessThanOrEqual(0.01);
     await folded(page);
     await noScroll(page, `${dims} 접음`);
     await expectPanelFits(page, `${dims} 접음`);
