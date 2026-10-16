@@ -13,6 +13,7 @@
  *   브라우저가 관성 스크롤을 시작하지 않게 한다(끈 직후의 첫 탭이 먹히게 — docs/engine.md 4절).
  * still(멈춘 그림): 조작이 없고, 교과서 방향에서 한 조각이라도 보이는 면만 그린다(숨겨진 쌓기나무는 DOM에도 없다).
  */
+import { josa } from '../../../shared/core/korean.js';
 import { icon } from '../../../shared/ui/icons.js';
 import {
   DRAG_START,
@@ -271,6 +272,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let frozen = still; // 멈춘 그림처럼 그리는 중(답하기 전)
   let bare = false; // 돌려 볼 수는 있지만 면에 자리 값(data-*)을 싣지 않는다 — 보고 세는 것이 과제인 문항의 답하기 전(수 쓰기)
   let withBoard = board;
+  let frozenEdges = false; // 멈춘 그림(판 없음)에도 판 가장자리 글자와 화살표를 그린다 — 교과서 입체 그림의 "앞"·"옆" 표시 (S2)
   let editable = false;
   let viewOn = false;
   let mode = 'add';
@@ -454,7 +456,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   function renderMarks(pose, d, at, k) {
     const nodes = [];
     const backNodes = [];
-    if (withBoard) {
+    if (withBoard || frozenEdges) {
       // 판을 거의 옆에서 볼 때(판이 선으로 보일 때)는 가까운 쪽 글자를 바닥 선 아래로 내리고, 먼 쪽 글자는 그리지 않는다(쌓기나무 뒤다)
       const flat = clamp(1 - Math.abs(d[2]) / 0.3, 0, 1);
       const drop = flat * 22;
@@ -836,7 +838,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
   const syncClasses = () => {
     // 멈춘 그림은 초점이 머물 까닭이 없고(누를 것이 없다) 이름도 그림이라고 알린다
-    el.setAttribute('aria-label', label ?? (frozen ? PICTURE_LABEL : STAGE_LABEL));
+    el.setAttribute('aria-label', label ?? (frozen ? `${PICTURE_LABEL}${frozenEdges ? ` ${edgeWords(edgeList)}` : ''}` : STAGE_LABEL));
     if (!still) el.setAttribute('tabindex', frozen ? '-1' : '0');
     el.classList.toggle('can-edit', editable && !frozen);
     el.classList.toggle('can-view', canView());
@@ -876,9 +878,14 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       syncClasses();
       emitView();
     },
-    /** 멈춘 그림 ↔ 입체: 답한 뒤 false로 바꾸면 숨겨졌던 쌓기나무와 판이 나타난다 */
-    setFrozen(value, { board: showBoard } = {}) {
+    /**
+     * 멈춘 그림 ↔ 입체: 답한 뒤 false로 바꾸면 숨겨졌던 쌓기나무와 판이 나타난다.
+     * edges: 판을 그리지 않는 멈춘 그림에도 판 가장자리 글자와 화살표(앞은 왼쪽 아래, 옆은 오른쪽 아래)를 그린다.
+     *   판 3×3의 가장자리에 붙어 있어 쌓은 모양과 무관하게 늘 같은 자리다(답을 알려 주지 않는다)
+     */
+    setFrozen(value, { board: showBoard, edges = false } = {}) {
       frozen = Boolean(value);
+      frozenEdges = frozen && Boolean(edges);
       if (showBoard !== undefined) withBoard = showBoard;
       resetNodes();
       syncClasses();
@@ -969,6 +976,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
 const STAGE_LABEL = '쌓기나무 무대. 끌거나 방향키로 돌려 보고, + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.';
 const PICTURE_LABEL = '쌓기나무로 만든 모양 그림이에요. 답한 뒤에 돌려 볼 수 있어요.';
+/** 처음 보기(교과서 방향)에서 판 가장자리 글자가 놓이는 쪽 */
+const EDGE_SPOT = { front: '왼쪽 아래', right: '오른쪽 아래', back: '오른쪽 위', left: '왼쪽 위' };
+/** 멈춘 그림의 가장자리 글자를 말로: "그림의 왼쪽 아래가 앞, 오른쪽 아래가 옆이에요." */
+const edgeWords = (list) => `그림의 ${list.map((item, i) => `${EDGE_SPOT[item.at]}가 ${i === list.length - 1 ? josa(item.text, '이에요/예요') : item.text}`).join(', ')}.`;
 
 /** 판 가장자리에서 바깥쪽 방향 [dx, dy] */
 const EDGE_OUT = { front: [0, -1], right: [1, 0], back: [0, 1], left: [-1, 0] };
@@ -1061,12 +1072,14 @@ export const DEFAULT_DIRS = Object.freeze([
  * 교과서 방향의 멈춘 입체 그림(SVG). 그림에 보이는 면만 들어 있고, 판은 그리지 않는다.
  * 크기는 문항과 무관하게 한 가지(쌓기나무 한 변 = unit px, 판 전체가 들어가는 틀)이고, 모양은 틀의 가운데에 놓는다.
  * colors: [줄][칸] = { token, mark } (조형물) · diff: 다르다고 표시할 면들 [{ x, y, z, face }]
+ * edges: 교과서처럼 "앞"(왼쪽 아래)·"옆"(오른쪽 아래) 글자와 화살표를 붙인다 — 틀의 아래 두 모서리, 모양과 무관하게 늘 같은 자리
  */
-export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [] }) {
+export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [], edges = false }) {
   const pose = POSES.home;
   const shapes = sceneShapes(map, pose, { board: false, still: true });
-  // 틀: 판 전체(3×3×3)를 그 방향에서 본 크기
+  // 틀: 판 전체(3×3×3)를 그 방향에서 본 크기 (+ 글자를 붙이면 아래에 띠)
   const frame = { w: Math.ceil(unit * 4.4), h: Math.ceil(unit * 5.1) };
+  const band = edges ? Math.ceil(unit * PICTURE_BAND) : 0;
   const raw = shapes.map((s) => s.pts.map((p) => projectPoint(pose, unit, 0, 0, p)));
   const all = raw.flat();
   const box = all.length
@@ -1074,7 +1087,7 @@ export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓
     : { x0: 0, x1: 0, y0: 0, y1: 0 };
   const dx = frame.w / 2 - (box.x0 + box.x1) / 2;
   const dy = frame.h / 2 - (box.y0 + box.y1) / 2;
-  const svg = svgEl('svg', { class: 'blk-picture', viewBox: `0 0 ${frame.w} ${frame.h}`, role: 'img', 'aria-label': label, focusable: 'false' });
+  const svg = svgEl('svg', { class: `blk-picture${edges ? ' has-edges' : ''}`, viewBox: `0 0 ${frame.w} ${frame.h + band}`, role: 'img', 'aria-label': label, focusable: 'false' });
   const diffSet = new Set(diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
   shapes.forEach((s, i) => {
     const pts = raw[i].map(([x, y]) => [x + dx, y + dy]);
@@ -1090,5 +1103,30 @@ export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓
       svg.append(svgEl('text', { class: 'blk-x', x: c[0].toFixed(1), y: c[1].toFixed(1) }, document.createTextNode('✗')));
     }
   });
+  if (edges) svg.append(...pictureEdges(frame.w, frame.h + band, unit));
   return svg;
+}
+
+/** 그림 아래 띠의 높이(쌓기나무 한 변 = 1) */
+const PICTURE_BAND = 0.5;
+/**
+ * 그림의 "앞"·"옆" 표시: 틀의 왼쪽 아래(앞)·오른쪽 아래(옆)에 글자 칩과, 그 쪽에서 판 안쪽으로 가리키는 화살표(바닥에 누운 세모).
+ * 무대의 판 가장자리 화살표와 같은 모습이다 — 앞: 판의 뒤쪽(오른쪽 위로 30°)을 가리키고 날개는 판의 가로 방향, 옆: 판의 왼쪽(왼쪽 위로 30°)
+ */
+function pictureEdges(w, h, unit) {
+  const r = unit * 0.46; // 칩 높이의 절반
+  const c30 = Math.cos(Math.PI / 6);
+  const out = [];
+  for (const [text, at, cx, inward, across] of [
+    ['앞', 'front', r + 2, [c30, -0.5], [c30, 0.5]],
+    ['옆', 'right', w - r - 2, [-c30, -0.5], [c30, -0.5]],
+  ]) {
+    const cy = h - r - 2;
+    const pt = (d, s = 0) => [cx + inward[0] * d + across[0] * s, cy + inward[1] * d + across[1] * s];
+    out.push(svgEl('polygon', { class: 'blk-arrow', points: points([pt(r * 2.5), pt(r * 1.3, r * 0.6), pt(r * 1.3, -r * 0.6)]) }));
+    out.push(svgEl('g', { class: `blk-chip blk-edge blk-edge-${at}`, transform: `translate(${cx.toFixed(1)} ${cy.toFixed(1)})` },
+      svgEl('rect', { x: (-r).toFixed(1), y: (-r).toFixed(1), width: (2 * r).toFixed(1), height: (2 * r).toFixed(1), rx: r.toFixed(1) }),
+      svgEl('text', { x: 0, y: 0 }, document.createTextNode(text))));
+  }
+  return out;
 }

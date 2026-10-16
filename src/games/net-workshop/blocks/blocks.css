@@ -438,6 +438,9 @@
 .blk-options.blk-pictures.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .blk-options.blk-pictures.is-answered .answer-btn.blk-option { min-height: 0; }
 .blk-options.blk-pictures.is-answered .blk-picture { width: 56px; }
+/* 그림 아래 띠의 "앞"·"옆" 칩(그림이 92px로 줄어도 글자 14px 안팎) */
+.blk-picture.has-edges .blk-chip text { font-size: 16px; }
+.blk-picture.has-edges .blk-chip rect { stroke-width: 1.5; }
 /* 수를 쓴 위에서 본 모양을 매트 가운데에 크게(수만 보고 알아내기 — 답하기 전) */
 .blk-plan-card .blk-figure { padding: 10px 14px 8px; }
 .blk-plan-card .blk-grid-pic { width: 216px; }

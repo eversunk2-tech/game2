@@ -323,7 +323,9 @@ test('정답 노출 0 (앞과 뒤 · 그리기): 답하기 전에는 멈춘 그�
         const stage = stageEl(page);
         await expect(stage).toHaveClass(/is-frozen/);
         expect(await page.locator('.blk-stage .blk-face').count()).toBe(picturedFaces(q.target).length);
-        expect(await page.locator('.blk-stage .blk-tile, .blk-stage [data-kind], .blk-stage [data-x], .blk-stage .blk-chip, .blk-stage .blk-over').count()).toBe(0);
+        expect(await page.locator('.blk-stage .blk-tile, .blk-stage [data-kind], .blk-stage [data-x], .blk-stage .blk-chip:not(.blk-edge), .blk-stage .blk-over').count()).toBe(0);
+        // 판은 없어도 가장자리 글자(앞·옆 / 앞·오른쪽·뒤·왼쪽)와 화살표는 있다 — 자리는 아래 틀(frames)에 넣어 문항마다 같은지 본다
+        expect(await page.locator('.blk-stage .blk-edge').allTextContents()).toEqual(id === 'blocks-flip' ? ['뒤', '왼쪽', '앞', '오른쪽'] : ['앞', '옆']);
         expect(await stage.evaluate((el) => [el.dataset.count ?? null, el.dataset.facing ?? null, el.getAttribute('tabindex')])).toEqual([null, null, '-1']);
         await expect(page.locator('.blk-dirs')).toBeHidden();
         await expect(page.locator('.view-pad')).toBeHidden();
@@ -347,6 +349,9 @@ test('정답 노출 0 (앞과 뒤 · 그리기): 답하기 전에는 멈춘 그�
           stage: document.querySelector('.blk-stage').className,
           tagIcon: document.querySelector('.blk-tag svg')?.getAttribute('class'),
           choices: [...document.querySelectorAll('.blk-choice')].map((b) => `${b.className}|${b.disabled}`),
+          label: document.querySelector('.blk-stage').getAttribute('aria-label'),
+          edges: [...document.querySelectorAll('.blk-stage .blk-edge')].map((g) => `${g.textContent}@${g.getAttribute('transform')}`),
+          arrows: [...document.querySelectorAll('.blk-stage .blk-arrow')].map((a) => a.getAttribute('points')),
         }), id));
         if (id === 'blocks-flip') await press(testInfo, page.locator(`.blk-choice[data-answer="${q.expected}"]`));
         else {
@@ -369,6 +374,64 @@ test('정답 노출 0 (앞과 뒤 · 그리기): 답하기 전에는 멈춘 그�
   expect([...spots].sort()).toEqual([1, 2, 3]);
   // 문항마다 바뀌는 것(모양·글)을 빼면 답하기 전의 화면 틀은 단계마다 한 가지
   expect(frames.size).toBe(2);
+  expect(errors).toEqual([]);
+});
+
+test('그림의 "앞"·"옆" 표시 (review-blocks-s2 S2-1): 그리기의 답하기 전 그림에는 앞(왼쪽 아래)·옆(오른쪽 아래) 글자와 화살표가 보이고, 수만 보고 고르는 보기 그림에도 늘 같은 자리에 있다', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  // 그리기 1번 문항, 답하기 전: 무대 안에 "앞"·"옆"이 보이고, 앞은 쌓기나무 그림의 왼쪽 아래, 옆은 오른쪽 아래
+  await open(page, 'blocks-draw');
+  await expect(stageEl(page)).toHaveClass(/is-frozen/);
+  const front = page.locator('.blk-stage .blk-edge-front');
+  const side = page.locator('.blk-stage .blk-edge-right');
+  await expect(front).toBeVisible();
+  await expect(side).toBeVisible();
+  await expect(front).toHaveText('앞');
+  await expect(side).toHaveText('옆');
+  await expect(page.locator('.blk-stage .blk-arrow')).toHaveCount(2);
+  await expect(stageEl(page)).toHaveAttribute('aria-label', /왼쪽 아래가 앞, 오른쪽 아래가 옆이에요\.$/);
+  const box = await page.evaluate(() => {
+    const r = (el) => el.getBoundingClientRect();
+    const faces = [...document.querySelectorAll('.blk-stage .blk-face')].map(r);
+    const shape = { left: Math.min(...faces.map((f) => f.left)), right: Math.max(...faces.map((f) => f.right)), top: Math.min(...faces.map((f) => f.top)), bottom: Math.max(...faces.map((f) => f.bottom)) };
+    const mid = (b) => [(b.left + b.right) / 2, (b.top + b.bottom) / 2];
+    return { shape, front: mid(r(document.querySelector('.blk-stage .blk-edge-front'))), side: mid(r(document.querySelector('.blk-stage .blk-edge-right'))) };
+  });
+  const cx = (box.shape.left + box.shape.right) / 2;
+  const cy = (box.shape.top + box.shape.bottom) / 2;
+  expect(box.front[0]).toBeLessThan(cx);
+  expect(box.front[1]).toBeGreaterThan(cy);
+  expect(box.side[0]).toBeGreaterThan(cx);
+  expect(box.side[1]).toBeGreaterThan(cy);
+  // 답하면 판이 나타나고 글자는 판 가장자리에 그대로 있다
+  const [q] = questionsFor('blocks-draw');
+  for (const kind of q.kinds) await paint(page, testInfo, kind, q.views[kind]);
+  await check(testInfo, page);
+  await expect(page.locator('.blk-stage .blk-tile')).toHaveCount(9);
+  await expect(page.locator('.blk-stage .blk-edge')).toHaveCount(2);
+  // 수만 보고 고르기: 보기 넷의 그림마다 앞·옆이 틀의 같은 자리에 있다(시드가 달라도 같다 — 쌓은 모양과 무관)
+  const spots = new Set();
+  for (const seed of [1, 2, 3]) {
+    await open(page, 'blocks-numviews', { seed });
+    for (const q2 of questionsFor('blocks-numviews', seed)) {
+      if (q2.kind === 'pick') {
+        const marks = await page.locator('.blk-option .blk-picture').evaluateAll((svgs) => svgs.map((svg) => JSON.stringify({
+          viewBox: svg.getAttribute('viewBox'),
+          edges: [...svg.querySelectorAll('.blk-edge')].map((g) => `${g.textContent}@${g.getAttribute('transform')}`),
+          arrows: [...svg.querySelectorAll('.blk-arrow')].map((a) => a.getAttribute('points')),
+        })));
+        expect(marks).toHaveLength(4);
+        for (const m of marks) {
+          expect(JSON.parse(m).edges.map((e) => e.split('@')[0])).toEqual(['앞', '옆']);
+          spots.add(m);
+        }
+        await expect(page.locator('.blk-option .blk-edge-front').first()).toBeVisible();
+      }
+      await solveNumViews(page, testInfo, q2);
+    }
+  }
+  expect(spots.size).toBe(1);
   expect(errors).toEqual([]);
 });
 

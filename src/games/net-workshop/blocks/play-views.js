@@ -177,11 +177,11 @@ function playFlip(stage, ctx, questions) {
     }));
     optionRow.classList.remove('is-answered');
     optionRow.replaceChildren(...buttons);
-    // 답하기 전: 보이는 면만 있는 멈춘 그림(판 없음). 방향 버튼·조작판이 없다 (돌리면 반대쪽 모습이 보인다)
+    // 답하기 전: 보이는 면만 있는 멈춘 그림(판 없음 — 가장자리 글자 앞·오른쪽·뒤·왼쪽과 화살표만). 방향 버튼·조작판이 없다 (돌리면 반대쪽 모습이 보인다)
     bench.setTag('그림이에요. 답한 뒤에 돌려 볼 수 있어요.', 'lock');
     view.home();
     view.setMarks({});
-    view.setFrozen(true, { board: false });
+    view.setFrozen(true, { board: false, edges: true });
     view.setViewEnabled(false);
     bench.controls.lock(true);
     view.setMap(q.target);
@@ -344,12 +344,13 @@ function playDraw(stage, ctx, questions) {
     bench.setQuestion(index + 1, `${what}을 칠해 봐요.`);
     paints.show(q.kinds);
     checker.reset();
-    // 답하기 전: 보이는 면만 있는 멈춘 그림(숨겨진 쌓기나무가 없는 모양 — 개수를 알려 준다). 방향 버튼·조작판이 없다
+    // 답하기 전: 보이는 면만 있는 멈춘 그림(숨겨진 쌓기나무가 없는 모양 — 개수를 알려 준다). 방향 버튼·조작판이 없다.
+    // 판은 없지만 교과서 그림처럼 "앞"(왼쪽 아래)·"옆"(오른쪽 아래) 글자와 화살표가 있다 — 판 가장자리 자리라 문항마다 같다
     bench.setTag(`쌓기나무 ${q.total}개로 만든 모양 그림이에요.`, 'lock');
     view.home();
     view.setMarks({});
     view.setOverlay([]);
-    view.setFrozen(true, { board: false });
+    view.setFrozen(true, { board: false, edges: true });
     view.setViewEnabled(false);
     bench.controls.lock(true);
     view.setMap(questions[index].target);
@@ -855,7 +856,7 @@ function playNumViews(stage, ctx, questions) {
       buttons = q.options.map((o, i) => choiceButton(h, {
         value: i + 1,
         cls: 'blk-option',
-        content: [h('b', null, `${i + 1}번`), createBlockPicture({ map: o.map, unit: 24, label: `${i + 1}번 모양 그림` })],
+        content: [h('b', null, `${i + 1}번`), createBlockPicture({ map: o.map, unit: 24, label: `${i + 1}번 모양 그림`, edges: true })],
         onclick: () => pick(i + 1),
       }));
       optionRow.hidden = false;
