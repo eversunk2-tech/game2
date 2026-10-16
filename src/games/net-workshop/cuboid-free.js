@@ -543,6 +543,11 @@ export function playCuboidFree(stage, ctx) {
     box = [...pending];
     session.setBox(box);
     board.clearShadow();
+    if (hintLevel === 2) {
+      // 그림자는 앞 상자의 것이라 새 판에는 없다: 다시 누르면 새 상자의 그림자
+      hintLevel = 1;
+      hintText.textContent = '그림자 힌트';
+    }
     buildBoard();
     hintTextEl.textContent = boxHintText(box);
     ctx.sfx.play('click');

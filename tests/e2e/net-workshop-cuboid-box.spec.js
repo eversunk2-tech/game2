@@ -16,6 +16,7 @@ import {
   centerOnBoard,
   cuboidHintNet,
   freeNets,
+  judgeCuboidFree,
 } from '../../src/games/net-workshop/cuboid-logic.js';
 import { collectErrors, expectNoFling, fileUrl, hasHorizontalScroll, touchGestures } from './helpers.js';
 
@@ -559,7 +560,7 @@ test('돌리기 손잡이(터치): 면을 톡 → 손잡이를 손가락으로 �
   expect(errors).toEqual([]);
 });
 
-test('돌리기 손잡이(키보드만): 크기 고르기(Tab · Enter) → 카드를 Enter로 골라 Tab 한 번에 손잡이 → Enter로 90°(카드가 1×3 cm로) → 판에 놓기 → 판의 면을 Enter로 들고 Tab으로 손잡이 → → 키로 90° → Esc로 판의 칸에 초점이 돌아온다 → 접기', async ({ page }, testInfo) => {
+test('돌리기 손잡이(키보드만): 크기 고르기(Tab · Enter) → 카드를 Enter로 골라 Tab 한 번에 손잡이 → Enter로 90°(카드가 1×3 cm로) → 판에 놓기 → 판의 면을 Enter로 들고 Tab으로 손잡이 → → 키로 90° → Esc로 판의 칸에 초점이 돌아온다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
   test.setTimeout(90_000);
   const errors = collectErrors(page);
@@ -903,6 +904,101 @@ test('처음 상자로만 하면 놓는 판은 지금까지와 같다: 12 × 8 �
     await expect(page.locator('.rect-board .cell')).toHaveCount(96);
     await expect(page.locator('.rect-card .size-text')).toHaveText(['3×2 cm', '3×2 cm', '3×1 cm', '3×1 cm', '2×1 cm', '2×1 cm']);
     await expect(page.locator('.box-tip')).toHaveText('가로 3 cm · 세로 2 cm · 높이 1 cm');
+  }
+  expect(errors).toEqual([]);
+});
+
+test('도감 주문 키보드만: 판에 Tab · 방향키 · Enter · R로 면 6장 → Tab으로 [접어 보기] → 새 전개도(10번째) → [도감 보기] Enter · Esc → [오늘은 여기까지] Enter → 별 1개', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  // 옆면 네 장을 한 줄로 + 위 · 아래 (처음 상자의 되는 전개도) — 그 이름을 빼고 아홉 가지를 찾아 둔 기기
+  const strip = [
+    { label: '가', x: 3, y: 2, w: 2, h: 3 }, { label: '다', x: 5, y: 2, w: 1, h: 3 }, { label: '나', x: 6, y: 2, w: 2, h: 3 }, { label: '라', x: 8, y: 2, w: 1, h: 3 },
+    { label: '마', x: 3, y: 1, w: 2, h: 1 }, { label: '바', x: 3, y: 5, w: 2, h: 1 },
+  ];
+  const id = judgeCuboidFree({ rects: strip }).id;
+  const seeded = freeNets().map((n) => n.id).filter((x) => x !== id).slice(0, 9);
+  await page.goto(STAGE_URL('cuboid-dex'));
+  await page.evaluate(() => localStorage.clear());
+  await seedOld(page, { cuboid: seeded });
+  await page.goto(STAGE_URL('cuboid-dex'));
+  const press = async (key, n = 1) => {
+    for (let i = 0; i < n; i += 1) await page.keyboard.press(key);
+  };
+  await page.locator('.rect-board .cell[tabindex="0"]').focus();
+  const goTo = async ([x, y]) => {
+    const [cx, cy] = (await page.locator('.rect-board .cell[tabindex="0"]').getAttribute('data-cell')).split(',').map(Number);
+    await press(x > cx ? 'ArrowRight' : 'ArrowLeft', Math.abs(x - cx));
+    await press(y > cy ? 'ArrowDown' : 'ArrowUp', Math.abs(y - cy));
+  };
+  for (const r of [strip[0], strip[2], strip[1], strip[3], strip[4], strip[5]]) { // 카드는 가 나 다 라 마 바 차례로 놓인다
+    await goTo([r.x, r.y]);
+    await page.keyboard.press('Enter');
+    if ((await tileRect(page, r.label))[2] !== r.w) await page.keyboard.press('r');
+    expect(await tileRect(page, r.label)).toEqual([r.x, r.y, r.w, r.h]);
+  }
+  await page.locator('.free-fold').focus();
+  await page.keyboard.press('Enter');
+  await folded(page);
+  await expect(page.locator('.q-counter')).toHaveText('직육면체 도감 10 / 54');
+  await page.locator('.dex-open').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.dex-board-close')).toBeFocused();
+  await expect(page.locator('.dex-cell.is-new')).toHaveCount(1);
+  await expect(page.locator('.dex-cell.is-new .dex-cell-new')).toHaveText('새로');
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.dex-open')).toBeFocused();
+  await page.locator('.free-stop').focus();
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 1개');
+  expect(errors).toEqual([]);
+});
+
+test.describe('움직임 줄이기 · ?fx=low (상자 보기 · 도감 보기)', () => {
+  test.use({ contextOptions: { reducedMotion: 'reduce' } });
+  test('상자 보기는 처음부터 다 접힌 상자이고 움직임이 없다. 도감 보기도 끝 상태로 바로 보인다', async ({ page }) => {
+    const errors = collectErrors(page);
+    for (const extra of ['', '&fx=low']) {
+      await page.goto(STAGE_URL('cuboid-dex', extra));
+      await page.locator('.box-change').click();
+      await expect(page.locator('.box-stage .fold-stage')).toHaveAttribute('data-fold', 'done');
+      await page.locator('.box-stepper[data-axis="0"] .box-more').click();
+      await expect(page.locator('.box-stage .fold-stage')).toHaveAttribute('data-fold', 'done');
+      expect(await page.locator('.box-stage').evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length)).toBe(0);
+      await page.locator('.box-cancel').click();
+      await page.locator('.dex-open').click();
+      await expect(page.locator('.dex-cell')).toHaveCount(54);
+      expect(await page.locator('.dex-board').evaluate((el) => el.getAnimations({ subtree: true }).filter((a) => a.playState === 'running').length)).toBe(0);
+    }
+    expect(errors).toEqual([]);
+  });
+});
+
+test('도감 보기 배치(네 크기): 54칸이 매트 안에 다 들어가고(넘침 0), 세로·가로 스크롤 0(휴대폰은 가로만), 닫는 버튼 48px', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  for (const size of sizesFor(testInfo)) {
+    await page.setViewportSize(size);
+    await page.goto(STAGE_URL('cuboid-dex'));
+    await page.evaluate(() => localStorage.clear());
+    await seedOld(page, { cuboid: freeNets().slice(0, 20).map((n) => n.id) });
+    await page.goto(STAGE_URL('cuboid-dex'));
+    await page.locator('.dex-open').click();
+    await expect(page.locator('.dex-cell.is-found svg')).toHaveCount(20);
+    await noScroll(page, `${size.width}×${size.height} 도감 보기`);
+    const fit = await page.evaluate(() => {
+      const board = document.querySelector('.dex-board').getBoundingClientRect();
+      const mat = document.querySelector('.mat').getBoundingClientRect();
+      const close = document.querySelector('.dex-board-close').getBoundingClientRect();
+      const cells = [...document.querySelectorAll('.dex-cell')].map((c) => c.getBoundingClientRect());
+      return {
+        inMat: board.left >= mat.left && board.right <= mat.right && board.top >= mat.top && board.bottom <= mat.bottom,
+        cellsIn: cells.every((c) => c.left >= board.left && c.right <= board.right + 0.5 && c.top >= board.top && c.bottom <= board.bottom + 0.5),
+        close: Math.min(close.width, close.height) >= 48 && close.right <= board.right + 0.5,
+      };
+    });
+    expect(fit, `${size.width}×${size.height}`).toEqual({ inMat: true, cellsIn: true, close: true });
   }
   expect(errors).toEqual([]);
 });
