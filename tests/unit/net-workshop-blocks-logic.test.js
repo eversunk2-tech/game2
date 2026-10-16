@@ -101,10 +101,13 @@ const fixedByLook = (h) => new Set(BY_LOOK.get(LOOK[indexOf(h)]).map((j) => COUN
 /** 그림과 위에서 본 모양이 같은 쌓기 전부 */
 const alikesOf = (h) => BY_PIC_TOP.get(`${PIC[indexOf(h)]}|${mapKey(topView(h))}`).map((j) => ALL[j]);
 
-test('단계 목록: 교과서 1·2차시와 짝지은 두 차시 × 세 단계, id가 전개도 단계와 겹치지 않는다', () => {
+test('단계 목록: 교과서 1~4차시와 짝지은 네 차시 × 세 단계, id가 전개도 단계와 겹치지 않는다', () => {
+  // S2(2026-10-16)에서 3·4차시가 뒤에 더해졌다 — 1·2차시의 줄은 그대로
   assert.deepEqual(BLOCK_LESSONS.map((l) => [l.id, l.title]), [
     ['blocks-look', '어느 방향에서 보았을까'],
     ['blocks-top', '만든 모양과 위에서 본 모양'],
+    ['blocks-three', '위, 앞, 옆에서 본 모양'],
+    ['blocks-number', '위에서 본 모양에 수 쓰기'],
   ]);
   assert.deepEqual(BLOCK_STAGES.map((s) => [s.id, s.lesson, s.kind, s.count]), [
     ['blocks-play', 'blocks-look', 'play', 3],
@@ -113,19 +116,36 @@ test('단계 목록: 교과서 1·2차시와 짝지은 두 차시 × 세 단계,
     ['blocks-copy', 'blocks-top', 'copy', 2],
     ['blocks-count', 'blocks-top', 'count', 4],
     ['blocks-hidden', 'blocks-top', 'hidden', 2],
+    ['blocks-flip', 'blocks-three', 'flip', 3],
+    ['blocks-draw', 'blocks-three', 'draw', 3],
+    ['blocks-build', 'blocks-three', 'build', 3],
+    ['blocks-write', 'blocks-number', 'write', 3],
+    ['blocks-fromnum', 'blocks-number', 'fromnum', 2],
+    ['blocks-numviews', 'blocks-number', 'numviews', 3],
   ]);
-  assert.deepEqual(BLOCK_STAGES.map((s) => s.title), ['쌓기 놀이터', '어느 방향에서 보았을까?', '이쪽에서 보면?', '똑같이 만들기', '모두 몇 개일까?', '숨겨진 쌓기나무']);
-  assert.deepEqual(BLOCK_STAGES.map((s) => s.order), ['연습 주문', '관찰 주문', '관찰 주문', '따라 쌓기 주문', '셈 주문', '탐정 주문']);
+  assert.deepEqual(BLOCK_STAGES.map((s) => s.title), [
+    '쌓기 놀이터', '어느 방향에서 보았을까?', '이쪽에서 보면?', '똑같이 만들기', '모두 몇 개일까?', '숨겨진 쌓기나무',
+    '앞과 뒤, 오른쪽과 왼쪽', '위, 앞, 옆에서 본 모양 그리기', '위, 앞, 옆을 보고 쌓기', '자리마다 몇 개?', '수를 보고 쌓기', '수만 보고 알아내기',
+  ]);
+  assert.deepEqual(BLOCK_STAGES.map((s) => s.order), ['연습 주문', '관찰 주문', '관찰 주문', '따라 쌓기 주문', '셈 주문', '탐정 주문', '관찰 주문', '기록 주문', '설계 주문', '기록 주문', '설계 주문', '추리 주문']);
   // 단계 지도에 보이는 차시 칩(교과서의 차시 번호)·시간 어림·단원 — 엔진의 차시 선택 값
   assert.deepEqual(BLOCK_LESSONS.map((l) => [l.chip, l.minutes, l.note]), [
     ['쌓기나무 1차시', 6, '6학년 2학기 · 공간과 입체'],
     ['쌓기나무 2차시', 8, '6학년 2학기 · 공간과 입체'],
+    ['쌓기나무 3차시', 10, '6학년 2학기 · 공간과 입체'],
+    ['쌓기나무 4차시', 7, '6학년 2학기 · 공간과 입체'],
   ]);
   assert.equal(BLOCK_UNIT, '6학년 2학기 · 공간과 입체');
-  assert.equal(BLOCK_HOW_TO.length, 2);
-  for (const line of BLOCK_HOW_TO) assert.match(line, /쌓기나무.*요\.$/);
-  // 별을 틀린 횟수로 정하는 단계: 문항이 2~3개뿐인 두 단계(사용자 결정 2026-10-11). 나머지는 엔진의 정답률 기준
-  assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy === 'wrong').map((s) => [s.id, s.count]), [['blocks-scene', 3], ['blocks-copy', 2]]);
+  // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) 다음에 쌓기·돌려 보기 두 줄이 맨 끝(처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
+  assert.equal(BLOCK_HOW_TO.length, 4);
+  for (const line of BLOCK_HOW_TO) assert.match(line, /요\.$/);
+  for (const line of BLOCK_HOW_TO.slice(-2)) assert.match(line, /쌓기나무.*요\.$/);
+  for (const line of BLOCK_HOW_TO.slice(0, 2)) assert.doesNotMatch(line, /쌓기나무/);
+  assert.match(BLOCK_HOW_TO[0], /모눈의 칸을 눌러 칠하고/);
+  assert.match(BLOCK_HOW_TO[1], /1, 2, 3.*\[내리기\] \[올리기\]/);
+  // 별을 틀린 횟수로 정하는 단계: 한 번만 틀려도 정답률로 바로 ★1이 되는 단계(사용자 결정 2026-10-11, spec-grade6 15-3) — S1의 둘 + S2의 셋.
+  // 나머지는 엔진의 정답률 기준(S2 단계는 net-workshop-blocks-s2.test.js의 "별(S2)"이 모든 답 순서를 나열해 고정한다)
+  assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy === 'wrong').map((s) => [s.id, s.count]), [['blocks-scene', 3], ['blocks-copy', 2], ['blocks-flip', 3], ['blocks-fromnum', 2], ['blocks-numviews', 3]]);
   assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy != null && s.starsBy !== 'wrong'), []);
   for (const s of BLOCK_STAGES) {
     assert.equal(s.area, 'blocks', s.id);
@@ -337,12 +357,13 @@ test('blocks-count: 네 문항 모두 그림과 위에서 본 모양으로 쌓�
       assert.equal(q.seen, q.expected - q.hidden.length);
       assert.equal(q.spots, count(q.top));
       // 보기 넷: 서로 다른 자연수, 작은 수부터, 정답이 들어 있다. 정답이 아닌 보기는 함정 값(보이는 것만 센 수 · 위에서 본 모양의 칸 수)이거나
-      // 정답과 1~3 차이 나는 수다. (함정 값을 늘 넣던 것은 정답의 자리가 드러나 바꿨다 — 아래 "보기의 자리" 검사)
+      // 정답과 1~6 차이 나는 수다. (함정 값을 늘 넣던 것은 정답의 자리가 드러나 바꿨다 — 아래 "보기의 자리" 검사.
+      // 큰 쪽 보기를 1~3 차이로만 두던 것은 "가장 큰 수 − 3" 규칙으로 풀려 함정 값과 같은 꼴로 떨어지게 바꿨다 — review-blocks S1b-1)
       assert.equal(q.options.length, 4);
       assert.deepEqual(q.options, [...new Set(q.options)].sort((a, b) => a - b));
       assert.ok(q.options.every((n) => Number.isInteger(n) && n > 0));
       assert.ok(q.options.includes(q.expected), `${seed}`);
-      for (const n of q.options) assert.ok(n === q.seen || n === q.spots || Math.abs(n - q.expected) <= 3, `${seed} ${n}`);
+      for (const n of q.options) assert.ok(n === q.seen || n === q.spots || Math.abs(n - q.expected) <= 6, `${seed} ${n}`);
       // 함정 값은 늘 정답보다 작다(2층 이상이 있으므로 칸 수 < 개수). 정답보다 작은 보기가 있으면 함정 값이 먼저 들어간다
       assert.ok(q.spots < q.expected && q.seen <= q.expected);
       const below = q.options.filter((n) => n < q.expected);
@@ -351,7 +372,9 @@ test('blocks-count: 네 문항 모두 그림과 위에서 본 모양으로 쌓�
       for (const n of q.options) {
         const r = judgeCount(q, n);
         assert.equal(r.correct, n === q.expected);
-        assert.equal(r.tag, n === q.expected ? null : n === q.spots ? BLOCK_TAGS.floor : BLOCK_TAGS.unseen);
+        // 정답보다 큰 수를 골랐으면 숨은 것을 놓친 것이 아니다: tag 없이 층마다 세어 보게 한다(review-blocks S1b-8)
+        assert.equal(r.tag, n === q.expected || n > q.expected ? null : n === q.spots ? BLOCK_TAGS.floor : BLOCK_TAGS.unseen);
+        if (n > q.expected) assert.ok(r.message.startsWith('층마다 세어 봐요. '), r.message);
         assert.ok(r.message.includes(`모두 ${q.expected}개예요.`), r.message);
       }
     }
@@ -437,7 +460,8 @@ test('blocks-hidden 채점: 맞게 쌓기 → 예상 → 다른 개수로 한 �
 });
 
 test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교과서 말("만든 모양")을 쓴다', () => {
-  assert.deepEqual(Object.values(BLOCK_TAGS).sort(), ['가장 높은 층', '개수가 여러 가지', '바닥에 닿은 면', '보는 방향', '보이지 않는 쌓기나무', '앞과 옆', '좌우 뒤집힘'].sort());
+  // S2에서 "수의 뜻"(4절 표, blocks-write·blocks-fromnum)이 더해졌다
+  assert.deepEqual(Object.values(BLOCK_TAGS).sort(), ['가장 높은 층', '개수가 여러 가지', '바닥에 닿은 면', '보는 방향', '보이지 않는 쌓기나무', '수의 뜻', '앞과 옆', '좌우 뒤집힘'].sort());
   const texts = BLOCK_STAGES.flatMap((s) => [s.title, s.goal, s.order]);
   for (const seed of SEEDS.slice(0, 40)) {
     for (const q of questions('blocks-where', seed)) for (const dir of AROUND) texts.push(judgeDirection(q, dir).message);
@@ -457,10 +481,10 @@ test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교
   }
 });
 
-test('보기의 자리(blocks-count, 시드 1,000개): 정답이 네 자리에 고르게 나오고, 한 자리만 누르거나 쉬운 규칙으로는 풀리지 않는다', () => {
+test('보기의 자리와 값(blocks-count, 시드 1,000개): 정답이 네 자리에 고르게 나오고, 한 자리만 누르거나 보기의 값만 보는 규칙으로는 찍기(25%)에서 ±10%p 안', () => {
   const position = [0, 0, 0, 0];
   const perfect = [0, 0, 0, 0]; // 늘 그 자리만 눌렀을 때 네 문항이 모두 맞는 판의 수
-  const rules = { run: 0, gap: 0, median: 0 };
+  const rules = { run: 0, gap: 0, median: 0, beforeGap: 0, largest: 0, smallest: 0, secondLargest: 0, maxMinus3: 0, minPlus3: 0 };
   let trapShown = 0;
   let total = 0;
   for (let seed = 1; seed <= 1000; seed += 1) {
@@ -478,7 +502,14 @@ test('보기의 자리(blocks-count, 시드 1,000개): 정답이 네 자리에 �
       let g = 1;
       for (let j = 2; j < 4; j += 1) if (q.options[j] - q.options[j - 1] > q.options[g] - q.options[g - 1]) g = j;
       if (q.options[g] === q.expected) rules.gap += 1;
+      if (q.options[g - 1] === q.expected) rules.beforeGap += 1; // 가장 큰 간격 바로 앞의 수
       if (q.options[1] === q.expected) rules.median += 1;
+      if (q.options[2] === q.expected) rules.secondLargest += 1;
+      if (q.options[3] === q.expected) rules.largest += 1;
+      if (q.options[0] === q.expected) rules.smallest += 1;
+      // review-blocks S1b-1의 규칙: "가장 큰 수 − 3 이상인 보기 가운데 가장 작은 것"(고치기 전 60.3%)과 그 거울 "가장 작은 수 + 3 이하 가운데 가장 큰 것"
+      if (q.options.find((n) => n >= q.options[3] - 3) === q.expected) rules.maxMinus3 += 1;
+      if ([...q.options].reverse().find((n) => n <= q.options[0] + 3) === q.expected) rules.minPlus3 += 1;
     });
   }
   assert.equal(total, 4000);
@@ -486,8 +517,8 @@ test('보기의 자리(blocks-count, 시드 1,000개): 정답이 네 자리에 �
   for (const n of position) assert.ok(n / total >= 0.15 && n / total <= 0.35, `정답 자리 ${position}`);
   // 한 자리만 눌러 만점인 판: 자리마다 2% 아래 (고치기 전: 셋째만 눌러 82.5%)
   for (const n of perfect) assert.ok(n / 1000 < 0.02, `한 자리만 눌러 만점 ${perfect}`);
-  // 보기의 값만 보는 규칙도 문항의 45%를 넘게 맞히지 못한다(찍기 25%)
-  for (const [name, n] of Object.entries(rules)) assert.ok(n / total < 0.45, `${name} ${n}`);
+  // 보기의 값만 보는 규칙은 모두 찍기(25%)에서 ±10%p 안 (고치기 전: 가장 큰 수 − 3 규칙 60.3%, 이어진 수 묶음 37.0%, 큰 간격 앞 35.0%)
+  for (const [name, n] of Object.entries(rules)) assert.ok(n / total >= 0.15 && n / total <= 0.35, `${name} ${n / total}`);
   // 오개념 함정(보이는 것만 센 수 · 위에서 본 칸 수)은 문항의 60% 이상에 들어 있다
   assert.ok(trapShown / total >= 0.6, `함정이 든 문항 ${trapShown}`);
 });
@@ -507,7 +538,12 @@ test('countOptions: 정답보다 작은 보기의 수를 먼저 뽑고, 함정 �
   }
   for (const n of ranks) assert.ok(n > 400 && n < 600, `${ranks}`);
   // 정답이 아주 작으면(1) 작은 보기를 만들 수 없다: 모두 큰 수로 채운다
-  for (let n = 0; n < 20; n += 1) assert.deepEqual(countOptions(rng, { total: 1, seen: 1, spots: 1 }), [1, 2, 3, 4]);
+  for (let n = 0; n < 20; n += 1) {
+    const options = countOptions(rng, { total: 1, seen: 1, spots: 1 });
+    assert.equal(options[0], 1);
+    assert.equal(new Set(options).size, 4);
+    assert.ok(options.every((v) => v <= 7), `${options}`);
+  }
 });
 
 test('blocks-where의 정답 방향(시드 1,000개): 문항마다 따로 뽑고 같은 방향은 두 번까지, 지워 가며 맞힐 수 없다', () => {

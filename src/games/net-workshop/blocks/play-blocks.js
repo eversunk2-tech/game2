@@ -40,11 +40,11 @@ import { DEFAULT_DIRS, DEFAULT_EDGE, EDGE_FAR, SIDE_NAMES, createBlockPicture, c
 import { createFloorPlan, createSceneMap, createScenePicture, createSwatch } from './grid-draw.js';
 
 /** 알림을 매트 아래 띠 위에 띄운다 (전개도 무대와 같은 값) */
-const TOAST_LIFT = 64;
+export const TOAST_LIFT = 64;
 /** 틀린 쪽으로 먼저 돌아간 뒤 바른 쪽으로 돌 때까지 머무는 시간(ms) */
-const LOOK_PAUSE = 900;
+export const LOOK_PAUSE = 900;
 /** 같은 문항을 이만큼 틀리면 [힌트]가 열린다 */
-const HINT_AFTER_WRONG = 2;
+export const HINT_AFTER_WRONG = 2;
 /** 틀린 쌓기를 고치지 않고 [확인하기]를 또 눌렀을 때: 다시 기록하지 않고(틀림이 두 번으로 세지지 않게) 안내만 한다 */
 export const SAME_CHECK_TEXT = '이미 확인한 쌓기예요. 고친 다음 다시 [확인하기]를 눌러요.';
 
@@ -60,7 +60,7 @@ export function toastOf(message) {
   return out;
 }
 
-const lookOf = (id) => {
+export const lookOf = (id) => {
   const s = sculptureOf(id);
   return { token: `--face-${s.face}`, mark: s.mark };
 };
@@ -85,7 +85,7 @@ const AROUND_NAMES = { top: '위', front: '가 쪽', side: '나 쪽', back: '다
  * 화면 틀. build면 내 판(쌓기 도구)이 있다.
  * → { view, controls, tools, mat, panel, given, answerBox, band, setQuestion, showNote, showBounce, clearBonus, showNext, hideNext, focusNext, after, destroy }
  */
-function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DEFAULT_DIRS, names = SIDE_NAMES, board = true, label = '문제' }) {
+export function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DEFAULT_DIRS, names = SIDE_NAMES, board = true, label = '문제' }) {
   const { h } = ctx;
   const view = createBlockView({ h, board, edge, names });
   const controls = createViewControls({ ctx, view, dirs });
@@ -226,7 +226,7 @@ function createBench({ ctx, total, build = false, edge = DEFAULT_EDGE, dirs = DE
 }
 
 /** 그림 한 칸: 그림(SVG) + 이름표 */
-const figure = (h, caption, svg, cls = '') => h('figure', { class: `blk-figure ${cls}`.trim() }, svg, h('figcaption', null, caption));
+export const figure = (h, caption, svg, cls = '') => h('figure', { class: `blk-figure ${cls}`.trim() }, svg, h('figcaption', null, caption));
 
 /** 조형물 셋의 이름표(색·무늬·이름·높이) */
 function legend(h) {
@@ -234,7 +234,7 @@ function legend(h) {
 }
 
 /** 쌓인 자리가 판의 왼쪽 앞 구석에서 얼마나 떨어져 있는가 [칸, 줄] */
-function cornerOffset(map) {
+export function cornerOffset(map) {
   let offX = map[0].length;
   let offY = map.length;
   map.forEach((row, y) => row.forEach((v, x) => {
@@ -326,7 +326,7 @@ function playPlay(stage, ctx, questions) {
  * 단계를 끝낸다. 별을 틀린 답의 수로 정하는 단계(starsBy: 'wrong' — 문항이 2~3개뿐인 blocks-copy·blocks-scene)는
  * 0번 ★3 · 1번 ★2 · 2번 이상 ★1과 그 기준 안내를 넘기고, 나머지는 엔진의 정답률 기준에 맡긴다.
  */
-function finishStage(stage, ctx) {
+export function finishStage(stage, ctx) {
   if (stage.starsBy !== 'wrong') {
     ctx.finish();
     return;
@@ -337,7 +337,7 @@ function finishStage(stage, ctx) {
 }
 
 /** 고르는 버튼 하나 (답 버튼과 같은 모습) */
-const choiceButton = (h, { value, content, onclick, cls = '' }) => h('button', {
+export const choiceButton = (h, { value, content, onclick, cls = '' }) => h('button', {
   type: 'button',
   class: `btn btn-lg answer-btn blk-choice ${cls}`.trim(),
   dataset: { answer: value },
@@ -345,7 +345,7 @@ const choiceButton = (h, { value, content, onclick, cls = '' }) => h('button', {
   onclick,
 }, content);
 
-function markChoice(buttons, value, expected, correct) {
+export function markChoice(buttons, value, expected, correct) {
   for (const b of buttons) {
     b.disabled = true;
     const mine = b.dataset.answer === String(value);
@@ -355,7 +355,7 @@ function markChoice(buttons, value, expected, correct) {
     if (!correct && b.dataset.answer === String(expected)) b.classList.add('is-answer');
   }
 }
-function resetChoices(buttons) {
+export function resetChoices(buttons) {
   for (const b of buttons) {
     b.disabled = false;
     // 앞 문항에서 튀거나 흔들린 표시(fx-*)도 지운다: 새 문항의 답 버튼은 넷 모두 같은 모습이어야 한다
@@ -365,7 +365,7 @@ function resetChoices(buttons) {
 }
 
 /** 한 번 답하고 확인하는 단계(where·scene·count)의 공통 흐름: 답 기록 → 알림 → 까닭 쪽지 → 다음 */
-function settle(ctx, bench, { q, result, given, chosen, last, next }) {
+export function settle(ctx, bench, { q, result, given, chosen, last, next }) {
   ctx.log.answer({ itemId: q.itemId, correct: result.correct, tag: result.tag, given, expected: result.expected });
   ctx.sfx.play(result.correct ? 'correct' : 'wrong');
   if (result.correct) ctx.feedback.correct(toastOf(result.message), chosen);
@@ -617,7 +617,7 @@ function playCount(stage, ctx, questions) {
  * 틀린 횟수를 세어 HINT_AFTER_WRONG번이면 힌트를 연다(문항마다 1번). 힌트 글은 작업 지시서의 보너스 쪽지 자리에 나온다.
  * → { reset, wrong(), hide, show, focus }
  */
-function createChecker({ ctx, bench, onCheck, onHint }) {
+export function createChecker({ ctx, bench, onCheck, onHint }) {
   const { h } = ctx;
   const button = h('button', { type: 'button', class: 'btn btn-primary blk-check', onclick: () => onCheck() }, icon('check'), h('span', null, '확인하기'));
   const hintButton = h('button', { type: 'button', class: 'btn hint-btn blk-hint', hidden: true, onclick: () => useHint() }, icon('bulb'), h('span', null, '힌트'));
@@ -658,7 +658,7 @@ function createChecker({ ctx, bench, onCheck, onHint }) {
 }
 
 /** 내 쌓기에서 다른 면을 무대에 표시하고(✗), 그림과 같은 쪽에서 보게 돌린다 */
-function showDiff(view, mine, target) {
+export function showDiff(view, mine, target) {
   const diff = lookDiff(mine, target);
   view.setMarks({ diff: diff.extra });
   view.snapTo('home', { force: true, quiet: true });

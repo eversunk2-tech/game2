@@ -249,16 +249,19 @@ async function pokeStage(page) {
 }
 
 // ── 단계 지도와 차시 흐름 ─────────────────────
-test('단계 지도: 쌓기나무 두 차시가 정육면체 차시 뒤에 보이고, ?lesson=으로 그 차시만 들어간다', async ({ page }) => {
+test('단계 지도: 쌓기나무 네 차시가 정육면체 차시 뒤에 보이고, ?lesson=으로 그 차시만 들어간다', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   await page.getByRole('button', { name: '시작하기' }).click();
   const titles = await page.locator('.lesson-group h3').allTextContents();
   expect(titles[0]).toBe('정육면체의 전개도');
-  expect(titles.slice(-2)).toEqual(['어느 방향에서 보았을까', '만든 모양과 위에서 본 모양']);
+  // S2(3·4차시)가 1·2차시 뒤에 더해졌다
+  expect(titles.slice(-4)).toEqual(['어느 방향에서 보았을까', '만든 모양과 위에서 본 모양', '위, 앞, 옆에서 본 모양', '위에서 본 모양에 수 쓰기']);
   for (const [lesson, names] of [
     ['blocks-look', ['쌓기 놀이터', '어느 방향에서 보았을까?', '이쪽에서 보면?']],
     ['blocks-top', ['똑같이 만들기', '모두 몇 개일까?', '숨겨진 쌓기나무']],
+    ['blocks-three', ['앞과 뒤, 오른쪽과 왼쪽', '위, 앞, 옆에서 본 모양 그리기', '위, 앞, 옆을 보고 쌓기']],
+    ['blocks-number', ['자리마다 몇 개?', '수를 보고 쌓기', '수만 보고 알아내기']],
   ]) {
     const group = page.locator(`.lesson-group[data-lesson="${lesson}"]`);
     await expect(group.locator('.stage-path .stage-card .stage-title')).toHaveText(names);
@@ -283,6 +286,8 @@ test('단계 지도: 쌓기나무 두 차시가 정육면체 차시 뒤에 보�
   expect(heads.filter((head) => head.id.startsWith('blocks-'))).toEqual([
     { id: 'blocks-look', no: '쌓기나무 1차시', note: '6학년 2학기 · 공간과 입체', time: ['약 6분'] },
     { id: 'blocks-top', no: '쌓기나무 2차시', note: '6학년 2학기 · 공간과 입체', time: ['약 8분'] },
+    { id: 'blocks-three', no: '쌓기나무 3차시', note: '6학년 2학기 · 공간과 입체', time: ['약 10분'] },
+    { id: 'blocks-number', no: '쌓기나무 4차시', note: '6학년 2학기 · 공간과 입체', time: ['약 7분'] },
   ]);
   expect(await hasHorizontalScroll(page)).toBe(false);
   // 차시 머리(칩·제목·단원·시간)가 묶음 밖으로 나가지 않는다
@@ -1604,7 +1609,7 @@ const SIZES = [
 for (const size of SIZES) {
   test(`배치(${size.name}): 여섯 단계의 모든 장면에 세로·가로 스크롤이 없고, 판 안쪽이 넘치지 않으며, 매트와 머리가 움직이지 않는다`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== size.project, `${size.project}에서 확인`);
-    test.setTimeout(180_000);
+    test.setTimeout(360_000); // calm(움직임이 끝나기를 기다림)으로 길어졌다 — 폭 900~1100 검사와 같게(review-blocks S1c-1)
     const errors = collectErrors(page);
     await page.setViewportSize({ width: size.width, height: size.height });
     const frame = () => page.evaluate(() => {
@@ -1730,7 +1735,7 @@ for (const size of SIZES) {
 
 test('글자가 커져도(110%) 크롬북 1366×680에서 작업 지시서가 넘치지 않는다: 틀린 답의 까닭·보너스 쪽지·[다음 문제]가 함께 나오는 장면들', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(180_000);
+  test.setTimeout(360_000); // calm(움직임이 끝나기를 기다림)으로 길어졌다 — 폭 900~1100 검사와 같게(review-blocks S1c-1)
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 1366, height: 680 });
   const begin = async (id, seed) => {

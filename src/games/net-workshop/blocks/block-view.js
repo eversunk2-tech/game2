@@ -13,6 +13,7 @@
  *   브라우저가 관성 스크롤을 시작하지 않게 한다(끈 직후의 첫 탭이 먹히게 — docs/engine.md 4절).
  * still(멈춘 그림): 조작이 없고, 교과서 방향에서 한 조각이라도 보이는 면만 그린다(숨겨진 쌓기나무는 DOM에도 없다).
  */
+import { josa } from '../../../shared/core/korean.js';
 import { icon } from '../../../shared/ui/icons.js';
 import {
   DRAG_START,
@@ -221,6 +222,16 @@ export function markPath(mark, pts) {
   return '';
 }
 
+/** 칸 하나에 빗금 세 줄(화면 점 넷: 아래 왼쪽부터 시계 반대 방향) → path d */
+export function hatchPath(pts) {
+  const at = (u, v) => [pts[0][0] + u * (pts[1][0] - pts[0][0]) + v * (pts[3][0] - pts[0][0]), pts[0][1] + u * (pts[1][1] - pts[0][1]) + v * (pts[3][1] - pts[0][1])];
+  return [[0, 0.5, 0.5, 0], [0, 1, 1, 0], [0.5, 1, 1, 0.5]].map(([u0, v0, u1, v1]) => {
+    const a = at(u0 + 0.06, v0 - 0.06);
+    const b = at(u1 - 0.06, v1 + 0.06);
+    return `M${a[0].toFixed(1)} ${a[1].toFixed(1)}L${b[0].toFixed(1)} ${b[1].toFixed(1)}`;
+  }).join('');
+}
+
 // ── 보는 방향을 말로 ───────────────────────
 export const SIDE_NAMES = Object.freeze({ top: '위', front: '앞', side: '옆', back: '뒤', left: '왼쪽' });
 const seenFrom = (name) => `${name}에서 본 모습이에요.`;
@@ -259,13 +270,16 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let view = homeView(); // 학생 보기 { spin(쓰지 않음), roll, zoom }
   let shown = { roll: [...view.roll], zoom: view.zoom }; // 지금 화면의 모습 (돌아가는 움직임 도중에는 view와 다르다)
   let frozen = still; // 멈춘 그림처럼 그리는 중(답하기 전)
+  let bare = false; // 돌려 볼 수는 있지만 면에 자리 값(data-*)을 싣지 않는다 — 보고 세는 것이 과제인 문항의 답하기 전(수 쓰기)
   let withBoard = board;
+  let frozenEdges = false; // 멈춘 그림(판 없음)에도 판 가장자리 글자와 화살표를 그린다 — 교과서 입체 그림의 "앞"·"옆" 표시 (S2)
   let editable = false;
   let viewOn = false;
   let mode = 'add';
   let apart = false;
   let hover = null; // 마우스가 올라가 있거나 손가락이 누르고 있는 곳(hit)
-  let marks = { hidden: [], diff: [], goal: null, layers: false };
+  let marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [] };
+  let overlay = []; // 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다 [{ dir: 'top' | 'front' | 'side', cells: [{ r, c, state }] }]
   let size = { w: 0, h: 0, unit: 40 };
   let raf = 0;
   let mixing = null; // { t0, p }
@@ -309,13 +323,14 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const order = [];
     const hiddenSet = new Set(marks.hidden.map((c) => c.join(',')));
     const diffSet = new Set(marks.diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
+    const countedSet = new Set(marks.counted.map((c) => c.join(',')));
     for (const s of shapes) {
       const key = s.kind === 'tile' ? `t${s.x},${s.y}` : `f${s.x},${s.y},${s.z},${s.face}`;
       let node = shapeEls.get(key);
       if (!node) {
         // 자리 값(data-*)과 색은 만들 때 한 번만 싣는다. 멈춘 그림에는 자리 값을 싣지 않는다
         // (보이는 면이 어느 깊이의 쌓기나무인지는 그림이 알려 주지 않는 것이다)
-        node = svgEl('polygon', frozen ? {} : { 'data-kind': s.kind, 'data-x': s.x, 'data-y': s.y, 'data-z': s.z, 'data-face': s.face });
+        node = svgEl('polygon', frozen || bare ? {} : { 'data-kind': s.kind, 'data-x': s.x, 'data-y': s.y, 'data-z': s.z, 'data-face': s.face });
         if (s.kind === 'face') node.style.fill = palette(tokenAt(s.x, s.y), s.face);
         shapeEls.set(key, node);
       }
@@ -327,7 +342,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
         cls = `blk-tile${(s.x + s.y) % 2 ? ' is-odd' : ''}${d[2] < 0 ? ' is-under' : ''}${goal ? ' is-goal' : ''}`;
       } else {
         const cell = `${s.x},${s.y},${s.z}`;
-        cls = `blk-face blk-${s.face}${hiddenSet.has(cell) ? ' is-hidden-cube' : ''}${diffSet.has(`${cell},${s.face}`) ? ' is-diff' : ''}`;
+        cls = `blk-face blk-${s.face}${hiddenSet.has(cell) ? ' is-hidden-cube' : ''}${diffSet.has(`${cell},${s.face}`) ? ' is-diff' : ''}${countedSet.has(cell) ? ' is-counted' : ''}`;
       }
       if (node.getAttribute('class') !== cls) node.setAttribute('class', cls);
       used.add(key);
@@ -364,8 +379,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     }
     renderGhost(pose, d, at);
     renderMarks(pose, d, at, k);
-    // 내가 쌓은 개수(검사용). 멈춘 그림에는 싣지 않는다
-    if (frozen) delete el.dataset.count;
+    // 내가 쌓은 개수(검사용). 멈춘 그림·자리 값을 싣지 않는 무대에는 싣지 않는다
+    if (frozen || bare) delete el.dataset.count;
     else el.dataset.count = String(count(map));
   }
 
@@ -407,11 +422,41 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       svgEl('text', { x: 0, y: 0 }, document.createTextNode(text)));
   };
 
+  /**
+   * 내가 그린 2D 그림을 무대에 겹친다(그 방향에서 보고 있을 때만 — 돌아가는 도중·끌어 돌린 뒤에는 그리지 않는다).
+   * 칸 하나 = 그 방향의 판 바깥 면(앞: 판의 앞 가장자리, 옆: 오른쪽 가장자리, 위: 3층 위) 위의 네모. 원근 없는 그리기라 쌓기나무의 네모와 겹친다.
+   * state: ok(내가 칠했고 맞음 — 반투명 테두리) · extra(내가 칠했는데 없음 — 빗금 + ✗) · missing(있는데 안 칠함 — 점선 + ✗)
+   */
+  function overlayNodes(pose, at, k) {
+    const facing = el.dataset.facing;
+    const layer = overlay.find((o) => o.dir === facing);
+    if (!layer) return [];
+    const out = [];
+    const corners = (r, c) => {
+      if (facing === 'front') return [[c, -0.02, r], [c + 1, -0.02, r], [c + 1, -0.02, r + 1], [c, -0.02, r + 1]];
+      if (facing === 'side') return [[COLS + 0.02, c, r], [COLS + 0.02, c + 1, r], [COLS + 0.02, c + 1, r + 1], [COLS + 0.02, c, r + 1]];
+      return [[c, r, MAX_H + 0.02], [c + 1, r, MAX_H + 0.02], [c + 1, r + 1, MAX_H + 0.02], [c, r + 1, MAX_H + 0.02]];
+    };
+    let first = null;
+    for (const cell of layer.cells) {
+      const pts = corners(cell.r, cell.c).map(at);
+      out.push(svgEl('polygon', { class: `blk-over is-${cell.state}`, points: points(pts) }));
+      if (cell.state === 'extra') out.push(svgEl('path', { class: 'blk-over-hatch', d: hatchPath(pts) }));
+      if (cell.state !== 'ok') {
+        const c = centerOf(pts);
+        out.push(svgEl('text', { class: 'blk-x', x: c[0].toFixed(1), y: c[1].toFixed(1) }, document.createTextNode('✗')));
+        if (!first || c[1] < first[1]) first = c;
+      }
+    }
+    if (first) out.push(chip('여기가 달라요', [clamp(first[0], 70, size.w - 70), Math.max(16, first[1] - k * 0.75)], 'blk-hid blk-over-chip'));
+    return out;
+  }
+
   /** 판 가장자리 글자(앞·옆, 가~라)와 화살표, 층별 개수, "숨어 있었어요", 다른 곳 ✗ */
   function renderMarks(pose, d, at, k) {
     const nodes = [];
     const backNodes = [];
-    if (withBoard) {
+    if (withBoard || frozenEdges) {
       // 판을 거의 옆에서 볼 때(판이 선으로 보일 때)는 가까운 쪽 글자를 바닥 선 아래로 내리고, 먼 쪽 글자는 그리지 않는다(쌓기나무 뒤다)
       const flat = clamp(1 - Math.abs(d[2]) / 0.3, 0, 1);
       const drop = flat * 22;
@@ -450,8 +495,14 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (marks.hidden.length && !frozen) {
       const [x, y, z] = marks.hidden[0];
       const spot = at([x + 0.5, y + 0.5, z + 0.5 + liftOf(z, apart)]);
-      nodes.push(chip('숨어 있었어요', [spot[0], spot[1] - k * 0.75], 'blk-hid'));
+      nodes.push(chip(marks.hiddenText ?? '숨어 있었어요', [spot[0], spot[1] - k * 0.75], 'blk-hid'));
     }
+    // 자리마다 센 수(수 쓰기를 맞힌 뒤): 그 자리의 맨 위 쌓기나무의 윗면 가운데에
+    for (const t of marks.tally) {
+      const spot = at([t.x + 0.5, t.y + 0.5, t.z + 1 + liftOf(t.z, apart)]);
+      nodes.push(chip(String(t.n), spot, 'blk-tally'));
+    }
+    if (!frozen && !mixing && overlay.length) nodes.push(...overlayNodes(pose, at, k));
     for (const f of marks.diff) {
       const lift = liftOf(f.z, apart);
       const c = centerOf(FACE_CORNERS[f.face].map(([dx, dy, dz]) => at([f.x + dx, f.y + dy, f.z + dz + lift])));
@@ -742,6 +793,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (!POSES[name] || (!force && !canView())) return false;
     moveTo({ ...view, roll: rollTo(name) });
     el.dataset.facing = name;
+    if (overlay.length) render(); // 움직임 없이 바로 돈 때(움직임 줄이기): 그 방향의 겹친 그림을 바로 그린다
     emit('facing', name);
     if (!quiet) say(name === 'home' ? HOME_WORD : seenFrom(names[name] ?? SIDE_NAMES[name]));
     return true;
@@ -786,7 +838,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
   const syncClasses = () => {
     // 멈춘 그림은 초점이 머물 까닭이 없고(누를 것이 없다) 이름도 그림이라고 알린다
-    el.setAttribute('aria-label', label ?? (frozen ? PICTURE_LABEL : STAGE_LABEL));
+    el.setAttribute('aria-label', label ?? (frozen ? `${PICTURE_LABEL}${frozenEdges ? ` ${edgeWords(edgeList)}` : ''}` : STAGE_LABEL));
     if (!still) el.setAttribute('tabindex', frozen ? '-1' : '0');
     el.classList.toggle('can-edit', editable && !frozen);
     el.classList.toggle('can-view', canView());
@@ -826,13 +878,27 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       syncClasses();
       emitView();
     },
-    /** 멈춘 그림 ↔ 입체: 답한 뒤 false로 바꾸면 숨겨졌던 쌓기나무와 판이 나타난다 */
-    setFrozen(value, { board: showBoard } = {}) {
+    /**
+     * 멈춘 그림 ↔ 입체: 답한 뒤 false로 바꾸면 숨겨졌던 쌓기나무와 판이 나타난다.
+     * edges: 판을 그리지 않는 멈춘 그림에도 판 가장자리 글자와 화살표(앞은 왼쪽 아래, 옆은 오른쪽 아래)를 그린다.
+     *   판 3×3의 가장자리에 붙어 있어 쌓은 모양과 무관하게 늘 같은 자리다(답을 알려 주지 않는다)
+     */
+    setFrozen(value, { board: showBoard, edges = false } = {}) {
       frozen = Boolean(value);
+      frozenEdges = frozen && Boolean(edges);
       if (showBoard !== undefined) withBoard = showBoard;
       resetNodes();
       syncClasses();
       emitView();
+      render();
+    },
+    /**
+     * 자리 값을 싣지 않는 무대 ↔ 보통 무대: 돌려 보며 세는 것이 과제인 문항(수 쓰기)은 답하기 전에 면의 자리 값(data-x·y·z)과 개수(data-count)가
+     * DOM에 없게 한다(높이가 곧 답이다). 그동안은 면을 눌러도 아무 일이 없다
+     */
+    setBare(value) {
+      bare = Boolean(value);
+      resetNodes();
       render();
     },
     /** 무대의 이름(화면 읽기)을 단계의 말로 바꾼다. null이면 기본 이름으로 */
@@ -853,9 +919,17 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       render();
     },
     isApart: () => apart,
-    /** 표시: hidden(숨어 있던 쌓기나무 [x, y, z]들) · diff(다른 면들) · goal(놓을 자리 [x, y]) · layers(벌렸을 때 층별 개수) */
+    /**
+     * 표시: hidden(숨어 있던 쌓기나무 [x, y, z]들 — 첫 쌓기나무에 hiddenText 글자, 없으면 "숨어 있었어요") · diff(다른 면들) · goal(놓을 자리 [x, y])
+     * · layers(벌렸을 때 층별 개수) · counted(센 쌓기나무 [x, y, z]들 — 굵은 테두리) · tally(자리마다 센 수 [{ x, y, z(맨 위 층), n }])
+     */
     setMarks(next = {}) {
-      marks = { hidden: [], diff: [], goal: null, layers: false, ...next };
+      marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [], ...next };
+      render();
+    },
+    /** 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다: [{ dir, cells: [{ r, c, state }] }] (빈 목록이면 지운다) */
+    setOverlay(list = []) {
+      overlay = list;
       render();
     },
     step,
@@ -902,6 +976,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
 const STAGE_LABEL = '쌓기나무 무대. 끌거나 방향키로 돌려 보고, + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.';
 const PICTURE_LABEL = '쌓기나무로 만든 모양 그림이에요. 답한 뒤에 돌려 볼 수 있어요.';
+/** 처음 보기(교과서 방향)에서 판 가장자리 글자가 놓이는 쪽 */
+const EDGE_SPOT = { front: '왼쪽 아래', right: '오른쪽 아래', back: '오른쪽 위', left: '왼쪽 위' };
+/** 멈춘 그림의 가장자리 글자를 말로: "그림의 왼쪽 아래가 앞, 오른쪽 아래가 옆이에요." */
+const edgeWords = (list) => `그림의 ${list.map((item, i) => `${EDGE_SPOT[item.at]}가 ${i === list.length - 1 ? josa(item.text, '이에요/예요') : item.text}`).join(', ')}.`;
 
 /** 판 가장자리에서 바깥쪽 방향 [dx, dy] */
 const EDGE_OUT = { front: [0, -1], right: [1, 0], back: [0, 1], left: [-1, 0] };
@@ -994,12 +1072,14 @@ export const DEFAULT_DIRS = Object.freeze([
  * 교과서 방향의 멈춘 입체 그림(SVG). 그림에 보이는 면만 들어 있고, 판은 그리지 않는다.
  * 크기는 문항과 무관하게 한 가지(쌓기나무 한 변 = unit px, 판 전체가 들어가는 틀)이고, 모양은 틀의 가운데에 놓는다.
  * colors: [줄][칸] = { token, mark } (조형물) · diff: 다르다고 표시할 면들 [{ x, y, z, face }]
+ * edges: 교과서처럼 "앞"(왼쪽 아래)·"옆"(오른쪽 아래) 글자와 화살표를 붙인다 — 틀의 아래 두 모서리, 모양과 무관하게 늘 같은 자리
  */
-export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [] }) {
+export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [], edges = false }) {
   const pose = POSES.home;
   const shapes = sceneShapes(map, pose, { board: false, still: true });
-  // 틀: 판 전체(3×3×3)를 그 방향에서 본 크기
+  // 틀: 판 전체(3×3×3)를 그 방향에서 본 크기 (+ 글자를 붙이면 아래에 띠)
   const frame = { w: Math.ceil(unit * 4.4), h: Math.ceil(unit * 5.1) };
+  const band = edges ? Math.ceil(unit * PICTURE_BAND) : 0;
   const raw = shapes.map((s) => s.pts.map((p) => projectPoint(pose, unit, 0, 0, p)));
   const all = raw.flat();
   const box = all.length
@@ -1007,7 +1087,7 @@ export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓
     : { x0: 0, x1: 0, y0: 0, y1: 0 };
   const dx = frame.w / 2 - (box.x0 + box.x1) / 2;
   const dy = frame.h / 2 - (box.y0 + box.y1) / 2;
-  const svg = svgEl('svg', { class: 'blk-picture', viewBox: `0 0 ${frame.w} ${frame.h}`, role: 'img', 'aria-label': label, focusable: 'false' });
+  const svg = svgEl('svg', { class: `blk-picture${edges ? ' has-edges' : ''}`, viewBox: `0 0 ${frame.w} ${frame.h + band}`, role: 'img', 'aria-label': label, focusable: 'false' });
   const diffSet = new Set(diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
   shapes.forEach((s, i) => {
     const pts = raw[i].map(([x, y]) => [x + dx, y + dy]);
@@ -1023,5 +1103,30 @@ export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓
       svg.append(svgEl('text', { class: 'blk-x', x: c[0].toFixed(1), y: c[1].toFixed(1) }, document.createTextNode('✗')));
     }
   });
+  if (edges) svg.append(...pictureEdges(frame.w, frame.h + band, unit));
   return svg;
+}
+
+/** 그림 아래 띠의 높이(쌓기나무 한 변 = 1) */
+const PICTURE_BAND = 0.5;
+/**
+ * 그림의 "앞"·"옆" 표시: 틀의 왼쪽 아래(앞)·오른쪽 아래(옆)에 글자 칩과, 그 쪽에서 판 안쪽으로 가리키는 화살표(바닥에 누운 세모).
+ * 무대의 판 가장자리 화살표와 같은 모습이다 — 앞: 판의 뒤쪽(오른쪽 위로 30°)을 가리키고 날개는 판의 가로 방향, 옆: 판의 왼쪽(왼쪽 위로 30°)
+ */
+function pictureEdges(w, h, unit) {
+  const r = unit * 0.46; // 칩 높이의 절반
+  const c30 = Math.cos(Math.PI / 6);
+  const out = [];
+  for (const [text, at, cx, inward, across] of [
+    ['앞', 'front', r + 2, [c30, -0.5], [c30, 0.5]],
+    ['옆', 'right', w - r - 2, [-c30, -0.5], [c30, -0.5]],
+  ]) {
+    const cy = h - r - 2;
+    const pt = (d, s = 0) => [cx + inward[0] * d + across[0] * s, cy + inward[1] * d + across[1] * s];
+    out.push(svgEl('polygon', { class: 'blk-arrow', points: points([pt(r * 2.5), pt(r * 1.3, r * 0.6), pt(r * 1.3, -r * 0.6)]) }));
+    out.push(svgEl('g', { class: `blk-chip blk-edge blk-edge-${at}`, transform: `translate(${cx.toFixed(1)} ${cy.toFixed(1)})` },
+      svgEl('rect', { x: (-r).toFixed(1), y: (-r).toFixed(1), width: (2 * r).toFixed(1), height: (2 * r).toFixed(1), rx: r.toFixed(1) }),
+      svgEl('text', { x: 0, y: 0 }, document.createTextNode(text))));
+  }
+  return out;
 }
