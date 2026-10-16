@@ -181,7 +181,106 @@ async function noScroll(page) {
  */
 const padSettled = (page) => page.waitForFunction(() => [...document.querySelectorAll('.view-pad, .fold-tools')]
   .flatMap((el) => el.getAnimations({ subtree: true }))
-  .every((a) => a.playState === 'finished' || !a.effect.getKeyframes().some((k) => 'transform' in k)));
+  .every((a) => a.playState === 'finished' || !a.effect.getKeyframes().some((k) => 'transform' in k)), null, { timeout: 10_000 }).catch(async (error) => {
+  // 멈추면 무엇을 기다리다 멈췄는지 보인다: 끝나지 않은 transform 움직임(요소 · 속성 · 상태)
+  const left = await page.evaluate(() => [...document.querySelectorAll('.view-pad, .fold-tools')]
+    .flatMap((el) => el.getAnimations({ subtree: true }))
+    .filter((a) => a.playState !== 'finished' && a.effect.getKeyframes().some((k) => 'transform' in k))
+    .map((a) => `${a.effect.target.getAttribute('aria-label') ?? a.effect.target.className} ${a.transitionProperty ?? a.animationName} ${a.playState}`));
+  throw new Error(`조작판·접기 도구의 움직임이 10초 안에 끝나지 않았다: ${left.join(' / ') || '(남은 움직임 없음)'} — ${error.message.split('\n')[0]}`);
+});
+
+// ── 잠깐만 보이는 상태: 지나갔는지와 얼마나 머물렀는지 (정육면체·직육면체 검사가 같은 도우미를 쓴다) ─────────────
+/**
+ * 알림(토스트)을 지켜본다: 뜬 알림마다 종류(info · correct · wrong)·글과, 뜬 때·사라진 때의 페이지 안 시각(performance.now())을
+ * window.toastLog에 적는다. 알림은 몇 초(1.5초 + 글자당 0.08초) 뒤에 스스로 사라지는 잠깐의 상태라, 누르기 전에 지켜보기 시작해 적어 두고
+ * 나중에 본다. 페이지 안에서 잰 시간은 검사 쪽이 느려도 줄지 않는다(느린 기기에서는 길어질 뿐). 부를 때마다 기록을 비운다(지켜보는 장치는 문서마다 하나)
+ */
+async function watchToasts(page) {
+  await page.evaluate(() => {
+    window.toastLog = [];
+    if (window.toastSeen) return;
+    window.toastSeen = new Map();
+    new MutationObserver(() => {
+      const now = performance.now();
+      for (const toast of document.querySelectorAll('.toast')) {
+        if (window.toastSeen.has(toast)) continue;
+        const entry = { type: toast.className.match(/toast-(\w+)/)?.[1] ?? '', text: toast.textContent, shownAt: now, goneAt: null };
+        window.toastSeen.set(toast, entry);
+        window.toastLog.push(entry);
+      }
+      for (const [toast, entry] of window.toastSeen) if (entry.goneAt === null && !toast.isConnected) entry.goneAt = now;
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+}
+/**
+ * 지켜본 알림 가운데 그 종류이고 글에 text가 든 것이, 앱이 정한 시간(1.5초 + 글자당 0.08초 — feedback.js)의 70% 넘게 떠 있었다.
+ * 아직 떠 있으면 그 시간이 지날 때까지 기다린다. 70%: 적어 두는 때가 띄운 때보다 조금 늦을 수 있어(누른 처리가 끝난 뒤) 느린 기기에서도 버티게
+ */
+async function expectToastStayed(page, type, text = '') {
+  const handle = await page.waitForFunction(([kind, part]) => {
+    const e = window.toastLog.find((x) => x.type === kind && x.text.includes(part));
+    if (!e) return null;
+    const need = 0.7 * (1500 + 80 * e.text.length);
+    const upFor = (e.goneAt ?? performance.now()) - e.shownAt;
+    return e.goneAt === null && upFor < need ? null : { text: e.text, upFor: Math.round(upFor), need: Math.round(need) };
+  }, [type, text], { timeout: 15_000 }).catch(() => null);
+  expect(handle, `${type} 알림("${text}")을 지켜본 기록이 없다`).not.toBeNull();
+  const seen = await handle.jsonValue();
+  expect(seen.upFor, `${type} 알림 "${seen.text}"이 떠 있던 시간(ms) — 앱이 정한 시간의 70%는 ${seen.need}ms`).toBeGreaterThanOrEqual(seen.need);
+}
+/** 지켜본 알림 가운데 그 종류의 글에 text가 들어 있고, 그 알림이 앱이 정한 시간에 가깝게 떠 있었다 */
+async function expectToasted(page, type, text) {
+  await expect.poll(() => page.evaluate((kind) => window.toastLog.filter((x) => x.type === kind).map((x) => x.text).join('\n'), type)).toContain(text);
+  await expectToastStayed(page, type, text);
+}
+/**
+ * 무대의 data-fold가 지나가는 값과 그때의 페이지 안 시각을 적어 둔다(window.foldLog: [{ fold, at, names }]). 잠깐만 보이는 장면(반 접힘)을
+ * 누른 뒤에 바로 보려 하지 않고, 지나간 값과 머문 시간을 본다. 부를 때마다 기록을 비운다(지켜보는 장치는 무대마다 하나)
+ */
+async function watchFold(page) {
+  await page.evaluate(() => {
+    window.foldLog = [];
+    const el = document.querySelector('.fold-stage');
+    if (window.foldWatched === el) return;
+    window.foldWatched = el;
+    new MutationObserver(() => {
+      const name = el.querySelector('.net-vname');
+      window.foldLog.push({ fold: el.dataset.fold, at: performance.now(), names: name ? getComputedStyle(name).opacity : null });
+    }).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
+  });
+}
+/** foldLog에서 value 장면이 이어진 시간들(ms): 그 값이 처음 적힌 때부터 다른 값이 처음 적힌 때까지. 아직 이어지면 null */
+function dwellOf(log, value) {
+  const out = [];
+  let since = null;
+  for (const x of log) {
+    if (x.fold === value && since === null) since = x.at;
+    else if (x.fold !== value && since !== null) {
+      out.push(Math.round(x.at - since));
+      since = null;
+    }
+  }
+  if (since !== null) out.push(null);
+  return out;
+}
+/** 힌트(반만 접어 보기): 반 접힘이 한 번, 앱의 1.4초(view3d.js peek)의 70% 남짓인 1초 넘게 머물고, 반 접힘이 된 때부터 6초 안에 다 펴졌다 */
+function expectHintDwell(log) {
+  const half = dwellOf(log, 'half');
+  expect(half, '힌트의 반 접힘이 머문 시간(ms) — 앱은 1400ms').toHaveLength(1);
+  expect(half[0], '힌트의 반 접힘이 머문 시간(ms) — 앱은 1400ms').toBeGreaterThanOrEqual(1000);
+  const from = log.find((x) => x.fold === 'half').at;
+  const flat = log.find((x) => x.fold === 'flat' && x.at > from);
+  expect(flat, '힌트 뒤 다 펴졌다(flat)').toBeTruthy();
+  expect(Math.round(flat.at - from), '반 접힘부터 다 펴질 때까지(ms)').toBeLessThanOrEqual(6000);
+}
+/** 움직임 줄이기: 반 접힘 장면이 한 번, 앱의 장면 사이 시간(view3d.js SCENE_GAP 550ms)의 70%(385ms) 넘게, 3초 안에 다음 장면으로 */
+function expectSceneDwell(log) {
+  const half = dwellOf(log, 'half');
+  expect(half, '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toHaveLength(1);
+  expect(half[0], '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toBeGreaterThanOrEqual(385);
+  expect(half[0], '움직임 줄이기의 반 접힘이 머문 시간(ms) — 앱은 550ms').toBeLessThanOrEqual(3000);
+}
 
 test('?lesson=cube: 그 차시 4단계만 보이고 첫 단계만 열림, 판별 5문항을 끝까지 하면 다음 단계가 열린다', async ({ page }) => {
   const errors = collectErrors(page);
@@ -324,17 +423,15 @@ test.describe('움직임 줄이기', () => {
 
   test('접기 애니메이션 대신 펼침 → 반 접힘 → 다 접힘 장면으로 바로 끝난다', async ({ page }) => {
     await page.goto(fileUrl(FILE, '?seed=1&sound=off&stage=cube-judge'));
-    await page.evaluate(() => {
-      const el = document.querySelector('.fold-stage');
-      window.foldStates = [];
-      new MutationObserver(() => window.foldStates.push(el.dataset.fold)).observe(el, { attributes: true, attributeFilter: ['data-fold'] });
-    });
+    await watchFold(page);
     const q = questionsFor('cube-judge')[0];
     await page.locator(`.answer-btn[data-answer="${q.expected}"]`).click();
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done', { timeout: 1500 });
-    const states = await page.evaluate(() => window.foldStates);
+    const log = await page.evaluate(() => window.foldLog);
+    const states = log.map((x) => x.fold);
     expect(states).toContain('half');
     expect(states).not.toContain('folding');
+    expectSceneDwell(log); // 반 접힘 장면이 건너뛰듯 지나가지 않는다
   });
 });
 
@@ -368,6 +465,9 @@ test('마주 보는 면: 틀린 면은 제자리에서 흔들리고, 다시 눌�
   const q = questions[0];
   await expectSameNet(page, q.net);
   const wrong = page.locator(`.net-face[data-face="${q.net.faces.find((f) => f.id !== q.star && f.id !== q.answer).id}"]`);
+  // 화면이 들어오는 움직임(아래에서 6px 올라온다, 0.32초)이 끝난 뒤의 자리가 기준이다: 그 도중에 재면 흔들기와 상관없이
+  // 면이 위로 최대 6px "움직인" 것으로 보인다(빠른 컴퓨터에서 첫 프레임 전에 재면 꼭 6px — 드물게 실패하던 까닭)
+  await page.waitForFunction(() => document.querySelector('.screen-play').getAnimations().every((a) => a.playState === 'finished'));
   const before = await wrong.boundingBox();
   await wrong.click();
   for (let i = 0; i < 4; i += 1) {
@@ -841,6 +941,7 @@ test('자유 배치: 칸을 눌러 십자 → [접어 보기] → 접혀 도감�
   await expect(page.locator('.mat-status')).toContainText('6 / 6');
   await expect(page.locator('.free-fold')).toBeEnabled();
   await expect(page.locator('.free-note')).toHaveText('놓은 그대로 접혀요. 새 전개도를 찾으면 도감에 들어가요.');
+  await watchToasts(page);
   await page.locator('.free-fold').click();
   // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초 뒤 스스로 사라진다: 접히기(1.3초)를 기다리기 전에 본다
   await expect(page.locator('.toast-correct')).toHaveText('처음 찾은 전개도예요!');
@@ -855,6 +956,7 @@ test('자유 배치: 칸을 눌러 십자 → [접어 보기] → 접혀 도감�
   await expect(page.locator('.meta-xp b')).toHaveText('+7'); // 만들기 성공 +2, 새 발견 +5
   await expect(page.locator('.bonus-note')).toHaveText('새 발견 +5 · 만들기 성공 +2');
   const xpAfterFirst = await page.locator('.meta-xp b').textContent();
+  await expectToastStayed(page, 'correct', '처음 찾은 전개도예요!'); // [펴서 고치기]가 알림을 지우기 전에
 
   // 2) 펴서 고치기 → 놓은 그대로 판으로 → 새로 만들어 같은 십자를 돌려 놓고 접기 → 기록·점수 없음
   await page.locator('.free-fix').click();
@@ -1259,18 +1361,22 @@ test('자유 배치: 알림이 조작(칸·카드·접어 보기·접기 도구�
     const phone = size.width <= 560;
     await placeShape(page, phone ? SHAPES.cross : shiftCells(SHAPES.cross, 1, 1));
     // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초쯤 뒤 스스로 사라진다: 접히기(1.3초)를 기다리기 전에 본다(버튼·까닭 칩도 누르는 순간 놓인다)
+    await watchToasts(page);
     await page.locator('.free-fold').click(); // 처음 찾은 전개도예요!
     await expectToastClear(page);
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    await expectToastStayed(page, 'correct', '처음 찾은 전개도예요!'); // 머문 시간: [펴서 고치기]가 알림을 지우기 전에 본다
     await page.locator('.free-fix').click();
     await expect(page.locator('.toast')).toHaveCount(0); // 판으로 돌아가면 앞 알림을 지운다
     // 안 되는 모양의 안내 알림도 까닭 칩·접기 도구를 가리지 않는다
     await fresh(page);
     await placeShape(page, centerOnBoard(SHAPES.line5, phone ? BOARD_SIZES.phone : BOARD_SIZES.wide));
+    await watchToasts(page);
     await page.locator('.free-fold').click();
     await expect(page.locator('.reason-chip').first()).toBeVisible();
     await expectToastClear(page);
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
+    await expectToastStayed(page, 'info', '정육면체가 안 돼요');
   }
 });
 
@@ -2727,6 +2833,7 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     const cross = put(SHAPES.cross);
     await placeShape(page, cross);
     await check('6장을 놓음');
+    await watchToasts(page);
     expect(await foldDrift(), at).toEqual({ drift: 0, pips: 0, count: 6, scene: FLAT_SCENE });
     // 알림은 [접어 보기]를 누르는 순간 뜨고 2.4~2.7초 뒤 스스로 사라진다: 접히기(1.3초)를 기다리거나 긴 재기를 하기 전에 본다.
     // 조작 버튼들은 누르는 순간 놓인다 — 다 접힌 뒤 달라지는 것은 접기 버튼의 글자([접어 보기] → [펴기])에 따른 너비와 옆 막대의 왼쪽 끝뿐이다(같은 줄 안)
@@ -2734,16 +2841,19 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     await expect(page.locator('.view-pad')).toBeVisible();
     await check('합이 틀림');
+    await expectToastStayed(page, 'wrong', '합이 7이 아닌 짝이 있어요'); // 머문 시간: [펴서 고치기]가 알림을 지우기 전에 본다
     await page.locator('.free-fix').click();
     await check('펴서 고치기(이미 접어 본 놓기)');
     // 2) 정육면체가 안 되는 모양 둘(겹침 · 네 면이 한 점에: 까닭 문장이 가장 길다) → 힌트
     for (const shape of [SHAPES.line5, SHAPES.block]) {
       await fresh(page);
       await placeShape(page, put(shape));
+      await watchToasts(page);
       await page.locator('.free-fold').click();
       await expectToastClear(page);
       await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
       await check('정육면체가 안 됨');
+      await expectToastStayed(page, 'wrong', '정육면체가 안 돼요');
     }
     await fresh(page);
     await page.locator('.tool-hint').click();
@@ -2757,11 +2867,13 @@ test('주사위 주문 배치(네 크기): 모든 장면에서 세로·가로 �
     }), `${at} 힌트 글`).toBe(true);
     // 3) 첫 번째 주사위 완성 → 같은 모양(막힘) → 두 번째 완성
     await placeShape(page, diceOrder(cross));
+    await watchToasts(page);
     await page.locator('.free-fold').click();
     await expectToastClear(page);
     await expect(foldStage(page)).toHaveAttribute('data-fold', 'done');
     await expect(page.locator('.found-stamp')).toBeVisible();
     await check('첫 번째 완성');
+    await expectToastStayed(page, 'correct', '첫 번째 주사위 완성');
     const overlaps = await page.evaluate(() => {
       const rect = (sel) => document.querySelector(sel).getBoundingClientRect();
       const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
@@ -3011,6 +3123,7 @@ test('머리가 두 줄이 되어도(글자가 넓은 기기) 크롬북 화면�
 
 test('주사위 주문 보기 조작·정리: 조작판은 접힌 뒤에만, 끌어서 끝없이 돌리고 0.5~2배. 90초 동안 못 만들면 힌트가 켜지고, 나간 뒤에는 타이머·키 처리가 남지 않는다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '마우스 끌기·시계는 크롬북 화면에서 확인');
+  test.setTimeout(90_000);
   const errors = collectErrors(page);
   await page.clock.install();
   // 90초 경계(89초에는 없고 91초에는 있다)는 시계를 멈춰 두고 잰다: 시계가 실제 시간과 함께 흐르면 화면이 뜨고 재는 사이에 흐른 시간이 더해져,
@@ -3244,12 +3357,14 @@ test('도감 주문 배치(네 크기): 놓는 판·접은 장면·까닭 고르
     await fold('5칸 · 안 되는 모양(까닭 맞힘)', 'other-a', 'overlap');
     await fold('5칸 · 안 되는 모양(까닭 틀림)', 'block-b', 'overlap');
     // 알림은 [접어 보기]를 누르는 순간 뜨고 2.5초쯤 뒤 스스로 사라진다: 세 버튼이 놓인 바로 뒤, 긴 재기(check)보다 먼저 본다
+    await watchToasts(page);
     await fold('6칸째(별 1개 알림 + 세 버튼)', '1-4-1f', null, async () => {
       await expect(page.locator('.btn-trio .free-stop')).toBeVisible();
       await expectToastClear(page);
     });
     await expect(page.locator('.btn-trio .free-stop')).toBeVisible();
     expect(await page.locator('.btn-trio .btn').evaluateAll((els) => new Set(els.map((el) => Math.round(el.getBoundingClientRect().top))).size)).toBe(1);
+    await expectToastStayed(page, 'correct', '처음 찾은 전개도예요!');
     // (나) 6칸 이상: 놓는 판 아래쪽의 [오늘은 여기까지]
     await fresh(page);
     await expect(page.locator('.free-stop')).toBeVisible();
@@ -3809,6 +3924,7 @@ test('답하기 전 힌트(반만 접어 보기) 동안에도 새 조작은 잠�
     new MutationObserver(note).observe(stage, { attributes: true, attributeFilter: ['data-fold'] });
     new MutationObserver(note).observe(scene, { attributes: true, attributeFilter: ['style'] });
   });
+  await watchFold(page); // 지나간 값과 그때의 페이지 안 시각: 반 접힘이 머문 시간을 본다
   await page.locator('.hint-btn').click();
   await expect.poll(() => page.evaluate(() => window.halfScenes.size), '반만 접힌 상태(data-fold="half")가 된다').toBeGreaterThan(0);
   const [half] = await page.evaluate(() => [...window.halfScenes]);
@@ -3826,6 +3942,7 @@ test('답하기 전 힌트(반만 접어 보기) 동안에도 새 조작은 잠�
   expect(await foldStage(page).evaluate((el) => getComputedStyle(el).touchAction)).toBe('manipulation');
   await expect(foldStage(page)).toHaveAttribute('data-fold', 'flat', { timeout: 8000 });
   expect(await sceneStyle(page)).toBe(FLAT_SCENE);
+  expectHintDwell(await page.evaluate(() => window.foldLog)); // 반 접힘이 1초 넘게 머물고 6초 안에 다 펴졌다
 
   // 면 붙이기: 틀린 자리로 접은 장면은 볼 수 있고, [펴고 다시 하기] 뒤에는 다시 잠긴다
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=cube-complete'));
