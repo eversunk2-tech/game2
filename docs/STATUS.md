@@ -27,13 +27,13 @@
 
 - 지침 [build-brief-b0b.md](games/net-workshop/build-brief-b0b.md). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) 7-3 안 B·7-4·7-5, B0c2가 큰 그림만 먼저 따로 냄.
 - 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(`main`으로 맞춘 뒤), 포트 5303, scratchpad `build-b0b/`. 끝나면 별도 Review(`review-brief-b0b.md`).
-- 진행(10-17): Build 끝(`1d2240a` — 단위 322, e2e 457·0·95 보통·글꼴 흉내, 처음 받는 양 gzip 204→181 KB + 쌓기나무 묶음 27 KB 따로, `?` 뒤만 바꿔 다시 열기 1.3초 → 0.24초, 느린 망 첫 화면은 비슷, 예시 게임은 느린 망에서 0.58 → 0.74초). 사용자 결정 **15-12**(게임 모음 안내글을 "사이트 주소로 연다"로) → 같은 Build가 고치는 중 → 그다음 Review(`review-brief-b0b.md`, 포트 5316~5319, scratchpad `review-b0b/`).
+- 진행(10-17): Build 끝(`1d2240a` — 단위 322, e2e 457·0·95 보통·글꼴 흉내, 처음 받는 양 gzip 204→181 KB + 쌓기나무 묶음 27 KB 따로, `?` 뒤만 바꿔 다시 열기 1.3초 → 0.24초, 느린 망 첫 화면은 비슷, 예시 게임은 느린 망에서 0.58 → 0.74초). 사용자 결정 **15-12**(게임 모음 안내글을 "사이트 주소로 연다"로) → 고침(`20770eb`, 안내글 "게임 링크를 학생에게 나눠 주세요. 학생은 이 사이트 주소로 열어요.") → **Review 중**(`review-brief-b0b.md`, 포트 5316~5319, scratchpad `review-b0b/`, 결과 `review-b0b.md`).
 
 ### 2-1b. 함께: c4 큰 화면에서 [입장하기]도 커짐 (사용자 요청 10-17)
 
 - 사용자의 말: "1920 화면에서 selectio game 에서와 마찬가지 크기로 입장하기 크기 키워줘" → [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-11**(selectio의 `s = min(폭÷1280, 높이÷800)`을 1~1.35로 묶어 곱함 — 1920×1080에서 높이 약 113px).
 - 작업 폴더 `.worktrees/c1` · `track/c1`(`a2af9b7`에서), 포트 5304, scratchpad `build-c4/`. 지침 [build-brief-c4.md](games/net-workshop/build-brief-c4.md) / Review [review-brief-c4.md](games/net-workshop/review-brief-c4.md)(포트 5314, 결과 `review-c4.md`).
-- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고치는 중(지침 덧붙임). 고친 뒤 Review는 한 번에(review-brief-c4 덧붙임 포함).
+- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고침(`5919f53` — 손 칸 [1675, 1378, 1795, 1442], 왼쪽으로만 min(버튼 폭×0.2, 무대 폭×0.05), 1920에서 58px·1366×768에서 42px) → 세로 카드에서는 옮겨도 손이 안 보임 → 사용자 결정 **"안 보이면 옮기지 않기 (추천)"** → Build가 다시 고치는 중. 그 뒤 Review는 한 번에(review-brief-c4 덧붙임·덧붙임 2). 지침 밖 `app.js` `planIntro` 2줄은 코디네이터가 받아들임.
 - **B0b와 같은 파일의 다른 줄**을 고친다(줄 몫은 두 지침에 적음 — B0b 지침 덧붙임). 빨리 올리려고 따로 돌린다: Review 통과 → `main`에 합쳐 바로 올림 → `main`을 `track/b0`에 합쳐 B0b에 알림.
 
 ### 2-2. 이번에 올린 것 (2026-10-17, `cd190ce`)
