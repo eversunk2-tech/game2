@@ -915,45 +915,62 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .area-tab-art { display: none; }
 }
 
-/* ── 게임 인트로 (게임이 intro를 줄 때만, B0c): 화면 가득 그림 · 떨어지는 제목 · 리본 위 부제 · 큰 [입장하기] ───────────
+/* ── 게임 인트로 (게임이 intro를 줄 때만, B0c · B0c2): 꽉 채우기 또는 얇은 여백 카드 · 떨어지는 제목 · 리본 위 부제 · 큰 [입장하기] ───────────
  * 그림은 게임 CSS가 준다: .intro-bg의 background-image(배경), .intro-logo의 background-image와 .intro-shine의 mask-image(제목 그림, 투명 바탕 — 둘에 같은 그림),
  * .screen-intro의 --intro-sky(그림이 풀리기 전의 하늘색). 그림 url()은 게임 CSS 안에서만 쓴다(엔진 CSS에서 var()로 받으면 개발 서버가 엔진 폴더 기준으로 찾는다).
- * --intro-ratio(제목 그림의 가로 ÷ 세로)는 엔진이 intro.logo의 크기로 넣는다.
+ * 자리·크기는 엔진(ui/app.js layoutIntro ← core/intro-fit.js)이 CSS 변수로 준다: 무대 --st-x·y·w·h(꽉 채우기 = 화면, 카드 = 카드),
+ * 그림 --im-x·y·w·h(무대 기준), 제목 상자 --logo-x·y·w, [입장하기] 면의 가운데 --btn-x·y와 높이 --btn-h. 모드는 .is-fill / .is-card.
+ * --intro-ratio·--intro-logo-size·--intro-logo-pos(제목 그림에서 쓸 상자)도 엔진이 intro.logo로 넣는다.
  * 움직이는 것은 transform·opacity만. 움직임 줄이기·?fx=low(.is-still)면 움직이지 않는 한 장면이다.
  * 처음에 제목이 떨어져 살짝 튀고(0.65초) → 부제 → [입장하기]. 그 뒤 제목이 천천히 떠오르내리고, 가끔 빛이 스치고, 별이 반짝이고, 버튼이 숨 쉬듯 커졌다 작아지며, 작은 입체가 아래에서 떠오른다 */
 .edu-app.is-intro .topbar { position: fixed; top: 12px; right: 16px; z-index: 6; margin: 0; min-height: 0; }
 .edu-app.is-intro .brand, .edu-app.is-intro .rank-slot, .edu-app.is-intro .topbar-space { display: none; }
 .screen-intro {
   --intro-ratio: 1.6;
-  --logo-w: min(50vw, 54vh * var(--intro-ratio));
   position: fixed; inset: 0; z-index: 5; overflow: hidden;
   display: block; padding: 0; gap: 0;
   background: var(--intro-sky, linear-gradient(180deg, var(--primary-edge) 0%, var(--primary) 35%, var(--face-2) 80%, var(--primary-soft) 100%));
   animation: intro-in 350ms var(--ease-out) both;
 }
-@supports (height: 1dvh) { .screen-intro { --logo-w: min(50vw, 54dvh * var(--intro-ratio)); } }
+/* 카드 뒤(와 꽉 채우기의 얇은 띠)의 흐린 같은 그림(작은 캔버스를 늘린 것) · 카드일 때 가장자리를 어둡게 */
+.intro-blur { position: absolute; left: -3%; top: -3%; width: 106%; height: 106%; object-fit: cover; pointer-events: none; opacity: 0; transition: opacity 400ms var(--ease-out); }
+.screen-intro.has-blur:is(.is-card, .has-band) .intro-blur { opacity: 1; }
+.intro-vignette { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 45%, rgb(10 20 60 / 0%) 45%, rgb(10 20 60 / 45%) 100%); }
+.screen-intro.is-card .intro-vignette { opacity: 1; }
+/* 무대: 그림이 보이는 곳. 카드는 둥근 모서리(18px) + 흰 테 2px + 그림 색의 은은한 빛 + 아래 그림자(금테 액자는 만들지 않는다) */
+.intro-stage { position: absolute; left: var(--st-x, 0); top: var(--st-y, 0); width: var(--st-w, 100%); height: var(--st-h, 100%); overflow: hidden; pointer-events: none; }
+.screen-intro.is-card .intro-stage {
+  border-radius: 18px;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 92%), 0 0 44px 6px var(--intro-glow, rgb(90 160 255 / 55%)), 0 22px 44px rgb(10 20 60 / 45%);
+}
 .intro-bg {
-  position: absolute; inset: 0; pointer-events: none;
-  background: 50% 60% / cover no-repeat;
+  position: absolute; left: var(--im-x, 0); top: var(--im-y, 0); width: var(--im-w, 100%); height: var(--im-h, 100%);
+  background: center / 100% 100% no-repeat;
   opacity: 0; transition: opacity 500ms var(--ease-out);
 }
+.screen-intro.no-art .intro-bg { background-size: cover; }
 .intro-bg.is-loaded { opacity: 1; }
-.intro-sparks { position: absolute; inset: 0 0 35%; pointer-events: none; }
-.intro-blocks { position: absolute; inset: 0; pointer-events: none; }
-.intro-head { position: absolute; left: 0; right: 0; top: max(10px, 2.5vh); display: flex; justify-content: center; pointer-events: none; }
+.intro-sparks { position: absolute; inset: 0 0 35%; }
+.intro-blocks { position: absolute; inset: 0; }
+.intro-head { position: absolute; left: var(--logo-x, 25%); top: var(--logo-y, 2%); width: var(--logo-w, 50%); pointer-events: none; }
 .intro-drop { transform-origin: 50% 100%; }
-.intro-logo-box { position: relative; width: var(--logo-w); aspect-ratio: var(--intro-ratio); }
+.intro-logo-box { position: relative; width: 100%; aspect-ratio: var(--intro-ratio); }
 .intro-title { position: absolute; inset: 0; margin: 0; }
-.intro-logo { position: absolute; inset: 0; background: center / 100% 100% no-repeat; }
+/* 제목 그림: 파일에서 쓸 상자(crop)만 보이게 — 크기·자리는 엔진이 상자 기준 백분율로 준다(파일은 그대로) */
+.intro-logo {
+  position: absolute; inset: 0; background-repeat: no-repeat;
+  background-size: var(--intro-logo-size, 100% 100%); background-position: var(--intro-logo-pos, center);
+}
 /* 빛 한 줄기: 제목 그림 모양으로 가린(mask) 틀 안에서 띠가 왼쪽에서 오른쪽으로 지나간다 */
-.intro-shine { position: absolute; inset: 0; overflow: hidden; mask-position: center; mask-size: 100% 100%; mask-repeat: no-repeat; }
+.intro-shine { position: absolute; inset: 0; overflow: hidden; mask-repeat: no-repeat; mask-size: var(--intro-logo-size, 100% 100%); mask-position: var(--intro-logo-pos, center); }
 .intro-shine::before {
   content: ''; position: absolute; top: 0; bottom: 0; left: 0; width: 34%;
   background: linear-gradient(105deg, rgb(255 255 255 / 0%) 15%, rgb(255 255 255 / 80%) 50%, rgb(255 255 255 / 0%) 85%);
   opacity: 0; transform: translateX(-110%);
 }
 /* 제목 그림이 없는 게임: 제목을 제목 글꼴로 크게 */
-.screen-intro:not(.has-logo) .intro-logo-box { width: min(92vw, 900px); aspect-ratio: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.screen-intro:not(.has-logo) .intro-head { left: var(--st-x, 0); width: var(--st-w, 100%); }
+.screen-intro:not(.has-logo) .intro-logo-box { aspect-ratio: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .screen-intro:not(.has-logo) .intro-title { position: static; }
 .intro-title-text {
   display: block; text-align: center; color: #fff; font-size: clamp(2.6rem, 9vh, 5.5rem); line-height: 1.1;
@@ -968,7 +985,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-subtitle.on-ribbon { position: absolute; inset: 0; transform-origin: 50% 87%; }
 .intro-ribbon { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .intro-ribbon text { font-family: var(--font-display); font-weight: 700; stroke-linejoin: round; }
-.intro-ribbon .intro-ribbon-shadow, .intro-ribbon .intro-ribbon-edge { fill: var(--ink); stroke: var(--ink); stroke-width: 10px; }
+.intro-ribbon .intro-ribbon-shadow, .intro-ribbon .intro-ribbon-edge { fill: var(--ink); stroke: var(--ink); } /* 테두리 두께는 엔진이 글자 크기에 맞춰 속성으로 */
 .intro-ribbon .intro-ribbon-text { fill: #fff; }
 /* 반짝이는 별(네 갈래): 하늘에 여덟, 제목 둘레에 다섯 */
 .intro-spark {
@@ -1005,8 +1022,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-block:nth-child(4) { left: 60%; width: 38px; animation-duration: 25s; animation-delay: 2.6s; --spin: -60deg; --top: var(--face-4); --left: var(--face-5); --right: var(--stamp); }
 .intro-block:nth-child(5) { left: 77%; width: 28px; animation-duration: 20s; animation-delay: 8s; --spin: 45deg; --top: var(--primary-soft); --left: var(--face-2); --right: var(--primary); }
 .intro-block:nth-child(6) { left: 91%; width: 24px; animation-duration: 24s; animation-delay: 13s; --spin: -55deg; --top: var(--face-3); --left: var(--face-7); --right: var(--correct); }
-/* [입장하기]: 두껍고 반짝이는 금빛 버튼 + 파란 테 + 짙은 남색 테두리와 아래 그림자. 숨 쉬는 움직임은 안쪽 층에만(버튼 자리는 그대로) */
-.intro-foot { position: absolute; left: 0; right: 0; bottom: max(14px, 3.5vh); display: flex; justify-content: center; pointer-events: none; }
+/* [입장하기]: 두껍고 반짝이는 금빛 버튼 + 파란 테 + 짙은 남색 테두리와 아래 그림자. 숨 쉬는 움직임은 안쪽 층에만(버튼 자리는 그대로).
+   자리: 면의 가운데가 --btn-x·--btn-y (꽉 채우기 = 화면 아래 가운데, 카드 = 카드 아래 가장자리에 걸침) */
+.intro-foot { position: absolute; left: var(--btn-x, 50%); top: var(--btn-y, 90%); transform: translate(-50%, -50%); pointer-events: none; }
 .intro-enter {
   pointer-events: auto; position: relative; display: inline-grid; padding: 8px; margin: 0;
   border: 0; border-radius: 999px; background: none; color: var(--ink); cursor: pointer;
@@ -1016,14 +1034,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-enter-pulse { display: grid; }
 .intro-enter-face {
   position: relative; display: grid; place-items: center;
-  min-width: clamp(210px, 23vw, 330px); min-height: clamp(60px, 10.5vh, 88px); padding: 2px 1.2em 0;
+  min-width: calc(var(--btn-h, 80px) * 3.6); min-height: var(--btn-h, 80px); padding: 2px 1.2em 0;
   border: 6px solid transparent; border-radius: 999px;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 72%) 0%, rgb(255 255 255 / 18%) 46%, rgb(255 255 255 / 0%) 47%) padding-box,
     linear-gradient(180deg, var(--butter-soft) 0%, var(--butter) 50%, var(--star) 100%) padding-box,
     linear-gradient(180deg, var(--face-2) 0%, var(--primary) 55%, var(--primary-edge) 100%) border-box;
   box-shadow: 0 0 0 3px var(--ink), 0 7px 0 3px var(--ink), 0 14px 26px rgb(30 33 64 / 40%);
-  color: var(--ink); font-size: clamp(1.6rem, 4.6vh, 2.5rem); line-height: 1; letter-spacing: 0.08em; white-space: nowrap;
+  color: var(--ink); font-size: calc(var(--btn-h, 80px) * 0.42); line-height: 1; letter-spacing: 0.08em; white-space: nowrap;
   text-shadow: 0 2px 0 rgb(255 255 255 / 70%);
   transition: transform var(--dur-1) var(--ease-out);
 }
@@ -1071,19 +1089,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 @keyframes intro-rise-up {
   0% { opacity: 0; transform: translateY(0) rotate(0deg); }
   8%, 80% { opacity: 0.92; }
-  100% { opacity: 0; transform: translateY(-105vh) rotate(var(--spin, 40deg)); }
-}
-
-/* 세로 화면(태블릿 세로·휴대폰): 제목은 위쪽 하늘에 화면 폭의 85%(휴대폰 92%), 버튼은 아래 가운데. 제목 칸의 높이는 게임이 그림에 맞춰 --intro-head-h로 */
-@media (max-aspect-ratio: 1/1) {
-  .screen-intro { --logo-w: min(85vw, var(--intro-head-h, 44vh) * var(--intro-ratio)); }
-  .intro-head { top: 68px; height: var(--intro-head-h, 44vh); align-items: center; }
-  .intro-sparks { inset: 0 0 45%; }
-  .intro-foot { bottom: max(16px, 3vh); }
-  .intro-enter-face { font-size: clamp(1.6rem, 7.5vw, 2.5rem); min-height: clamp(60px, 16vw, 88px); }
-}
-@media (max-aspect-ratio: 1/1) and (max-width: 560px) {
-  .screen-intro { --logo-w: min(92vw, var(--intro-head-h, 44vh) * var(--intro-ratio)); }
+  100% { opacity: 0; transform: translateY(calc(-1 * var(--st-h, 100vh) - 64px)) rotate(var(--spin, 40deg)); }
 }
 
 /* 처음 화면(영역이 있는 게임)이 낮은 화면에서도 한 화면에 (B0a-1 · B0c: 인트로로 가는 [← 처음으로] 줄이 더해짐)

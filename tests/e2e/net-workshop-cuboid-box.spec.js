@@ -733,6 +733,7 @@ test('직육면체 도감 주문: 옛 저장 값(내 맘대로에서 찾은 9가
   expect((await stored(page, 'cuboid-nets')).length).toBe(10);
   // 결과 복사 문장 끝에 "직육면체 전개도 10/54"
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await page.getByRole('button', { name: '학습 기록' }).click();
   await page.evaluate(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async (text) => { window.copied = text; } } });
@@ -1095,6 +1096,7 @@ test('결정 1: 54칸을 다 채우고 마치면 "직육면체 도감 완성" �
   await expect(page.locator('.screen-result')).toContainText('직육면체 도감 완성');
   await page.keyboard.press('Escape');
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await page.getByRole('button', { name: '학습 기록' }).click();
   await expect(page.locator('.badge-item')).toHaveCount(13);
   await expect(page.locator('.badge-item[data-badge="cuboid-dex-complete"]')).toHaveClass(/is-earned/);

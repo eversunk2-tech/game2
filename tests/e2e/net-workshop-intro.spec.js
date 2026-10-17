@@ -1,13 +1,15 @@
 /**
- * 게임 인트로(B0c · spec-grade6 15-6, 2026-10-16 사용자 수정 요청): 앱을 열면 맨 처음 보이는 화면 → [입장하기] → 처음 화면(학년 고르기).
- * 그림(img/intro-bg.jpg · img/intro-title.webp)은 사용자가 캔바 시안에서 고른 것이고, 움직임·버튼·부제는 코드다.
+ * 게임 인트로(B0c · B0c2 — spec-grade6 15-6·15-9): 앱을 열면 맨 처음 보이는 화면 → [입장하기] → 처음 화면(학년 고르기).
+ * 그림(img/intro-bg.jpg · img/intro-title.png — 사용자가 캔바 AI 업스케일로 받은 2880×1620 원본 바이트 그대로)은 빌드가 dist/assets/로 따로 내보낸다.
+ * 놓는 규칙(selectio game과 같게): 1.35배까지만 늘리는 꽉 채우기 + 인물 칸을 자르지 않음 + 남는 띠가 5%를 넘으면 얇은 여백 카드(늘리지 않음).
  * 인트로는 늘 움직이므로 배치는 움직임 줄이기로 연 화면에서 재고, 움직이는 화면에서는 "보이는가·누를 수 있는가·무엇이 움직이는가"만 본다(common-rules 8절).
  * 글자 폭에 기대는 픽셀 상수는 쓰지 않는다(글꼴 흉내 E2E_WIDE_TEXT=font에서도 통과해야 한다).
  */
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
+import { DIST, collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
 
 const FILE = 'net-workshop.html';
 const NAME = '입체도형 공방';
@@ -16,16 +18,24 @@ const ENTER = '입장하기';
 const BACK = '← 처음으로';
 
 /**
- * 그림에서 직접 잰 자리(기획서·그림만 보고 정한 독립 값 — 엔진·게임 코드를 쓰지 않는다)
- * - 배경 1680×944: 소년의 얼굴(머리카락 포함) x 300~430 · y 450~565, 소녀의 얼굴 x 1110~1230 · y 555~660
- * - 제목 1352×873: 리본 앞쪽 파란 띠의 위·아래 끝(가로 x에서, 그림을 픽셀로 훑어 잼). 부제 글자 칸이 이 안에 있어야 한다
+ * 그림에서 직접 잰 자리(그림 파일을 픽셀·격자로 보고 정한 독립 값 — 엔진·게임 코드를 쓰지 않는다)
+ * - 배경 2880×1620: 두 아이(꼭 보일 칸) x 160~2250 · y 630~1620(소년의 배낭·막대부터 소녀가 든 전개도까지, 몸은 그림 아래 끝까지),
+ *   소년의 머리(머리카락 포함) x 425~765 · y 625~970, 소녀의 머리 x 1820~2115 · y 860~1150
+ * - 제목 2880×1620(투명 바탕)에서 쓰는 상자 x 268~2564 · y 96~1578, 리본 앞쪽 파란 띠의 위·아래 끝(가로 x에서). 부제 글자 칸이 이 안에 있어야 한다
  */
-const BG = { w: 1680, h: 944 };
-const FACES = { 소년: [300, 450, 430, 565], 소녀: [1110, 555, 1230, 660] };
-const LOGO = { w: 1352, h: 873 };
-const BAND = [[410, 709, 786], [440, 714, 793], [470, 719, 799], [500, 723, 804], [530, 727, 808], [560, 730, 811], [590, 733, 814], [620, 735, 816], [650, 737, 817],
-  [680, 737, 818], [710, 737, 816], [740, 736, 814], [770, 735, 812], [800, 732, 810], [830, 729, 807], [860, 725, 805], [890, 720, 801], [920, 715, 797], [950, 709, 792],
-  [980, 704, 788], [1010, 700, 780]];
+const BG = { w: 2880, h: 1620 };
+const KEEP = [160, 630, 2250, 1620];
+const HEADS = { 소년: [425, 625, 765, 970], 소녀: [1820, 860, 2115, 1150] };
+const CROP = [268, 96, 2564, 1578];
+const BAND = [[850, 1286, 1438], [900, 1290, 1436], [950, 1296, 1443], [1000, 1305, 1460], [1050, 1314, 1464], [1100, 1322, 1472], [1150, 1329, 1479], [1200, 1336, 1485],
+  [1250, 1341, 1490], [1300, 1345, 1494], [1350, 1348, 1496], [1400, 1349, 1498], [1450, 1350, 1498], [1500, 1349, 1497], [1550, 1346, 1494], [1600, 1342, 1491],
+  [1650, 1337, 1486], [1700, 1330, 1480], [1750, 1324, 1474], [1800, 1316, 1466], [1850, 1308, 1459], [1900, 1300, 1448], [1950, 1292, 1440], [2000, 1288, 1440], [2050, 1286, 1440]];
+/** 기대 모드(독립 계산 — 기획서 15-9 문장 그대로): 배율 = min(덮는 배율, 인물 칸이 들어가는 배율, 1.35 ÷ DPR), 남는 띠가 5% 이하면 꽉 채우기, 넘으면 카드 */
+function expectedMode(w, h, dpr) {
+  const s = Math.min(Math.max(w / BG.w, h / BG.h), w / (KEEP[2] - KEEP[0]), h / (KEEP[3] - KEEP[1]), 1.35 / dpr);
+  const band = Math.max(Math.max(0, w - BG.w * s) / w, Math.max(0, h - BG.h * s) / h);
+  return band <= 0.05 ? 'fill' : 'card';
+}
 
 const enter = (page) => page.getByRole('button', { name: ENTER });
 /** 그림이 풀리고 움직임이 시작될 수 있는 상태(.is-ready)가 될 때까지 */
@@ -45,7 +55,9 @@ test('인트로: 주소 없이 열면 인트로 — 제목(h1)·리본 위 부�
     - button "${ENTER}"
   `);
   await expect(enter(page)).toBeFocused();
-  for (const sel of ['.intro-bg', '.intro-logo', '.intro-ribbon', '.intro-sparks', '.intro-blocks', '.intro-logo-sparks']) await expect(page.locator(sel)).toHaveAttribute('aria-hidden', 'true');
+  for (const sel of ['.intro-stage', '.intro-blur', '.intro-vignette', '.intro-logo', '.intro-ribbon', '.intro-logo-sparks']) await expect(page.locator(sel)).toHaveAttribute('aria-hidden', 'true');
+  // 그림·하늘의 별·떠오르는 입체는 무대(aria-hidden) 안
+  expect(await page.evaluate(() => ['.intro-bg', '.intro-sparks', '.intro-blocks'].every((sel) => document.querySelector(sel).closest('[aria-hidden="true"]')))).toBe(true);
   // 부제는 그림이 아니라 글자: 리본을 따라 휜 SVG 글(제목 글꼴)과 화면 읽기용 글이 같은 문장
   await expect(page.locator('.intro-subtitle .sr-only')).toHaveText(SUBTITLE);
   await expect(page.locator('.intro-ribbon-text textPath')).toHaveText(SUBTITLE);
@@ -135,28 +147,18 @@ test('수업 주소(?lesson=·?area=·?grade=·?stage=)로 열면 인트로 없�
   expect(errors).toEqual([]);
 });
 
-/** 인트로 배치: 스크롤, 제목·부제·버튼·소리 버튼의 자리, 두 아이의 얼굴 자리(배경 그림의 그려진 자리로 바꿈), 부제 글자 칸과 리본 띠 */
+/** 인트로 배치: 모드, 스크롤, 그림·무대·제목·부제·버튼·소리 버튼의 자리, 인물 칸·두 아이의 머리(그림 좌표 → 화면 좌표), 부제 글자 칸과 리본 띠 */
 async function introLayout(page) {
-  return page.evaluate(({ BG, FACES, LOGO, BAND }) => {
+  return page.evaluate(({ BG, KEEP, HEADS, BAND }) => {
     const box = (el) => {
       const r = el.getBoundingClientRect();
       return { x: r.left, y: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height };
     };
     const doc = document.documentElement;
-    // 배경 그림이 화면에 그려진 자리: background-size(cover 또는 너비) · background-position(%)
-    const bgEl = document.querySelector('.intro-bg');
-    const area = box(bgEl);
-    const cs = getComputedStyle(bgEl);
-    let iw;
-    if (cs.backgroundSize === 'cover') iw = BG.w * Math.max(area.w / BG.w, area.h / BG.h);
-    else iw = parseFloat(cs.backgroundSize.split(' ')[0]);
-    const ih = (iw * BG.h) / BG.w;
-    const [px, py] = cs.backgroundPosition.split(' ').map((v) => parseFloat(v) / 100);
-    const ox = area.x + (area.w - iw) * px;
-    const oy = area.y + (area.h - ih) * py;
-    const k = iw / BG.w;
-    const faces = Object.fromEntries(Object.entries(FACES).map(([name, [x0, y0, x1, y1]]) => [name, { x: ox + x0 * k, y: oy + y0 * k, r: ox + x1 * k, b: oy + y1 * k }]));
-    // 부제 글자 칸(글자마다, 제목 그림 좌표)이 리본 띠의 위·아래 끝 안에 있는가 — 띠 가장자리까지 남는 거리(그림 좌표)의 가장 작은 값
+    const screen = document.querySelector('.screen-intro');
+    const img = box(document.querySelector('.intro-bg')); // 그림 상자(꽉 채우기에서는 화면 밖으로 나가는 쪽이 잘린다)
+    const k = img.w / BG.w;
+    const onScreen = ([x0, y0, x1, y1]) => ({ x: img.x + x0 * k, y: img.y + y0 * k, r: img.x + x1 * k, b: img.y + y1 * k });
     const text = document.querySelector('.intro-ribbon-text');
     const band = (x) => {
       for (let i = 1; i < BAND.length; i += 1) {
@@ -171,65 +173,138 @@ async function introLayout(page) {
     };
     const margins = [...text.textContent].map((ch, i) => {
       if (!ch.trim()) return null;
-      const c = text.getExtentOfChar(i);
+      const c = text.getExtentOfChar(i); // 그림 파일 좌표(SVG viewBox = 쓰는 상자)
       const lim = band(c.x + c.width / 2);
       if (!lim || c.x < BAND[0][0] || c.x + c.width > BAND.at(-1)[0]) return -1;
       return Math.min(c.y - lim[0], lim[1] - (c.y + c.height));
     }).filter((m) => m !== null);
-    const svg = document.querySelector('.intro-ribbon');
-    const vb = svg.viewBox.baseVal;
+    const vb = document.querySelector('.intro-ribbon').viewBox.baseVal;
+    const logo = box(document.querySelector('.intro-logo-box'));
     return {
+      mode: screen.dataset.mode,
+      ratio: (img.w * devicePixelRatio) / BG.w,
+      dpr: devicePixelRatio,
       hScroll: doc.scrollWidth - doc.clientWidth,
       vScroll: doc.scrollHeight - innerHeight,
-      vw: innerWidth,
-      vh: innerHeight,
-      logo: box(document.querySelector('.intro-logo-box')),
+      img,
+      stage: box(document.querySelector('.intro-stage')),
+      logo,
       button: box(document.querySelector('.intro-enter-face')),
       hit: box(document.querySelector('.intro-enter')),
       sound: box(document.querySelector('.btn-sound')),
-      faces,
+      keep: onScreen(KEEP),
+      heads: Object.fromEntries(Object.entries(HEADS).map(([name, b]) => [name, onScreen(b)])),
       ribbonMargin: Math.min(...margins),
-      ribbonViewBox: [vb.width, vb.height],
-      logoRatio: box(document.querySelector('.intro-logo-box')).w / box(document.querySelector('.intro-logo-box')).h,
-      LOGO_RATIO: LOGO.w / LOGO.h,
+      ribbonViewBox: [vb.x, vb.y, vb.width, vb.height],
+      logoRatio: logo.w / logo.h,
+      cardStyle: (() => {
+        const s = getComputedStyle(document.querySelector('.intro-stage'));
+        return { radius: s.borderTopLeftRadius, shadow: s.boxShadow };
+      })(),
     };
-  }, { BG, FACES, LOGO, BAND });
+  }, { BG, KEEP, HEADS, BAND });
 }
 const overlaps = (a, b) => a.x < b.r && b.x < a.r && a.y < b.b && b.y < a.b;
-const inside = (a, w, h) => a.x >= 0 && a.y >= 0 && a.r <= w && a.b <= h;
+const inside = (a, w, h) => a.x >= -0.5 && a.y >= -0.5 && a.r <= w + 0.5 && a.b <= h + 0.5;
 
-test('배치(네 크기 + 가로 태블릿, 움직임 줄이기): 스크롤 0, 제목·부제·버튼이 화면 안에서 겹치지 않고, 버튼이 두 아이의 얼굴을 가리지 않으며, 부제 글자가 리본 띠 안. 버튼은 48px보다 훨씬 크다', async ({ page }, testInfo) => {
+/** 결과표의 기기: [폭, 높이, devicePixelRatio] (Playwright deviceScaleFactor로) */
+const DEVICES = [[1366, 768, 1], [1366, 680, 1], [820, 1180, 2], [390, 844, 3], [1024, 768, 2], [1180, 820, 2], [1280, 800, 1.5], [1280, 800, 2], [1366, 1024, 2], [1920, 1080, 1], [1920, 1080, 2], [844, 390, 3]];
+
+test('배치(결과표의 12가지 화면·DPR, 움직임 줄이기): 모드가 규칙대로(독립 계산), 꽉 채우기는 1.35배 이하·띠 5% 이하, 카드는 늘리지 않고 다 보임. 스크롤 0, 인물 칸이 다 보이고, 제목·버튼이 두 아이의 머리를 가리지 않으며, 부제 글자가 리본 띠 안', async ({ browser }, testInfo) => {
   test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
-  test.setTimeout(90_000);
-  const errors = collectErrors(page);
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  for (const [w, h, wide] of [[1366, 768, 0.45], [1366, 680, 0.4], [820, 1180, 0.8], [390, 844, 0.85], [1024, 768, 0.45], [1180, 820, 0.45]]) {
-    const at = `${w}×${h}`;
-    await page.setViewportSize({ width: w, height: h });
+  test.setTimeout(120_000);
+  for (const [w, h, dpr] of DEVICES) {
+    const at = `${w}×${h}@${dpr}`;
+    const context = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, reducedMotion: 'reduce' });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
     await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
     await introReady(page);
     await page.evaluate(() => document.fonts.ready);
     const m = await introLayout(page);
+    expect(m.dpr, at).toBe(dpr);
+    expect(m.mode, `${at} 모드`).toBe(expectedMode(w, h, dpr));
     expect([m.hScroll, m.vScroll], `${at} 스크롤`).toEqual([0, 0]);
+    expect(inside(m.keep, w, h), `${at} 인물 칸(두 아이)이 다 보인다`).toBe(true);
+    if (m.mode === 'fill') {
+      expect(m.ratio, `${at} 늘림`).toBeLessThanOrEqual(1.35 + 1e-6);
+      const bandX = (Math.max(0, m.img.x) + Math.max(0, w - m.img.r)) / w;
+      const bandY = (Math.max(0, m.img.y) + Math.max(0, h - m.img.b)) / h;
+      expect(Math.max(bandX, bandY), `${at} 띠`).toBeLessThanOrEqual(0.05);
+      expect(m.cardStyle.radius, at).toBe('0px');
+    } else {
+      expect(m.ratio, `${at} 카드는 늘리지 않는다`).toBeLessThanOrEqual(1 + 1e-6);
+      expect(inside(m.img, w, h), `${at} 카드 그림이 다 보인다`).toBe(true);
+      expect([m.stage.x, m.stage.y, m.stage.w, m.stage.h].map(Math.round), `${at} 카드 = 그림`).toEqual([m.img.x, m.img.y, m.img.w, m.img.h].map(Math.round));
+      expect(Math.round(m.img.x), `${at} 양옆 여백`).toBeGreaterThanOrEqual(12);
+      expect(Math.round(m.img.y), `${at} 위 여백`).toBeGreaterThanOrEqual(12);
+      expect(m.cardStyle.radius, at).toBe('18px');
+      expect(m.cardStyle.shadow, `${at} 흰 테 2px`).toMatch(/rgba\(255, 255, 255, 0\.9\d*\) 0px 0px 0px 2px/);
+      // [입장하기]가 카드 아래 가장자리에 걸친다
+      expect(m.button.y < m.img.b && m.button.b > m.img.b, `${at} 버튼이 카드 아래 가장자리에 걸침`).toBe(true);
+    }
     for (const [name, el] of Object.entries({ 제목: m.logo, 버튼: m.button, 소리: m.sound })) expect(inside(el, w, h), `${at} ${name}이 화면 안`).toBe(true);
     expect(overlaps(m.logo, m.button), `${at} 제목과 버튼`).toBe(false);
     expect(overlaps(m.logo, m.sound), `${at} 제목과 소리 버튼`).toBe(false);
-    for (const [name, face] of Object.entries(m.faces)) {
-      expect(overlaps(m.hit, face), `${at} 버튼이 ${name}의 얼굴을 가린다`).toBe(false);
-      expect(overlaps(m.logo, face), `${at} 제목이 ${name}의 얼굴을 가린다`).toBe(false);
-      expect(inside(face, w, h), `${at} ${name}의 얼굴이 화면 안`).toBe(true);
+    for (const [name, head] of Object.entries(m.heads)) {
+      expect(overlaps(m.hit, head), `${at} 버튼이 ${name}의 머리를 가린다`).toBe(false);
+      expect(overlaps(m.logo, head), `${at} 제목이 ${name}의 머리를 가린다`).toBe(false);
     }
     expect(m.ribbonMargin, `${at} 부제 글자 칸이 리본 띠 안`).toBeGreaterThan(0);
-    expect(m.ribbonViewBox).toEqual([LOGO.w, LOGO.h]);
-    expect(Math.abs(m.logoRatio - m.LOGO_RATIO), `${at} 제목 그림 비율`).toBeLessThan(0.01);
-    // 제목 크기: 가로 화면은 화면 폭의 약 40~55%, 세로 화면은 약 80~92%
-    expect(m.logo.w / w, `${at} 제목 폭`).toBeGreaterThanOrEqual(wide);
-    expect(m.logo.w / w, `${at} 제목 폭`).toBeLessThanOrEqual(w > h ? 0.55 : 0.93);
-    // 큰 버튼: 높이 60px 이상, 폭 200px 이상(48px 규칙보다 훨씬 크게)
-    expect(m.button.h, `${at} 버튼 높이`).toBeGreaterThanOrEqual(60);
+    expect(m.ribbonViewBox).toEqual([CROP[0], CROP[1], CROP[2] - CROP[0], CROP[3] - CROP[1]]);
+    expect(Math.abs(m.logoRatio - (CROP[2] - CROP[0]) / (CROP[3] - CROP[1])), `${at} 제목 그림 비율`).toBeLessThan(0.01);
+    expect(m.logo.w, `${at} 제목 폭`).toBeGreaterThan(Math.min(w, h) * 0.3);
+    // 큰 버튼: 높이 56px 이상, 폭 200px 이상(48px 규칙보다 크게)
+    expect(m.button.h, `${at} 버튼 높이`).toBeGreaterThanOrEqual(56);
     expect(m.button.w, `${at} 버튼 폭`).toBeGreaterThanOrEqual(200);
+    expect(errors, at).toEqual([]);
+    await context.close();
   }
-  expect(errors).toEqual([]);
+});
+
+test('화면 크기·devicePixelRatio가 바뀌면 모드를 다시 정한다: 1366×768 꽉 채우기 → 820×1180 카드 → 다시 꽉 채우기, 2560×1440에서 DPR 1(꽉 채우기) → 2(1.35배를 넘어 카드)', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const mode = () => page.locator('.screen-intro').getAttribute('data-mode');
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await expect(page.locator('.screen-intro')).toHaveAttribute('data-mode', 'fill');
+  await page.setViewportSize({ width: 820, height: 1180 });
+  await expect(page.locator('.screen-intro')).toHaveAttribute('data-mode', 'card');
+  await expect(page.locator('.screen-intro')).toHaveClass(/is-card/);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await expect(page.locator('.screen-intro')).toHaveAttribute('data-mode', 'fill');
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 2560, height: 1440, deviceScaleFactor: 1, mobile: false });
+  await expect(page.locator('.screen-intro')).toHaveAttribute('data-mode', 'fill');
+  await cdp.send('Emulation.setDeviceMetricsOverride', { width: 2560, height: 1440, deviceScaleFactor: 2, mobile: false });
+  await expect(page.locator('.screen-intro')).toHaveAttribute('data-mode', 'card');
+  expect(Number(await page.locator('.screen-intro').getAttribute('data-ratio'))).toBeLessThanOrEqual(1);
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  expect(await mode()).not.toBeNull();
+});
+
+test('카드 모드의 모습: 뒤에 같은 그림을 흐리게(작은 캔버스), 가장자리 어둡게, 카드는 둥근 모서리·흰 테·은은한 빛. 별·떠오르는 입체는 카드 안', async ({ browser }, testInfo) => {
+  test.skip(isTouch(testInfo), '크롬북에서 확인');
+  const context = await browser.newContext({ viewport: { width: 820, height: 1180 }, deviceScaleFactor: 2, reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await introReady(page);
+  await expect(page.locator('.screen-intro')).toHaveClass(/has-blur/);
+  const look = await page.evaluate(() => {
+    const blur = document.querySelector('.intro-blur');
+    const stage = document.querySelector('.intro-stage').getBoundingClientRect();
+    const inStage = (sel) => [...document.querySelectorAll(sel)].every((el) => el.closest('.intro-stage'));
+    return {
+      blur: [blur.tagName, blur.width, blur.height, getComputedStyle(blur).opacity],
+      vignette: getComputedStyle(document.querySelector('.intro-vignette')).opacity,
+      overflow: getComputedStyle(document.querySelector('.intro-stage')).overflow,
+      sparks: inStage('.intro-sparks .intro-spark') && inStage('.intro-block'),
+      stageInside: stage.left >= 12 && stage.right <= innerWidth - 12,
+    };
+  });
+  expect(look).toEqual({ blur: ['CANVAS', 96, 54, '1'], vignette: '1', overflow: 'hidden', sparks: true, stageInside: true });
+  await context.close();
 });
 
 test('움직임: 제목이 떨어지고 → 부제 → 버튼, 그 뒤로 떠오르내림·빛·반짝임·숨 쉬는 버튼·떠오르는 입체. 모두 transform·opacity만 움직이고, 움직이는 중에도 [입장하기]가 보이고 눌린다. 나가면 남는 움직임이 없다', async ({ page }, testInfo) => {
@@ -277,17 +352,36 @@ test('움직임 줄이기 · ?fx=low: 움직이지 않는 한 장면 — 도는 
   await still();
 });
 
-test('그림이 풀리기 전에도 빈 화면이 아니다: 인트로 바탕은 하늘색 그러데이션, 배경 그림은 풀린 뒤 나타난다(그 전에는 투명)', async ({ page }) => {
+test('그림은 따로 파일(./assets/)로 받아진다 — 받기 전에는 하늘색 바탕(빈 화면 아님), 받으면 나타난다. 받은 그림은 사용자의 2880 원본과 바이트가 같다', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   expect(await page.locator('.screen-intro').evaluate((el) => getComputedStyle(el).backgroundImage)).toMatch(/^linear-gradient/);
   await introReady(page);
-  expect(await page.locator('.intro-bg').evaluate((el) => [getComputedStyle(el).opacity, /^url\("data:image\/jpeg/.test(getComputedStyle(el).backgroundImage)])).toEqual(['1', true]);
-  expect(await page.locator('.intro-logo').evaluate((el) => /^url\("data:image\/webp/.test(getComputedStyle(el).backgroundImage))).toBe(true);
-  expect(await page.locator('.intro-shine').evaluate((el) => /^url\("data:image\/webp/.test(getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage))).toBe(true);
-  // 빌드 파일에 그림은 한 벌씩만 (제목 그림은 그림·빛줄기 틀 두 곳에 쓰여도 한 번)
-  const html = readFileSync(path.resolve('dist', FILE), 'utf8');
-  expect([html.split('data:image/jpeg').length - 1, html.split('data:image/webp').length - 1]).toEqual([1, 1]);
+  const urls = await page.evaluate(() => ({
+    bg: getComputedStyle(document.querySelector('.intro-bg')).backgroundImage,
+    logo: getComputedStyle(document.querySelector('.intro-logo')).backgroundImage,
+    mask: getComputedStyle(document.querySelector('.intro-shine')).maskImage || getComputedStyle(document.querySelector('.intro-shine')).webkitMaskImage,
+    bgOpacity: getComputedStyle(document.querySelector('.intro-bg')).opacity,
+  }));
+  expect(urls.bg).toMatch(/\/assets\/intro-bg-[A-Z0-9]+\.jpg"\)$/);
+  expect(urls.logo).toMatch(/\/assets\/intro-title-[A-Z0-9]+\.png"\)$/);
+  expect(urls.mask).toBe(urls.logo);
+  expect(urls.bgOpacity).toBe('1');
+  // 실제로 받아 풀린 그림의 크기
+  const sizes = await page.evaluate(async (list) => Promise.all(list.map(async (css) => {
+    const img = new Image();
+    img.src = /url\("(.*)"\)/.exec(css)[1];
+    await img.decode();
+    return [img.naturalWidth, img.naturalHeight];
+  })), [urls.bg, urls.logo]);
+  expect(sizes).toEqual([[2880, 1620], [2880, 1620]]);
+  // 이 테스트가 연 파일 옆의 assets/: 원본과 md5가 같고, HTML 안에는 큰 그림이 data:로 다시 들어가 있지 않다
+  const html = readFileSync(path.join(DIST, FILE), 'utf8');
+  const md5 = (file) => createHash('md5').update(readFileSync(path.join(DIST, file))).digest('hex');
+  const refs = [...html.matchAll(/url\("?\.\/(assets\/[^")]+)"?\)/g)].map((m) => m[1]).sort();
+  expect(refs.map((r) => r.replace(/-[A-Z0-9]+\./, '.'))).toEqual(['assets/intro-bg.jpg', 'assets/intro-title.png']);
+  expect(refs.map(md5)).toEqual(['a0ca1de662f43b43b63964d18f635e0c', 'aa28acc246cf72c99d8a9a5a1367777f']);
+  expect(html).not.toMatch(/data:image\/(jpeg|png)/);
 });
 
 test('소리: [입장하기]를 누르면 짧은 효과음(종 두 번), 소리 끔이면 없다', async ({ page }, testInfo) => {

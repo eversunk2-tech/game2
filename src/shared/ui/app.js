@@ -51,6 +51,7 @@ import {
   normalizeRanks,
   stageXp,
 } from '../core/rewards.js';
+import { planIntroLayout, sanitizeDpr } from '../core/intro-fit.js';
 import { createStorage } from '../core/storage.js';
 import { splitTitleMark } from '../core/title-mark.js';
 import { createSfx } from './audio.js';
@@ -316,14 +317,17 @@ async function copyText(text) {
 }
 
 /**
- * 게임 인트로(선택 기능, B0c): 앱을 열면 맨 처음 보이는 화면. [입장하기]를 누르면 처음 화면(학년·영역 카드)으로 간다.
+ * 게임 인트로(선택 기능, B0c · B0c2): 앱을 열면 맨 처음 보이는 화면. [입장하기]를 누르면 처음 화면(학년·영역 카드)으로 간다.
  * intro 정의를 확인해 화면에 쓸 값으로 바꾼다. intro가 없으면 null — 인트로가 없는 게임은 화면·저장 값이 지금과 똑같다.
  *   intro: {
  *     subtitle?,                 부제(글자). 제목 그림의 리본 위(logo.ribbon) 또는 제목 아래
  *     enterLabel? = '입장하기',  큰 버튼의 글자
  *     title? = game.title,       화면 읽기용 제목(h1). 제목 그림이 있으면 그 그림의 대체 글
- *     logo?: { width, height, ribbon?: { path, fontSize, length } }
- *       제목 그림의 크기(비율)와, 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
+ *     art?: { width, height, keep?, avoid?, glow? }
+ *       배경 그림의 크기(px)·꼭 보일 칸 keep [x0, y0, x1, y1](인물 — 꽉 채울 때 자르지 않는다)·제목이 가리면 안 되는 상자들 avoid(머리)·카드 둘레 빛 색.
+ *       주면 꽉 채우기/카드 규칙(core/intro-fit.js)으로 놓는다. 주지 않으면 그림을 화면 가득(cover)
+ *     logo?: { width, height, crop?, ribbon?: { path, fontSize, length } }
+ *       제목 그림의 크기, 쓸 상자 crop [x0, y0, x1, y1](그림 파일은 그대로 — 투명 여백을 CSS로 뺀다), 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
  *   }
  * 그림은 게임 CSS가 준다: .intro-bg(배경)·.intro-logo(제목)의 background-image, .intro-shine(빛이 스치는 틀)의 mask-image
  * (엔진은 그림 파일을 모른다 — docs/engine.md 2절 "게임 인트로").
@@ -332,6 +336,14 @@ export function planIntro(intro, game) {
   if (intro == null || intro === false) return null;
   if (typeof intro !== 'object' || Array.isArray(intro)) throw new Error('createGameApp: intro는 { subtitle, enterLabel, logo } 객체예요.');
   const text = (value, fallback = '') => (typeof value === 'string' && value.trim() ? value.trim() : fallback);
+  const box = (value, w, h, name) => {
+    if (value == null) return null;
+    const nums = Array.isArray(value) ? value.map(Number) : [];
+    if (nums.length !== 4 || nums.some((v) => !Number.isFinite(v)) || nums[0] < 0 || nums[1] < 0 || nums[2] > w || nums[3] > h || nums[0] >= nums[2] || nums[1] >= nums[3]) {
+      throw new Error(`createGameApp: ${name}는 그림 안의 상자 [x0, y0, x1, y1]이에요.`);
+    }
+    return nums;
+  };
   let logo = null;
   if (intro.logo != null) {
     const { width, height, ribbon = null } = intro.logo;
@@ -339,9 +351,25 @@ export function planIntro(intro, game) {
     if (ribbon != null && !(typeof ribbon.path === 'string' && ribbon.path.trim() && Number(ribbon.fontSize) > 0 && Number(ribbon.length) > 0)) {
       throw new Error('createGameApp: intro.logo.ribbon에는 path(SVG 경로)·fontSize·length가 필요해요.');
     }
-    logo = { width: Number(width), height: Number(height), ribbon: ribbon && { path: ribbon.path.trim(), fontSize: Number(ribbon.fontSize), length: Number(ribbon.length) } };
+    const w = Number(width);
+    const h = Number(height);
+    logo = { width: w, height: h, crop: box(intro.logo.crop, w, h, 'intro.logo.crop') ?? [0, 0, w, h], ribbon: ribbon && { path: ribbon.path.trim(), fontSize: Number(ribbon.fontSize), length: Number(ribbon.length) } };
   }
-  return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo };
+  let art = null;
+  if (intro.art != null) {
+    const w = Number(intro.art.width);
+    const h = Number(intro.art.height);
+    if (!(w > 0 && h > 0)) throw new Error('createGameApp: intro.art에는 배경 그림의 width·height(양수)가 필요해요.');
+    if (intro.art.avoid != null && !Array.isArray(intro.art.avoid)) throw new Error('createGameApp: intro.art.avoid는 상자들의 배열이에요.');
+    art = {
+      width: w,
+      height: h,
+      keep: box(intro.art.keep, w, h, 'intro.art.keep') ?? [0, 0, w, h],
+      avoid: (intro.art.avoid ?? []).map((b) => box(b, w, h, 'intro.art.avoid')),
+      glow: text(intro.art.glow) || null,
+    };
+  }
+  return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo, art };
 }
 
 /** 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로 */
@@ -380,25 +408,44 @@ function isoBlock([a, b, c]) {
  * 글 길이는 length로 맞춘다(글꼴이 달라도 리본 밖으로 나가지 않는다). 테두리·그림자·글자를 세 겹으로 따로 그린다 —
  * 한 겹에 테두리와 글자를 함께 그리면 글자마다 차례로 칠해져 옆 글자의 테두리가 앞 글자의 획(ㅏ의 짧은 획)을 덮는다
  */
-function ribbonText(text, { width, height, ribbon }) {
+function ribbonText(text, { crop, ribbon }) {
   const id = 'intro-ribbon-path';
+  const [x0, y0, x1, y1] = crop;
+  const edge = Math.round(ribbon.fontSize * 0.19 * 10) / 10; // 테두리 두께: 글자 크기의 19%(바깥으로 보이는 것은 그 반)
   const layer = (cls, extra = null) => svgEl('text', { class: cls, 'font-size': ribbon.fontSize, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...extra },
     svgEl('textPath', { href: `#${id}`, startOffset: '50%', textLength: ribbon.length, lengthAdjust: 'spacingAndGlyphs' }, text));
-  return svgEl('svg', { class: 'intro-ribbon', viewBox: `0 0 ${width} ${height}`, 'aria-hidden': 'true', focusable: 'false' },
+  // 그림에서 쓰는 상자(crop)와 같은 좌표 — 리본의 선은 그림 파일 좌표 그대로
+  return svgEl('svg', { class: 'intro-ribbon', viewBox: `${x0} ${y0} ${x1 - x0} ${y1 - y0}`, 'aria-hidden': 'true', focusable: 'false' },
     svgEl('defs', null, svgEl('path', { id, d: ribbon.path })),
-    layer('intro-ribbon-shadow', { transform: 'translate(0 4)' }),
-    layer('intro-ribbon-edge'),
+    layer('intro-ribbon-shadow', { transform: `translate(0 ${Math.round(ribbon.fontSize * 0.077 * 10) / 10})`, 'stroke-width': edge }),
+    layer('intro-ribbon-edge', { 'stroke-width': edge }),
     layer('intro-ribbon-text'),
   );
 }
 
-/** 요소의 CSS 배경 그림이 풀릴(디코딩) 때까지. 그림이 없거나 풀지 못하면 바로 */
+/** 요소의 CSS 배경 그림을 받아 풀(디코딩) 때까지 → 그 그림(Image). 그림이 없거나 받지·풀지 못하면 null */
 function backgroundDecoded(el) {
   const url = /url\((["']?)(.*?)\1\)/.exec(getComputedStyle(el).backgroundImage || '')?.[2];
-  if (!url || typeof Image !== 'function') return Promise.resolve();
+  if (!url || typeof Image !== 'function') return Promise.resolve(null);
   const img = new Image();
   img.src = url;
-  return typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve();
+  const done = typeof img.decode === 'function' ? img.decode() : new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+  return done.then(() => img, () => null);
+}
+
+/** 카드 뒤의 흐린 바탕: 같은 그림을 작은 캔버스(96×54)에 한 번 그린다 — 화면 크기로 늘리면 저절로 흐려진다(새 그림 파일을 만들지 않는다) */
+const INTRO_BLUR_W = 96;
+const INTRO_BLUR_H = 54;
+function drawIntroBlur(img, canvas) {
+  try {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    if ('filter' in ctx) ctx.filter = 'blur(2px)';
+    ctx.drawImage(img, -4, -4, INTRO_BLUR_W + 8, INTRO_BLUR_H + 8);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
@@ -669,7 +716,7 @@ export function createGameApp({
    * 꾸밈(반짝임·떠오르는 입체)은 화면 읽기에서 숨긴다. 움직임은 transform·opacity만(base.css). 움직임 줄이기·?fx=low면 움직이지 않는 한 장면
    */
   function introScreen() {
-    const { title, subtitle, enterLabel, logo } = introPlan;
+    const { title, subtitle, enterLabel, logo, art } = introPlan;
     const repeat = (n, make) => Array.from({ length: n }, (_, i) => make(i));
     const enter = h('button', {
       type: 'button',
@@ -679,10 +726,16 @@ export function createGameApp({
         show(titleScreen());
       },
     }, h('span', { class: 'intro-enter-pulse' }, h('span', { class: 'intro-enter-face' }, enterLabel)));
-    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${quietFx() ? ' is-ready is-still' : ''}` },
-      h('div', { class: 'intro-bg', 'aria-hidden': 'true' }),
-      h('div', { class: 'intro-sparks', 'aria-hidden': 'true' }, repeat(INTRO_SKY_SPARKS, () => h('span', { class: 'intro-spark' }))),
-      h('div', { class: 'intro-blocks', 'aria-hidden': 'true' }, INTRO_BLOCKS.map((size) => h('span', { class: 'intro-block' }, isoBlock(size)))),
+    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${art ? '' : ' no-art'}${quietFx() ? ' is-ready is-still' : ''}` },
+      // 카드 뒤(와 꽉 채우기의 얇은 띠)의 흐린 같은 그림 · 가장자리 어둡게
+      h('canvas', { class: 'intro-blur', width: INTRO_BLUR_W, height: INTRO_BLUR_H, 'aria-hidden': 'true' }),
+      h('div', { class: 'intro-vignette', 'aria-hidden': 'true' }),
+      // 무대: 그림이 보이는 곳(꽉 채우기 = 화면, 카드 = 카드). 그림·반짝임·떠오르는 입체는 무대 안에
+      h('div', { class: 'intro-stage', 'aria-hidden': 'true' },
+        h('div', { class: 'intro-bg' }),
+        h('div', { class: 'intro-sparks' }, repeat(INTRO_SKY_SPARKS, () => h('span', { class: 'intro-spark' }))),
+        h('div', { class: 'intro-blocks' }, INTRO_BLOCKS.map((size) => h('span', { class: 'intro-block' }, isoBlock(size)))),
+      ),
       h('div', { class: 'intro-head' },
         h('div', { class: 'intro-drop' },
           h('div', { class: 'intro-float' },
@@ -700,8 +753,49 @@ export function createGameApp({
       ),
       h('div', { class: 'intro-foot' }, enter),
     );
-    if (logo) screen.style.setProperty('--intro-ratio', String(logo.width / logo.height));
+    if (logo) {
+      // 제목 그림에서 쓸 상자(crop)만 보이게: 그림 크기·자리를 상자 기준 백분율로 (그림 파일은 그대로)
+      const [x0, y0, x1, y1] = logo.crop;
+      const cw = x1 - x0;
+      const ch = y1 - y0;
+      const pos = (start, size, full) => (full > size ? `${((start / (full - size)) * 100).toFixed(4)}%` : '0%');
+      screen.style.setProperty('--intro-ratio', String(cw / ch));
+      screen.style.setProperty('--intro-logo-size', `${((logo.width / cw) * 100).toFixed(4)}% ${((logo.height / ch) * 100).toFixed(4)}%`);
+      screen.style.setProperty('--intro-logo-pos', `${pos(x0, cw, logo.width)} ${pos(y0, ch, logo.height)}`);
+    }
+    if (art?.glow) screen.style.setProperty('--intro-glow', art.glow);
+    layoutIntro(screen);
     return screen;
+  }
+
+  /**
+   * 인트로 배치(core/intro-fit.js): 지금 화면 크기·devicePixelRatio로 꽉 채우기/카드를 정하고 무대·그림·제목·[입장하기]의 자리를 CSS 변수로 준다.
+   * 그림 정보(art)가 없으면 그림을 화면 가득(cover)
+   */
+  function layoutIntro(screen) {
+    const sw = globalThis.innerWidth || 1;
+    const sh = globalThis.innerHeight || 1;
+    const dpr = sanitizeDpr(globalThis.devicePixelRatio);
+    const { art, logo } = introPlan;
+    const crop = logo?.crop;
+    const logoRatio = crop ? (crop[2] - crop[0]) / (crop[3] - crop[1]) : 1.6;
+    const plan = planIntroLayout({ w: sw, h: sh, dpr, art: art ?? { width: sw, height: sh }, logoRatio });
+    const px = (v) => `${Math.round(v * 1000) / 1000}px`;
+    const vars = {
+      '--st-x': plan.stage.x, '--st-y': plan.stage.y, '--st-w': plan.stage.w, '--st-h': plan.stage.h,
+      '--im-x': plan.image.x - plan.stage.x, '--im-y': plan.image.y - plan.stage.y, '--im-w': plan.image.w, '--im-h': plan.image.h,
+      '--logo-x': plan.logo.x, '--logo-y': plan.logo.y, '--logo-w': plan.logo.w,
+      '--btn-x': plan.button.x, '--btn-y': plan.button.y, '--btn-h': plan.button.h,
+    };
+    for (const [name, value] of Object.entries(vars)) screen.style.setProperty(name, px(value));
+    screen.classList.toggle('is-card', plan.mode === 'card');
+    screen.classList.toggle('is-fill', plan.mode === 'fill');
+    // 꽉 채우기에서 띠가 남으면(5% 이하) 그 띠에 흐린 같은 그림
+    screen.classList.toggle('has-band', plan.mode === 'fill' && plan.band > 0.0005);
+    screen.dataset.mode = plan.mode;
+    screen.dataset.ratio = plan.ratio.toFixed(3);
+    screen.dataset.band = plan.band.toFixed(4);
+    return plan;
   }
 
   /** 인트로를 연다: [입장하기]에 초점. 그림이 풀리면(또는 INTRO_WAIT_MS 뒤) 배경이 부드럽게 나타나고 제목이 떨어지는 움직임이 시작된다 */
@@ -709,15 +803,41 @@ export function createGameApp({
     const screen = introScreen();
     show(screen);
     screen.querySelector('.intro-enter').focus({ preventScroll: true });
-    const art = [...screen.querySelectorAll('.intro-bg, .intro-logo')];
+    const bg = screen.querySelector('.intro-bg');
+    const art = [bg, ...screen.querySelectorAll('.intro-logo')];
     const ready = () => {
       if (!screen.isConnected) return;
       for (const el of art) el.classList.add('is-loaded');
       screen.classList.add('is-ready');
     };
-    Promise.all(art.map((el) => backgroundDecoded(el).then(() => screen.isConnected && el.classList.add('is-loaded')))).then(ready);
+    Promise.all(art.map((el) => backgroundDecoded(el).then((img) => {
+      if (!screen.isConnected) return;
+      el.classList.add('is-loaded');
+      // 배경 그림이 오면 카드 뒤의 흐린 바탕을 한 번 그린다
+      if (el === bg && img && drawIntroBlur(img, screen.querySelector('.intro-blur'))) screen.classList.add('has-blur');
+    }))).then(ready);
     const timer = setTimeout(ready, INTRO_WAIT_MS);
-    screenCleanups.push(() => clearTimeout(timer));
+    // 화면 크기·방향·devicePixelRatio(브라우저 확대, 다른 화면으로 옮김)가 바뀌면 모드를 다시 정한다
+    const relayout = () => {
+      if (screen.isConnected) layoutIntro(screen);
+    };
+    let dprQuery = null;
+    const watchDpr = () => {
+      dprQuery?.removeEventListener?.('change', onDpr);
+      dprQuery = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(`(resolution: ${sanitizeDpr(globalThis.devicePixelRatio)}dppx)`) : null;
+      dprQuery?.addEventListener?.('change', onDpr);
+    };
+    function onDpr() {
+      relayout();
+      watchDpr();
+    }
+    watchDpr();
+    globalThis.addEventListener?.('resize', relayout);
+    screenCleanups.push(() => {
+      clearTimeout(timer);
+      globalThis.removeEventListener?.('resize', relayout);
+      dprQuery?.removeEventListener?.('change', onDpr);
+    });
   }
 
   /**
