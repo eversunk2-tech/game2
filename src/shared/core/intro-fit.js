@@ -62,8 +62,8 @@ export const INTRO_BUTTON_NUDGE_STAGE = 0.05;
 
 /**
  * [입장하기]가 그림 속 가리면 안 되는 칸(art.buttonAvoid — 소녀가 전개도를 든 손, 그림 px)을 가리면 **왼쪽으로만** 옮긴다:
- * 겹치지 않을 만큼까지, 다만 한도 min(면 폭 × INTRO_BUTTON_NUDGE_MAX, 무대 폭 × INTRO_BUTTON_NUDGE_STAGE)까지(못 피하면 한도만큼 — 손이 조금 가려져도 된다).
- * 그렇게 옮겨도 손 칸이 가려지는 넓이가 줄지 않으면(세로 화면 카드처럼 손이 버튼 한가운데 아래) 옮기지 않고 가운데 그대로(2026-10-17 사용자 결정 "안 보이면 옮기지 않기").
+ * 겹치지 않을 만큼, 한도 min(면 폭 × INTRO_BUTTON_NUDGE_MAX, 무대 폭 × INTRO_BUTTON_NUDGE_STAGE) 안에서 **손 칸이 다 보이게 될 때만** 옮기고,
+ * 한도 안에서 다 피하지 못하면 옮기지 않고 가운데 그대로(2026-10-17 사용자 결정 "다 보일 때만 옮기기" — spec-grade6 15-11 끝).
  * 버튼 = 화면에 보이는 버튼 전체: 면(폭 = 높이 × INTRO_BUTTON_WIDTH — base.css의 최소 폭, 높이 h) + 바깥 여백 8 × s(위·양옆) + 아래 그림자 10 × s(7 + 테두리 3).
  * 위아래 자리·크기는 그대로. 꽉 채우기·카드 모두(카드에서는 그림 = 카드). 돌려주는 nudge = 옮긴 거리(px, 0 이상)
  */
@@ -78,9 +78,9 @@ export function placeIntroButton(button, image, stage, art) {
     if (hand.x0 > box.x0 && box.x0 < hand.x1 && hand.x0 < box.x1 && box.y0 < hand.y1 && hand.y0 < box.y1) need = Math.max(need, box.x1 - hand.x0);
   }
   let nudge = Math.min(need, INTRO_BUTTON_NUDGE_MAX * 2 * half, INTRO_BUTTON_NUDGE_STAGE * stage.w, Math.max(0, box.x0 - Math.max(0, stage.x)));
-  // 손 칸이 가려지는 넓이(px²): 옮겨서 줄어들 때만 옮긴다
+  // 손 칸이 가려지는 넓이(px²): 옮겨서 0이 될 때(손이 다 보일 때)만 옮긴다
   const covered = (dx) => hands.reduce((sum, hd) => sum + Math.max(0, Math.min(box.x1 - dx, hd.x1) - Math.max(box.x0 - dx, hd.x0)) * Math.max(0, Math.min(box.y1, hd.y1) - Math.max(box.y0, hd.y0)), 0);
-  if (nudge > 0 && covered(nudge) >= covered(0) - 1e-6) nudge = 0;
+  if (nudge > 0 && covered(nudge) > 1e-6) nudge = 0;
   return { ...button, x: button.x - nudge, nudge };
 }
 

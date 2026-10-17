@@ -178,7 +178,7 @@ test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율
 
 // 소녀의 손을 가리면 왼쪽으로 조금(spec-grade6 15-11 끝 — 2026-10-17 사용자 결정 "손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록").
 // 독립 계산(기획서 문장만): 버튼 = 면(폭 = 높이 × 3.6) + 바깥 여백 8s(위·양옆) + 아래 그림자 10s. 손 칸과 겹치면 왼쪽으로만, 겹치지 않을 만큼까지,
-// 다만 한도 min(면 폭 × 0.2, 무대 폭 × 0.05). 그렇게 옮겨도 손 칸이 가려지는 넓이가 줄지 않으면 옮기지 않는다(사용자 결정 "안 보이면 옮기지 않기"). 위아래·크기는 그대로
+// 다만 한도 min(면 폭 × 0.2, 무대 폭 × 0.05). 한도 안에서 손 칸이 다 보이게(가려지는 넓이 0) 될 때만 옮기고, 아니면 가운데 그대로(사용자 결정 "다 보일 때만 옮기기"). 위아래·크기는 그대로
 const HAND = [1675, 1378, 1795, 1442]; // 배경 그림에서 직접 잰 손 칸(손가락 끝~소매 앞, 엄지 위~손바닥 아래)
 const ART_HAND = { ...ART, buttonAvoid: [HAND] };
 const buttonBox = (b) => ({ x0: b.x - (WIDTH_RATIO / 2) * b.h - 8 * b.s, y0: b.y - b.h / 2 - 8 * b.s, x1: b.x + (WIDTH_RATIO / 2) * b.h + 8 * b.s, y1: b.y + b.h / 2 + 10 * b.s });
@@ -188,7 +188,7 @@ const handOn = (p) => {
 };
 const area = (a, b) => Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) * Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
 
-test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도 min(면 폭 × 0.2, 무대 폭 × 0.05)): 독립 계산과 같은 거리, 옮기면 겹침이 줄고(한도 안이면 0), 줄지 않으면 가운데 그대로(세로 카드), 위아래·크기 그대로, 두 아이의 머리·제목과 겹침 0, 무대 밖으로 안 나감. 손 칸이 없는 그림은 그대로', () => {
+test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도 min(면 폭 × 0.2, 무대 폭 × 0.05)): 독립 계산과 같은 거리, 옮기면 손이 다 보이고, 한도 안에서 다 피하지 못하면 가운데 그대로(세로 카드), 위아래·크기 그대로, 두 아이의 머리·제목과 겹침 0, 무대 밖으로 안 나감. 손 칸이 없는 그림은 그대로', () => {
   assert.equal(INTRO_BUTTON_NUDGE_MAX, 0.2);
   assert.equal(INTRO_BUTTON_NUDGE_STAGE, 0.05);
   const sizes = [
@@ -212,15 +212,15 @@ test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도
     const limit = Math.min(0.2 * WIDTH_RATIO * plain.button.h, 0.05 * p.stage.w);
     let want = area(centered, hand) > 0 ? Math.min(centered.x1 - hand.x0, limit) : 0;
     const shifted = { ...centered, x0: centered.x0 - want, x1: centered.x1 - want };
-    if (area(shifted, hand) >= area(centered, hand)) want = 0; // 옮겨도 손이 더 보이지 않으면 옮기지 않는다
+    if (area(shifted, hand) > 1e-6) want = 0; // 한도 안에서 손이 다 보이게 되지 않으면 옮기지 않는다
     const dx = w / 2 - p.button.x;
     assert.ok(Math.abs(dx - want) < 1e-9, `${at} 옮긴 거리 ${dx} / ${want}`);
     assert.ok(dx >= 0 && dx <= limit + 1e-9, `${at} 왼쪽으로만, 한도 ${limit} 안`);
     assert.ok(Math.abs(p.button.nudge - dx) < 1e-9, at);
     const after = area(buttonBox(p.button), hand);
-    if (dx > 0) assert.ok(after < area(centered, hand), `${at} 옮겼으면 손이 더 보인다`);
+    if (dx > 0) assert.ok(after < 1e-6, `${at} 옮겼으면 손이 다 보인다 ${after}`);
     else assert.equal(p.button.x, w / 2, `${at} 안 옮기면 가운데 그대로`);
-    if (dx > 0 && dx < limit - 1e-9) assert.ok(after < 1e-6, `${at} 한도 안에서 옮겼으면 손이 다 보인다 ${after}`);
+    if (dx === 0 && area(centered, hand) > 0) assert.ok(centered.x1 - hand.x0 > limit, `${at} 한도 안에서 다 피할 수 있는데 옮기지 않았다`);
     // 옮긴 뒤에도: 무대(카드) 안, 두 아이의 머리·제목과 겹치지 않는다
     const box = buttonBox(p.button);
     assert.ok(box.x0 >= Math.max(0, p.stage.x) - 1e-9, `${at} 무대 왼쪽 밖으로 나가지 않는다`);
@@ -236,10 +236,9 @@ test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도
   assert.ok(area(buttonBox(big.button), handOn(big)) < 1e-6);
   assert.ok(area(buttonBox(planIntroLayout({ w: 1920, h: 1080, dpr: 1, art: ART, logoRatio: LOGO_RATIO }).button), handOn(big)) > 0, '가운데 자리는 손을 가린다');
   assert.ok(moved.includes('1920×1080@1') && moved.includes('1440×900@2') && moved.includes('1366×768@1') && !moved.includes('1024×768@2'), moved.join(' '));
-  // 세로 화면 카드: 손이 버튼 한가운데 아래라 한도만큼 옮겨도 더 보이지 않는다 → 옮기지 않는다(사용자 결정)
-  // (820×1180은 버튼이 좁아져 손 칸 겹침이 작아졌고, 한도만큼 옮기면 조금 줄어 규칙대로 옮겨진다 — 위의 독립 계산이 확인)
-  for (const at of ['768×1024@2', '390×844@3']) assert.equal(moved.includes(at), false, `${at}는 옮기지 않는다`);
-  for (const [w, h, dpr] of [[768, 1024, 2], [390, 844, 3]]) {
+  // 세로 화면 카드: 손이 버튼 아래쪽 가운데 가까이라 한도 안에서 다 비킬 수 없다 → 옮기지 않는다(사용자 결정 "다 보일 때만 옮기기")
+  for (const at of ['820×1180@2', '768×1024@2', '390×844@3']) assert.equal(moved.includes(at), false, `${at}는 옮기지 않는다`);
+  for (const [w, h, dpr] of [[820, 1180, 2], [768, 1024, 2], [390, 844, 3]]) {
     const p = planIntroLayout({ w, h, dpr, art: ART_HAND, logoRatio: LOGO_RATIO });
     assert.equal(p.mode, 'card');
     assert.ok(area(buttonBox(p.button), handOn(p)) > 0, `${w}×${h} 손은 버튼 아래(가려진 채로 둔다)`);
