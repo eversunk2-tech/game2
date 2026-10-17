@@ -726,7 +726,7 @@ export function createGameApp({
         show(titleScreen());
       },
     }, h('span', { class: 'intro-enter-pulse' }, h('span', { class: 'intro-enter-face' }, enterLabel)));
-    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${art ? '' : ' no-art'}${quietFx() ? ' is-ready is-still' : ''}` },
+    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${art ? '' : ' no-art'}${quietFx() ? ' is-ready is-titled is-still' : ''}` },
       // 카드 뒤(와 꽉 채우기의 얇은 띠)의 흐린 같은 그림 · 가장자리 어둡게
       h('canvas', { class: 'intro-blur', width: INTRO_BLUR_W, height: INTRO_BLUR_H, 'aria-hidden': 'true' }),
       h('div', { class: 'intro-vignette', 'aria-hidden': 'true' }),
@@ -798,24 +798,31 @@ export function createGameApp({
     return plan;
   }
 
-  /** 인트로를 연다: [입장하기]에 초점. 그림이 풀리면(또는 INTRO_WAIT_MS 뒤) 배경이 부드럽게 나타나고 제목이 떨어지는 움직임이 시작된다 */
+  /**
+   * 인트로를 연다: [입장하기]에 초점. 그림은 받아 풀리는 대로 나타난다(배경은 부드럽게, 그 전에는 하늘색 바탕과 반짝임).
+   * 제목 그림이 풀리면(.is-titled) 제목이 떨어지는 움직임과 부제, [입장하기]는 그때(늦어도 INTRO_WAIT_MS 뒤 — 느린 망에서도 들어갈 수 있게, .is-ready) 올라온다
+   */
   function openIntro() {
     const screen = introScreen();
     show(screen);
     screen.querySelector('.intro-enter').focus({ preventScroll: true });
     const bg = screen.querySelector('.intro-bg');
-    const art = [bg, ...screen.querySelectorAll('.intro-logo')];
+    const logoEl = screen.querySelector('.intro-logo');
     const ready = () => {
-      if (!screen.isConnected) return;
-      for (const el of art) el.classList.add('is-loaded');
-      screen.classList.add('is-ready');
+      if (screen.isConnected) screen.classList.add('is-ready');
     };
-    Promise.all(art.map((el) => backgroundDecoded(el).then((img) => {
+    backgroundDecoded(bg).then((img) => {
       if (!screen.isConnected) return;
-      el.classList.add('is-loaded');
+      if (img) bg.classList.add('is-loaded');
       // 배경 그림이 오면 카드 뒤의 흐린 바탕을 한 번 그린다
-      if (el === bg && img && drawIntroBlur(img, screen.querySelector('.intro-blur'))) screen.classList.add('has-blur');
-    }))).then(ready);
+      if (img && drawIntroBlur(img, screen.querySelector('.intro-blur'))) screen.classList.add('has-blur');
+    });
+    (logoEl ? backgroundDecoded(logoEl) : Promise.resolve(null)).then((img) => {
+      if (!screen.isConnected) return;
+      if (img) logoEl.classList.add('is-loaded');
+      screen.classList.add('is-titled'); // 받지 못했어도(그림 없음) 부제·움직임은 보인다
+      ready();
+    });
     const timer = setTimeout(ready, INTRO_WAIT_MS);
     // 화면 크기·방향·devicePixelRatio(브라우저 확대, 다른 화면으로 옮김)가 바뀌면 모드를 다시 정한다
     const relayout = () => {

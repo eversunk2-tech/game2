@@ -38,8 +38,8 @@ function expectedMode(w, h, dpr) {
 }
 
 const enter = (page) => page.getByRole('button', { name: ENTER });
-/** 그림이 풀리고 움직임이 시작될 수 있는 상태(.is-ready)가 될 때까지 */
-const introReady = (page) => page.waitForFunction(() => document.querySelector('.screen-intro.is-ready') && [...document.querySelectorAll('.intro-bg, .intro-logo')].every((el) => el.classList.contains('is-loaded')));
+/** 그림 둘이 받아져 풀리고, 제목(.is-titled)·[입장하기](.is-ready)가 나올 상태가 될 때까지 */
+const introReady = (page) => page.waitForFunction(() => document.querySelector('.screen-intro.is-ready.is-titled') && [...document.querySelectorAll('.intro-bg, .intro-logo')].every((el) => el.classList.contains('is-loaded')));
 const isTouch = (testInfo) => testInfo.project.name === 'tablet';
 const press = (testInfo, locator) => (isTouch(testInfo) ? locator.tap() : locator.click());
 
