@@ -323,7 +323,7 @@ async function copyText(text) {
  *     subtitle?,                 부제(글자). 제목 그림의 리본 위(logo.ribbon) 또는 제목 아래
  *     enterLabel? = '입장하기',  큰 버튼의 글자
  *     title? = game.title,       화면 읽기용 제목(h1). 제목 그림이 있으면 그 그림의 대체 글
- *     art?: { width, height, keep?, avoid?, glow? }
+ *     art?: { width, height, keep?, avoid?, buttonAvoid?, glow? }  — buttonAvoid: [입장하기]가 가리면 왼쪽으로 조금 비킬 상자들(core/intro-fit.js placeIntroButton)
  *       배경 그림의 크기(px)·꼭 보일 칸 keep [x0, y0, x1, y1](인물 — 꽉 채울 때 자르지 않는다)·제목이 가리면 안 되는 상자들 avoid(머리)·카드 둘레 빛 색.
  *       주면 꽉 채우기/카드 규칙(core/intro-fit.js)으로 놓는다. 주지 않으면 그림을 화면 가득(cover)
  *     logo?: { width, height, crop?, ribbon?: { path, fontSize, length } }
@@ -366,6 +366,7 @@ export function planIntro(intro, game) {
       height: h,
       keep: box(intro.art.keep, w, h, 'intro.art.keep') ?? [0, 0, w, h],
       avoid: (intro.art.avoid ?? []).map((b) => box(b, w, h, 'intro.art.avoid')),
+      ...(intro.art.buttonAvoid != null && { buttonAvoid: (Array.isArray(intro.art.buttonAvoid) ? intro.art.buttonAvoid : [[]]).map((b) => box(b ?? [], w, h, 'intro.art.buttonAvoid')) }), // [입장하기]가 비킬 칸(주었을 때만 — c4, 15-11 끝)
       glow: text(intro.art.glow) || null,
     };
   }
