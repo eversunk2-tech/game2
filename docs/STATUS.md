@@ -8,7 +8,7 @@
 | 구분 | 상태 |
 | --- | --- |
 | 앱 | **"입체도형 공방"**(id `net-workshop` — 주소·저장 열쇠는 그대로) — 초등 5~6학년 수학. 5학년 전개도(정육면체·직육면체) + 6학년 각기둥·쌓기나무·원기둥을 한 앱에. 화면 차례(만드는 중): **게임 인트로 → [입장하기] → 학년 고르기(5학년·6학년) → 학년 화면(영역 카드) → 영역 단계 지도 → 단계** |
-| 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
+| 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로, 2026-10-17 연결) |
 | `origin/main`(사이트) | **`cd190ce`**(2026-10-17): 게임 인트로(캔바 그림, 꽉 채우기/카드) → 학년 고르기 → 영역 화면, 앱 이름 "입체도형 공방", 쌓기나무 1~4차시, 직육면체 탐구 넓히기(상자 크기·도감 주문 54칸·손잡이). 배포 성공 · **GitHub CI 통과** · 사이트에서 인트로 그림 두 장이 하위 경로 `/game2/assets/`로 열리는 것을 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다(문서 커밋만 뒤따름) |
 | 지금 도는 것 | B0b Build ∥ c4 Build — 일시정지(2-0절) 뒤 "이어서"로 다시 돎(같은 서브에이전트가 멈춘 곳부터) |
@@ -63,7 +63,7 @@
 - 합친 화면을 한 번 직접 연다(처음 화면부터 단계 지도까지, 콘솔 오류 0).
 - 푸시한 뒤 GitHub Actions의 배포·CI 결과를 확인한다(커밋 해시는 **전체 40자**로 `gh run list --commit`에 넣는다 — 짧은 해시는 빈 결과).
 - 이 문서와 [HANDOFF.md](HANDOFF.md)의 "끝난 것"을 고친다.
-- 사이트 확인은 Playwright로 `https://eversunk2-tech.github.io/game2/net-workshop.html`을 열어 응답 400 이상 0·콘솔 오류 0·스크린샷을 본다(10-17에 처음 함).
+- 사이트 확인은 Playwright로 **두 사이트**(`https://eversunk2-tech.github.io/game2/net-workshop.html`, `https://solid-figure.pages.dev/net-workshop.html`)를 열어 응답 400 이상 0·콘솔 오류 0·스크린샷을 본다(10-17에 처음 함). Cloudflare 빌드 결과는 대시보드에서만 보인다 — 사이트를 열어 새 판인지 확인한다.
 
 ## 4. 그다음 할 일 (순서)
 
@@ -125,6 +125,7 @@
 - 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다(10-16에도 비워짐).
 - 포트: 5173은 다른 프로젝트(`history game`), 5183은 사용자가 이 앱을 보는 개발 서버. 트랙마다 5301(cuboid)·5302(blocks)·5303(b0)·5304(c1), Review는 5311~5314·5321. 다른 프로젝트(`selectio game`)의 서버가 다른 포트(예: 5336)에 떠 있을 수 있다 — 건드리지 않는다. **서버를 내릴 때는 자기가 띄운 PID만**(`pkill -f` 금지).
 - 여러 트랙이 브라우저 테스트를 함께 돌릴 때는 `-- --workers=4`. 값이 어긋나는 실패는 부하 탓으로 넘기지 않는다.
+- **Cloudflare Pages**(2026-10-17 사용자가 연결 — 코디네이터는 화면을 보기만 하며 안내): 프로젝트 `solid-figure`(주소 `https://solid-figure.pages.dev`), GitHub `eversunk2-tech/game2`의 `main`, Framework preset None, Build command `npm run build`, Build output `dist`, 환경 변수 `NODE_VERSION=22`. `/net-workshop.html`을 `/net-workshop`으로 308 넘겨 준다(쿼리 그대로). 연결할 때 처음 잘못 만든 Worker "game2"는 사용자에게 지우거나 Git 연결을 끊으라고 안내함(지웠는지는 확인 못 함). 학생 기록(브라우저 저장)은 주소마다 따로다 — 반에는 한 주소만 나눠 준다. 저장소에 Cloudflare 설정 파일은 없다.
 - GitHub: `eversunk2-tech/game2`(공개). 사용량 한도에 걸리면 서브에이전트가 도중에 끊긴다(10-14) — 한도가 풀린 뒤 처음부터 다시 맡긴다.
 
 ## 9. 지금까지 한 일 (짧게)
