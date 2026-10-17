@@ -42,6 +42,9 @@
 14. **2026-10-17 올림(`cd190ce`)**: 영역·학년 화면과 앱 이름 "입체도형 공방"(B0a — [review-b0a.md](games/net-workshop/review-b0a.md)), 쌓기나무 3·4차시(S2·S2b — [review-blocks-s2.md](games/net-workshop/review-blocks-s2.md)), 직육면체 탐구 넓히기(M3·M3b — 상자 크기 정하기·도감 주문 54칸·돌리기 손잡이, [review-m3.md](games/net-workshop/review-m3.md)), **게임 인트로**(B0c·B0c2 — 캔바 그림 바이트 그대로·큰 그림 `dist/assets/`로 따로·꽉 채우기/카드 규칙, [review-b0c.md](games/net-workshop/review-b0c.md)). 모두 Review 통과.
    - 테스트(합친 `main`): 단위 307개, 브라우저 438 통과 · 0 실패 · 94 건너뜀(보통·글꼴 흉내 모두). 그림 폴더에 Finder가 만든 `.DS_Store`가 있으면 단위 검사 하나가 실패한다(저장소·CI와는 무관 — B0b에서 숨김 파일을 빼게 고친다).
 
+15. **2026-10-17 올림(`0b1bb57`)**: B0b 빌드 바탕 — 여러 파일 빌드(`dist/assets/` 해시 이름, 글꼴 woff2 하나), 쌓기나무를 들어갈 때 불러오기, 새 버전 안내·처음 스크립트 실패 때 한 번만 새로 고침, 하위 경로 `/game2/` 서버로 e2e(`E2E_PORT`), 게임 모음 안내글(15-12) ([review-b0b.md](games/net-workshop/review-b0b.md) — 통과). 같은 날 Cloudflare Pages(`solid-figure.pages.dev`)에도 연결 — `main`이 두 사이트에 올라간다. GitHub CI 통과.
+   - 테스트(합친 `main`): 단위 322개, 브라우저 457 통과 · 0 실패 · 95 건너뜀(보통·글꼴 흉내).
+
 ### 남은 것 (모두 "고치면 좋음" 이하, [review.md](games/net-workshop/review.md))
 
 - N2c-1 (고치면 좋음): 1366 화면에서 머리가 두 줄이 되는 넓은 글꼴(한글 1.15em 이상)이면 판 → 무대가 0.38~0.46px 어긋난다(눈에는 안 보임). e2e 2건이 정확히 0을 기대해 그런 글꼴에서는 실패한다.
