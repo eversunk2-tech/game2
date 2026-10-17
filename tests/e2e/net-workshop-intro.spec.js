@@ -508,7 +508,7 @@ const near = (got, want, tol) => got.length === want.length && got.every((v, i) 
 const HAND = [1675, 1378, 1795, 1442];
 const area = (a, b) => Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y));
 
-test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 높이 113.4px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안)', async ({ browser }, testInfo) => {
+test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 높이 113.4px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안 — 더 보이지 않으면 그대로)', async ({ browser }, testInfo) => {
   test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
   test.setTimeout(120_000); // 9개 화면 × (열기 + 그림 풀기 + 잼) — 이 맥에서 약 3초, CPU 12배에서 약 15초
   let shape1 = null; // 배율 1(1280×800)의 면 폭 ÷ 높이: 큰 화면에서도 같은 모양(폭도 s배)
@@ -565,7 +565,8 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
     // 겹침 0: 두 아이의 머리(그림 좌표 → 화면) · 제목 그림 · 부제 글 · 소리 버튼
     for (const [name, head] of Object.entries(m.heads)) expect(overlaps(outer, head), `${at} 버튼이 ${name}의 머리를 가린다`).toBe(false);
     for (const [name, el] of Object.entries({ 제목: m.logo, 부제: look.ribbon, 소리: m.sound })) expect(overlaps(outer, el), `${at} 버튼과 ${name}`).toBe(false);
-    // 소녀의 손: 버튼(면 + 바깥 여백 8s + 아래 그림자 10s)이 가운데 자리에서 손 칸을 가리면 왼쪽으로만, 한도 min(면 폭 × 0.2, 무대 폭 × 0.05)까지 옮긴다
+    // 소녀의 손: 버튼(면 + 바깥 여백 8s + 아래 그림자 10s)이 가운데 자리에서 손 칸을 가리면 왼쪽으로만, 한도 min(면 폭 × 0.2, 무대 폭 × 0.05)까지 옮긴다.
+    // 옮겨도 손이 더 보이지 않으면(세로 카드) 옮기지 않는다(사용자 결정 "안 보이면 옮기지 않기")
     const k = m.img.w / BG.w;
     const hand = { x: m.img.x + HAND[0] * k, y: m.img.y + HAND[1] * k, r: m.img.x + HAND[2] * k, b: m.img.y + HAND[3] * k };
     const shown = { x: m.button.x - 8 * s, y: m.button.y - 8 * s, r: m.button.r + 8 * s, b: m.button.b + 10 * s };
@@ -574,11 +575,16 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
     const limit = Math.min(0.2 * m.button.w, 0.05 * m.stage.w);
     expect(dx, `${at} 왼쪽으로만`).toBeGreaterThanOrEqual(-0.5);
     expect(dx, `${at} 한도 ${limit} 안`).toBeLessThanOrEqual(limit + 0.5);
-    if (area(centered, hand) > 0) {
-      expect(dx, `${at} 손을 가리면 옮긴다`).toBeGreaterThan(0);
-      expect(area(shown, hand), `${at} 손 칸과 겹침이 늘지 않는다`).toBeLessThanOrEqual(area(centered, hand) + 0.01); // 세로 화면 카드는 한도만큼 옮겨도 손이 버튼 안쪽이라 그대로일 수 있다
-      if (dx < limit - 0.5) expect(area(shown, hand), `${at} 한도 안이면 손이 다 보인다`).toBeLessThan(1);
-    } else expect(Math.abs(dx), `${at} 손을 가리지 않으면 가운데 그대로`).toBeLessThan(0.5);
+    if (dx > 0.5) {
+      expect(area(shown, hand), `${at} 옮겼으면 손이 더 보인다`).toBeLessThan(area(centered, hand));
+      if (dx < limit - 0.5) expect(area(shown, hand), `${at} 한도 안에서 옮겼으면 손이 다 보인다`).toBeLessThan(1);
+    } else {
+      expect(Math.abs(dx), `${at} 옮기지 않으면 가운데 그대로`).toBeLessThan(0.5);
+      // 가운데에서 손을 가린다면: 한도까지 옮겨도 손이 더 보이지 않는 화면이어야 한다
+      const most = Math.min(centered.r - hand.x, limit);
+      if (area(centered, hand) > 0) expect(area({ ...centered, x: centered.x - most, r: centered.r - most }, hand), `${at} 옮겨도 손이 더 보이지 않아 그대로`).toBeGreaterThanOrEqual(area(centered, hand) - 0.5);
+    }
+    if (w === 820) expect([Math.abs(dx) < 0.5, area(centered, hand) > 0], `${at} 세로 카드: 손은 버튼 아래, 버튼은 가운데 그대로`).toEqual([true, true]);
     if (w === 1920) {
       expect(area(centered, hand), `${at} 가운데 자리는 손을 가린다(옮겨야 하는 화면)`).toBeGreaterThan(0);
       expect(area(shown, hand), `${at} 옮긴 뒤 손이 다 보인다`).toBeLessThan(1);
