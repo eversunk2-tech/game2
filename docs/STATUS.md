@@ -11,14 +11,29 @@
 | 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
 | `origin/main`(사이트) | **`cd190ce`**(2026-10-17): 게임 인트로(캔바 그림, 꽉 채우기/카드) → 학년 고르기 → 영역 화면, 앱 이름 "입체도형 공방", 쌓기나무 1~4차시, 직육면체 탐구 넓히기(상자 크기·도감 주문 54칸·손잡이). 배포 성공 · **GitHub CI 통과** · 사이트에서 인트로 그림 두 장이 하위 경로 `/game2/assets/`로 열리는 것을 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다(문서 커밋만 뒤따름) |
-| 지금 도는 것 | B0b 빌드 바탕 Build(2절) |
+| 지금 도는 것 | B0b Build ∥ c4 Build — 일시정지(2-0절) 뒤 "이어서"로 다시 돎(같은 서브에이전트가 멈춘 곳부터) |
 
 ## 2. 진행 중인 일
+
+### 2-0. 일시정지 (2026-10-17, 사용자 "일시정지해줘") → 같은 날 "이어서 해줘"로 다시 시작
+
+- 멈춘 것: **B0b Build**(`.worktrees/b0`)와 **c4 Build**(`.worktrees/c1`). 띄워 둔 테스트·서버는 남은 것 없음(확인함).
+- **둘 다 커밋 전** — 고친 내용은 작업 폴더에 커밋하지 않은 채 남아 있다(지우지 않음).
+  - B0b: 21개 파일 고침 + 새 파일 7개(`scripts/serve.mjs`, `blocks/blocks-play.js`·`blocks-stages.js`, `src/shared/core/reload.js`, `tests/e2e/engine-lazy.spec.js`, `tests/unit/engine-lazy.test.js`·`serve.test.js`). 멈출 때 e2e를 돌리며 문서(`dev-guide.md`)를 고치던 중. 덧붙임(c4와 줄 몫 나눔)은 메시지로 받음.
+  - c4: 6개 파일 고침(`intro-fit.js`·`base.css`·`app.js`·`engine.md`·검사 둘). 멈출 때 보통 e2e 439 통과·0 실패를 본 뒤 글꼴 흉내 실행을 시작하던 참(그 결과 없음). 최종 보고 없음.
+- **이어서 할 때**: 두 Build에게 `git status`·`git diff`로 지금 파일을 다시 읽고 시작하게 하고, 끝까지 돌지 못한 측정·테스트(B0b의 e2e·처음 여는 시간, c4의 글꼴 흉내 e2e·느린 기기·기기 표)는 다시 돌리게 한다. c4를 먼저 끝내 올리고 → `main`을 `track/b0`에 합쳐 B0b에 알린다.
 
 ### 2-1. 지금: B0b 빌드 바탕
 
 - 지침 [build-brief-b0b.md](games/net-workshop/build-brief-b0b.md). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) 7-3 안 B·7-4·7-5, B0c2가 큰 그림만 먼저 따로 냄.
 - 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(`main`으로 맞춘 뒤), 포트 5303, scratchpad `build-b0b/`. 끝나면 별도 Review(`review-brief-b0b.md`).
+
+### 2-1b. 함께: c4 큰 화면에서 [입장하기]도 커짐 (사용자 요청 10-17)
+
+- 사용자의 말: "1920 화면에서 selectio game 에서와 마찬가지 크기로 입장하기 크기 키워줘" → [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-11**(selectio의 `s = min(폭÷1280, 높이÷800)`을 1~1.35로 묶어 곱함 — 1920×1080에서 높이 약 113px).
+- 작업 폴더 `.worktrees/c1` · `track/c1`(`a2af9b7`에서), 포트 5304, scratchpad `build-c4/`. 지침 [build-brief-c4.md](games/net-workshop/build-brief-c4.md) / Review [review-brief-c4.md](games/net-workshop/review-brief-c4.md)(포트 5314, 결과 `review-c4.md`).
+- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고치는 중(지침 덧붙임). 고친 뒤 Review는 한 번에(review-brief-c4 덧붙임 포함).
+- **B0b와 같은 파일의 다른 줄**을 고친다(줄 몫은 두 지침에 적음 — B0b 지침 덧붙임). 빨리 올리려고 따로 돌린다: Review 통과 → `main`에 합쳐 바로 올림 → `main`을 `track/b0`에 합쳐 B0b에 알림.
 
 ### 2-2. 이번에 올린 것 (2026-10-17, `cd190ce`)
 
@@ -38,7 +53,7 @@
 | `b0` · `track/b0` | B0b Build | — |
 | `blocks` · `track/blocks` `15da550` | 쉼 | 쌓기나무 S3(5차시 + 도전) — `main`으로 맞춘 뒤 |
 | `cuboid` · `track/cuboid` `8a96bcb`(`main`에 합쳐짐) | 쉼 | 각기둥 G1(직육면체 부품을 물려받음) — `main`으로 맞춘 뒤 |
-| `c1` · `track/c1` `0c4e626` | 쉼 | 작은 손질이 생기면 |
+| `c1` · `track/c1` | c4 Build | 작은 손질이 생기면 |
 
 ## 3. `main`에 합쳐 올릴 때 할 일 (다음에도 그대로 쓴다)
 
