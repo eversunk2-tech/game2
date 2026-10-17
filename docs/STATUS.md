@@ -11,16 +11,17 @@
 | 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
 | `origin/main`(사이트) | **`0c4e626`**(2026-10-16): 정육면체 차시 + 도전 2, 직육면체 차시, 쌓기나무 1·2차시, 검사 손질 c1·c2·M2c, 작은 수정 c3(끌기 안내). 배포 성공 · **GitHub CI 통과**. 처음 화면은 아직 옛 모습([시작하기] → 한 줄 단계 지도), 앱 이름도 옛 "전개도 접기 공방" |
 | 이 컴퓨터의 `main` | **`361cc1b`** — `origin/main`보다 43커밋 앞, **올리지 않았다.** 합쳐 둔 것: 영역·학년 화면과 앱 이름(B0a, Review 통과), 쌓기나무 3·4차시(S2, 재검토 통과), 사용자가 고른 2880 인트로 그림, 지침·결정 문서. **인트로(B0c·B0c2)가 Review를 통과하면 직육면체 M3과 함께 한꺼번에 올린다**(옛 처음 화면을 거치던 검사들을 인트로 Build가 새 구조에 맞게 고치기 때문) |
-| 지금 도는 것 | **B0c2 Build**(`.worktrees/b0`, 2절) — 새 2880 그림, 큰 그림은 따로 파일로, 꽉 채우기/카드형 규칙, 합친 상태 검사 손질 |
+| 지금 도는 것 | **B0c + B0c2 Review**(`.worktrees/b0`, 2절) — Build는 `03f1869`에서 끝남(테스트 셋 실패 0이라고 보고) |
 
 ## 2. 진행 중인 일
 
-### 2-1. 지금: B0c2 인트로 손질 (Build 중)
+### 2-1. 지금: B0c + B0c2 인트로 Review 중
 
-- 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(HEAD `0166a86`에서 시작 — `main`(새 그림)과 `track/cuboid`(M3 재검토 통과까지)를 코디네이터가 합쳐 둠). 포트 5303, scratchpad `build-b0c2/`(`build-b0c/`도 있음).
-- 지침 [build-brief-b0c2.md](games/net-workshop/build-brief-b0c2.md)(그 앞의 [build-brief-b0c.md](games/net-workshop/build-brief-b0c.md)와 덧붙임). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-6·15-9**.
-- 할 일: ① `style.css`가 지워진 `intro-title.webp`를 가리켜 빌드가 깨져 있음 → 새 `img/intro-title.png`로 ② **그림은 바이트 그대로**(캔바 AI 출처 정보 C2PA 지키기 — 빌드 결과물에서도 md5 같게) ③ 큰 그림은 HTML 안 `data:`가 아니라 `dist/assets/`로 따로(B0b의 일부를 앞당김) ④ **selectio game과 같은 꽉 채우기/카드형 규칙**: 1.35배까지 늘려 꽉 채우기 · 인물(두 아이)·제목·버튼 칸은 자르지 않음 · 띠가 5% 넘으면 얇은 여백 카드(12px, 둥근 모서리, 흐린 같은 그림 배경, 카드는 늘리지 않음) ⑤ 합친 상태에서 인트로 때문에 깨지는 직육면체 검사(`net-workshop-cuboid-box.spec.js` 735·1097행 등)의 길 찾기 줄.
-- 끝나면: **별도 Review**(B0c와 B0c2를 함께 — 지침 [review-brief-b0c.md](games/net-workshop/review-brief-b0c.md)를 B0c2 내용으로 넓혀 쓴다: 새 그림·바이트 그대로·따로 파일·꽉 채우기/카드 규칙과 기기별 결과표). 통과하면 3절대로 합쳐 올린다.
+- 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0` · Build 마지막 커밋 **`03f1869`**(B0c2: 새 2880 그림 바이트 그대로 → `dist/assets/`로 따로, 꽉 채우기/카드 규칙 `src/shared/core/intro-fit.js`, 직육면체 검사 길 찾기 줄). 이 가지에 `main`(`361cc1b`까지)과 M3(`8a96bcb`)가 합쳐져 있다.
+- Review: 지침 [review-brief-b0c.md](games/net-workshop/review-brief-b0c.md)(맨 아래 덧붙임 = B0c2), 포트 5313, scratchpad `review-b0c/`, 결과 파일 `review-b0c.md`(작업 폴더).
+- Build 보고 요약: 게임 HTML 2,744 KB(그림을 넣었을 때) → 560 KB + 따로 나간 그림 1,639 KB, 느린 망 첫 화면 9.1초 빈 화면 → 1.19초(하늘색 + 별), 기기 표에서 카드는 820×1180·390×844만, 나머지는 꽉 채우기.
+- 사용자 결정(10-17): 휴대폰 세로의 작은 카드는 **그대로**(spec-grade6 15-10). 코디네이터가 받아들인 것: Build가 지침 밖에서 고친 `tests/e2e/helpers.js` 3줄(글꼴 흉내 복사본 옆에 `assets/` 복사).
+- Review가 통과하면 3절대로 합쳐 올린다. "수정 필요"면 `build-fix-brief-b0c3.md`로 Build → `review-fix-brief-b0c3.md`로 재검토.
 
 ### 2-2. 끝났지만 아직 사이트에 안 올라간 것 (모두 Review 통과)
 
@@ -35,7 +36,7 @@
 
 | 폴더 · 브랜치 | 지금 | 다음에 쓸 때 |
 | --- | --- | --- |
-| `b0` · `track/b0` | B0c2 Build 중 | 인트로 Review 뒤 → B0b(빌드 바탕) |
+| `b0` · `track/b0` `03f1869` | B0c·B0c2 Review 중 | 인트로 Review 뒤 → B0b(빌드 바탕) |
 | `blocks` · `track/blocks` `15da550` | 쉼 | 쌓기나무 S3(5차시 + 도전) — `main`으로 맞춘 뒤 |
 | `cuboid` · `track/cuboid` `8a96bcb` | 쉼 | 각기둥 G1(직육면체 부품을 물려받음) — `main`으로 맞춘 뒤 |
 | `c1` · `track/c1` `0c4e626` | 쉼 | 작은 손질이 생기면 |
