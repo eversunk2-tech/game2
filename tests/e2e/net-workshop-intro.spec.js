@@ -493,3 +493,96 @@ test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입
   // 버튼 바탕이 정말 그 세 색의 금빛 그러데이션이다(위 반짝임 + 금빛 + 파란 테)
   expect(await page.locator('.intro-enter-face').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(3);
 });
+
+/**
+ * 큰 화면에서 [입장하기]도 커진다(spec-grade6 15-11 — selectio game과 같게). 기대값은 기획서 문장만으로 짠 독립 계산:
+ * 배율 s = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶은 값, 면 높이 = (화면 높이의 10.5%·폭의 16% 가운데 작은 값을 56~84로 묶어 반올림) × s,
+ * 글자 = 면 높이 × 0.42, 테 6·바깥 여백 8·반짝임 18·잉크 테두리 3·아래 그림자 7·흐린 그림자 14/26·올리기 −2·누르기 +5·초점 후광 9/12(px) × s
+ */
+const growScale = (w, h) => Math.min(1.35, Math.max(1, Math.min(w / 1280, h / 800)));
+const baseButtonHeight = (w, h) => Math.round(Math.min(84, Math.max(56, Math.min(0.105 * h, 0.16 * w))));
+/** 계산된 box-shadow의 길이(px)만 차례로 (색은 뺀다) */
+const shadowLengths = (shadow) => shadow.replace(/rgba?\([^)]*\)/g, '').match(/-?[\d.]+px/g).map(parseFloat);
+const near = (got, want, tol) => got.length === want.length && got.every((v, i) => Math.abs(v - want[i]) <= tol);
+
+test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 높이 113.4px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0', async ({ browser }, testInfo) => {
+  test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
+  test.setTimeout(120_000); // 7개 화면 × (열기 + 그림 풀기 + 잼) — 이 맥에서 약 15초
+  let shape1 = null; // 배율 1(1280×800)의 면 폭 ÷ 높이: 큰 화면에서도 같은 모양(폭도 s배)
+  for (const [w, h, dpr] of [[1280, 800, 1], [1366, 768, 1], [1366, 1024, 2], [1440, 900, 2], [1920, 1080, 1], [1920, 1080, 2], [2560, 1440, 2]]) {
+    const at = `${w}×${h}@${dpr}`;
+    const s = growScale(w, h);
+    const faceH = baseButtonHeight(w, h) * s;
+    const context = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: dpr, reducedMotion: 'reduce' });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+    await introReady(page);
+    await page.evaluate(() => document.fonts.ready);
+    // 키보드로 [입장하기]에 초점(초점 후광이 보이는 상태)
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    await expect(enter(page)).toBeFocused();
+    const settled = () => page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running'));
+    await settled();
+    const m = await introLayout(page);
+    const look = await page.evaluate(() => {
+      const face = document.querySelector('.intro-enter-face');
+      const cs = getComputedStyle(face);
+      return {
+        focusVisible: document.querySelector('.intro-enter').matches(':focus-visible'),
+        font: parseFloat(cs.fontSize), border: parseFloat(cs.borderTopWidth), shadow: cs.boxShadow, transform: cs.transform,
+        pad: parseFloat(getComputedStyle(document.querySelector('.intro-enter')).paddingTop), spark: parseFloat(getComputedStyle(face, '::after').width),
+        ribbon: (() => {
+          const r = document.querySelector('.intro-ribbon-text').getBoundingClientRect();
+          return { x: r.left, y: r.top, r: r.right, b: r.bottom };
+        })(),
+      };
+    });
+    // 크기: 면 높이·폭·글자, 테·바깥 여백·반짝임(크롬은 테 두께를 정수 px로 내린다 — 1px 안), 초점 후광
+    expect(Math.abs(m.button.h - faceH), `${at} 면 높이 ${m.button.h} / ${faceH}`).toBeLessThan(0.05);
+    expect(m.button.w, `${at} 면 폭(최소 폭 = 높이 × 3.6)`).toBeGreaterThanOrEqual(faceH * 3.6 - 0.05);
+    if (s === 1 && h === 800) shape1 = m.button.w / m.button.h;
+    expect(Math.abs(m.button.w - shape1 * faceH), `${at} 면 폭 ${m.button.w} = 높이 ${faceH} × 배율 1의 모양 ${shape1}`).toBeLessThan(1.5);
+    expect(Math.abs(look.font - faceH * 0.42), `${at} 글자 ${look.font}`).toBeLessThan(0.05);
+    expect(look.border, `${at} 테`).toBeGreaterThan(6 * s - 1);
+    expect(look.border, `${at} 테`).toBeLessThanOrEqual(6 * s + 0.01);
+    expect(Math.abs(look.pad - 8 * s), `${at} 바깥 여백 ${look.pad}`).toBeLessThan(0.02);
+    expect(Math.abs(look.spark - 18 * s), `${at} 반짝임 ${look.spark}`).toBeLessThan(0.05);
+    expect(look.focusVisible, `${at} 초점 표시`).toBe(true);
+    expect(near(shadowLengths(look.shadow), [0, 0, 0, 3, 0, 7, 0, 3, 0, 0, 0, 9, 0, 0, 0, 12].map((v) => v * s), 0.02), `${at} 잉크 테두리·아래 그림자·초점 후광 ${look.shadow}`).toBe(true);
+    expect(look.transform, `${at} 크기는 transform이 아니라 크기 자체`).toBe('none');
+    // 자리: 면 + 초점 후광(12px × s)이 화면 안, 화면 밑과의 틈은 지금 규칙 그대로, 스크롤 0
+    const halo = 12 * s;
+    const outer = { x: m.button.x - halo, y: m.button.y - halo, r: m.button.r + halo, b: m.button.b + halo };
+    expect(inside(outer, w, h), `${at} 버튼(초점 후광 포함)이 화면 안`).toBe(true);
+    expect([m.hScroll, m.vScroll], `${at} 스크롤`).toEqual([0, 0]);
+    if (m.mode === 'fill') expect(Math.abs(h - m.button.b - Math.max(14, 0.035 * h)), `${at} 화면 밑과의 틈 ${h - m.button.b}`).toBeLessThan(0.6);
+    else expect(h - m.button.b, `${at} 화면 밑과의 틈`).toBeGreaterThanOrEqual(10 * s - 0.6);
+    // 겹침 0: 두 아이의 머리(그림 좌표 → 화면) · 제목 그림 · 부제 글 · 소리 버튼
+    for (const [name, head] of Object.entries(m.heads)) expect(overlaps(outer, head), `${at} 버튼이 ${name}의 머리를 가린다`).toBe(false);
+    for (const [name, el] of Object.entries({ 제목: m.logo, 부제: look.ribbon, 소리: m.sound })) expect(overlaps(outer, el), `${at} 버튼과 ${name}`).toBe(false);
+    // 올리기·누르기: 움직이는 거리와 그림자도 s배 (초점을 빼고 잰다 — 초점 후광이 그림자를 덮으므로)
+    await page.evaluate(() => document.activeElement.blur());
+    await page.mouse.move(m.button.x + m.button.w / 2, m.button.y + m.button.h / 2);
+    await settled();
+    const faceNow = () => page.locator('.intro-enter-face').evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { dy: new DOMMatrixReadOnly(cs.transform).m42, shadow: cs.boxShadow };
+    });
+    const hover = await faceNow();
+    expect(Math.abs(hover.dy - -2 * s), `${at} 올리기 ${hover.dy}`).toBeLessThan(0.02);
+    expect(near(shadowLengths(hover.shadow), [0, 0, 0, 3, 0, 9, 0, 3, 0, 16, 28, 0].map((v) => v * s), 0.02), `${at} 올린 그림자 ${hover.shadow}`).toBe(true);
+    await page.mouse.down();
+    await settled();
+    const down = await faceNow();
+    expect(Math.abs(down.dy - 5 * s), `${at} 누르기 ${down.dy}`).toBeLessThan(0.02);
+    expect(near(shadowLengths(down.shadow), [0, 0, 0, 3, 0, 2, 0, 3, 0, 6, 12, 0].map((v) => v * s), 0.02), `${at} 누른 그림자 ${down.shadow}`).toBe(true);
+    // 버튼 밖에서 놓으면 들어가지 않는다(인트로 그대로) — 다음 화면을 열지 않고 끝낸다
+    await page.mouse.move(4, h / 2);
+    await page.mouse.up();
+    await expect(page.locator('.screen-intro')).toBeVisible();
+    expect(errors, at).toEqual([]);
+    await context.close();
+  }
+});

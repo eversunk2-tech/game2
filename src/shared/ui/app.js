@@ -785,7 +785,7 @@ export function createGameApp({
       '--st-x': plan.stage.x, '--st-y': plan.stage.y, '--st-w': plan.stage.w, '--st-h': plan.stage.h,
       '--im-x': plan.image.x - plan.stage.x, '--im-y': plan.image.y - plan.stage.y, '--im-w': plan.image.w, '--im-h': plan.image.h,
       '--logo-x': plan.logo.x, '--logo-y': plan.logo.y, '--logo-w': plan.logo.w,
-      '--btn-x': plan.button.x, '--btn-y': plan.button.y, '--btn-h': plan.button.h,
+      '--btn-x': plan.button.x, '--btn-y': plan.button.y, '--btn-h': plan.button.h, '--btn-s': plan.button.s, // --btn-s = 1px × 큰 화면 배율(base.css가 px 값에 곱한다)
     };
     for (const [name, value] of Object.entries(vars)) screen.style.setProperty(name, px(value));
     screen.classList.toggle('is-card', plan.mode === 'card');

@@ -31,9 +31,23 @@ export function sanitizeDpr(dpr) {
   return typeof dpr === 'number' && Number.isFinite(dpr) && dpr > 0 ? Math.min(dpr, 8) : 1;
 }
 
-/** [입장하기] 면의 높이(px): 화면 높이의 10.5%·폭의 16% 가운데 작은 값, 56~84 */
+/** [입장하기] 면의 높이(px, 배율 1): 화면 높이의 10.5%·폭의 16% 가운데 작은 값, 56~84. 큰 화면에서는 여기에 introButtonScale을 곱한다 */
 export function introButtonHeight(w, h) {
   return Math.round(clamp(Math.min(0.105 * h, 0.16 * w), 56, 84));
+}
+
+/** 큰 화면에서 [입장하기]를 키우는 배율의 상한(spec-grade6 15-11 — selectio game과 같다). 이 값 하나로 바꾼다 */
+export const INTRO_BUTTON_GROW_MAX = 1.35;
+
+/**
+ * [입장하기]의 배율(spec-grade6 15-11 — selectio game의 규칙 그대로): min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~INTRO_BUTTON_GROW_MAX로 묶은 값.
+ * 1280×800·1366×768 크롬북·태블릿·휴대폰은 1(그대로) · 1366×1024 약 1.067 · 1440×900 1.125 · 1920×1080 이상 1.35.
+ * 면 높이(introButtonHeight × 배율)와 테·여백·반짝임·그림자·누르기/올리기 거리·초점 후광을 모두 이 배율로 키운다 — transform: scale이 아니라 크기 자체를
+ * (엔진이 planIntroLayout의 button.s를 CSS 변수 --btn-s = 1px × 배율로 준다, base.css의 [입장하기] 블록)
+ */
+export function introButtonScale(w, h) {
+  const s = Math.min(w / 1280, h / 800);
+  return Number.isFinite(s) ? clamp(s, 1, INTRO_BUTTON_GROW_MAX) : 1;
 }
 
 /**
@@ -70,7 +84,8 @@ export function planIntroLayout(o) {
   const W = art.width;
   const H = art.height;
   const [kx0, ky0, kx1, ky1] = art.keep ?? [0, 0, W, H];
-  const btnH = introButtonHeight(sw, sh);
+  const btnS = introButtonScale(sw, sh); // 큰 화면에서 [입장하기]의 배율(1~1.35) — 배치도 커진 크기로 맞춘다
+  const btnH = introButtonHeight(sw, sh) * btnS;
   const snap = (v) => Math.round(v * dpr) / dpr;
   const floorPx = (v) => Math.max(1, Math.floor(v * dpr + 1e-6)) / dpr;
 
@@ -101,18 +116,18 @@ export function planIntroLayout(o) {
     image = { x: fx, y: fy, w: fw, h: fh };
     stage = { x: 0, y: 0, w: sw, h: sh };
     // [입장하기]: 화면 아래 가운데(밑에서 화면 높이의 3.5%, 적어도 14px)
-    button = { x: sw / 2, y: sh - Math.max(14, 0.035 * sh) - btnH / 2, h: btnH };
+    button = { x: sw / 2, y: sh - Math.max(14, 0.035 * sh) - btnH / 2, h: btnH, s: btnS };
   } else {
     // ② 얇은 여백 카드(늘리지 않는다)
     mode = 'card';
-    const bottom = btnH / 2 - INTRO_CARD_BUTTON_UP + INTRO_CARD_FOOT;
+    const bottom = btnH / 2 - INTRO_CARD_BUTTON_UP + INTRO_CARD_FOOT * btnS; // 화면 밑과의 틈도 배율만큼(아래 그림자가 함께 커진다)
     const cw = floorPx(Math.min(W / dpr, sw - 2 * INTRO_CARD_GAP, ((sh - INTRO_CARD_GAP - bottom) * W) / H));
     const ch = (cw * H) / W;
     const cx = snap((sw - cw) / 2);
     const cy = snap(INTRO_CARD_GAP + Math.max(0, (sh - bottom - INTRO_CARD_GAP - ch) / 2));
     image = { x: cx, y: cy, w: cw, h: ch };
     stage = { ...image };
-    button = { x: sw / 2, y: cy + ch - INTRO_CARD_BUTTON_UP, h: btnH };
+    button = { x: sw / 2, y: cy + ch - INTRO_CARD_BUTTON_UP, h: btnH, s: btnS };
   }
 
   // ③ 제목 그림: 무대의 보이는 곳 가운데 위. 폭 = 무대 폭의 47%, 무대 높이의 52%(× 비율)까지, 그리고 두 아이의 머리를 가리지 않는 만큼까지

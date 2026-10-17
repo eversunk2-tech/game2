@@ -9,6 +9,7 @@ import {
   planIntroLayout,
   sanitizeDpr,
 } from '../../src/shared/core/intro-fit.js';
+import { INTRO_BUTTON_GROW_MAX, INTRO_CARD_FOOT, introButtonScale } from '../../src/shared/core/intro-fit.js';
 
 // 인트로 꽉 채우기/카드 규칙(core/intro-fit.js — spec-grade6 15-9, selectio game과 같게).
 // 기대 모드는 엔진 코드를 쓰지 않고 기획서 문장만으로 짠 독립 계산과 견준다:
@@ -108,4 +109,63 @@ test('그림 정보가 없으면 화면 가득(꽉 채우기)', () => {
   const p = planIntroLayout({ w: 800, h: 600, dpr: 1, art: { width: 800, height: 600 } });
   assert.equal(p.mode, 'fill');
   assert.deepEqual(p.image, { x: 0, y: 0, w: 800, h: 600 });
+});
+
+// 큰 화면에서 [입장하기]도 커진다(spec-grade6 15-11 — selectio game과 같게, 2026-10-17 사용자 요청).
+// 기대값은 엔진 코드를 쓰지 않고 기획서 문장만으로 짠 독립 계산:
+//   배율 = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶는다 · 면 높이 = (화면 높이의 10.5%·폭의 16% 가운데 작은 값을 56~84로 묶어 반올림) × 배율
+const expectScale = (w, h) => Math.min(1.35, Math.max(1, Math.min(w / 1280, h / 800)));
+const expectBaseHeight = (w, h) => Math.round(Math.min(84, Math.max(56, Math.min(0.105 * h, 0.16 * w))));
+
+test('[입장하기] 배율: 상한 1.35 하나, 기획서의 어림값(1280×800 → 1 · 1366×768 → 1 · 1366×1024 → 1.0672 · 1440×900 → 1.125 · 1920×1080 → 1.35 · 2560×1440 → 1.35)', () => {
+  assert.equal(INTRO_BUTTON_GROW_MAX, 1.35);
+  const table = [
+    [1280, 800, 1], [1366, 768, 1], [1366, 1024, 1.0672], [1440, 900, 1.125], [1920, 1080, 1.35], [2560, 1440, 1.35],
+    // 그대로인 화면(크롬북·태블릿·휴대폰)과 아주 큰 화면
+    [1024, 768, 1], [1180, 820, 1], [820, 1180, 1], [390, 844, 1], [844, 390, 1], [1366, 680, 1], [3840, 2160, 1.35], [5120, 2880, 1.35],
+    // 어림값이 기획서에 없는 큰 화면(독립 계산으로)
+    [1536, 864, expectScale(1536, 864)], [1680, 1050, expectScale(1680, 1050)], [1920, 1200, 1.35],
+  ];
+  for (const [w, h, want] of table) {
+    const s = introButtonScale(w, h);
+    assert.ok(Math.abs(s - want) < 1e-4, `${w}×${h}: ${s} / ${want}`);
+    assert.ok(Math.abs(s - expectScale(w, h)) < 1e-12, `${w}×${h} 독립 계산`);
+  }
+  // 이상한 값이면 1(그대로)
+  for (const [w, h] of [[NaN, 800], [1920, NaN], [Infinity, Infinity], [undefined, undefined]]) assert.equal(introButtonScale(w, h), 1, `${w}×${h}`);
+});
+
+test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율(1920×1080에서 113.4px), 꽉 채우기에서 화면 밑과의 틈은 그대로(3.5%, 적어도 14px), 카드에서는 틈도 배율만큼 — 커진 버튼(초점 후광 포함)이 화면 안이고 두 아이의 머리·제목과 겹치지 않는다', () => {
+  const sizes = [
+    [1280, 800, 1], [1280, 800, 1.5], [1280, 800, 2], [1366, 768, 1], [1366, 1024, 2], [1440, 900, 1], [1440, 900, 2], [1536, 864, 1.25], [1680, 1050, 1],
+    [1920, 1080, 1], [1920, 1080, 2], [1920, 1200, 1], [2560, 1440, 1], [2560, 1440, 2], [3840, 2160, 1], [3840, 2160, 2], [5120, 2880, 1], [5120, 1440, 1], [2560, 1080, 2],
+    [1024, 768, 2], [1180, 820, 2], [820, 1180, 2], [390, 844, 3], [844, 390, 3], [1366, 680, 1], [768, 1024, 2], [1440, 2560, 1],
+  ];
+  for (const [w, h, dpr] of sizes) {
+    const at = `${w}×${h}@${dpr}`;
+    const p = planIntroLayout({ w, h, dpr, art: ART, logoRatio: LOGO_RATIO });
+    const s = expectScale(w, h);
+    assert.ok(Math.abs(p.button.s - s) < 1e-12, `${at} 배율 ${p.button.s}`);
+    assert.ok(Math.abs(p.button.h - expectBaseHeight(w, h) * s) < 1e-9, `${at} 면 높이 ${p.button.h}`);
+    if (s === 1) assert.equal(p.button.h, introButtonHeight(w, h), `${at} 배율 1이면 지금 높이 그대로`);
+    const faceBottom = p.button.y + p.button.h / 2;
+    if (p.mode === 'fill') assert.ok(Math.abs(h - faceBottom - Math.max(14, 0.035 * h)) < 1e-9, `${at} 꽉 채우기의 틈 ${h - faceBottom}`);
+    else assert.ok(h - faceBottom >= INTRO_CARD_FOOT * s - 1e-9, `${at} 카드의 틈 ${h - faceBottom}`);
+    // 커진 버튼의 바깥(면 + 초점 후광 12px × 배율): 최소 폭 = 면 높이 × 3.6(base.css)
+    const halo = 12 * s;
+    const half = (p.button.h * 3.6) / 2 + halo;
+    const outer = { x0: p.button.x - half, y0: p.button.y - p.button.h / 2 - halo, x1: p.button.x + half, y1: p.button.y + p.button.h / 2 + halo };
+    assert.ok(outer.x0 >= 0 && outer.x1 <= w, `${at} 버튼이 화면 안(가로)`);
+    if (p.mode === 'fill') assert.ok(outer.y1 <= h + 1e-9, `${at} 초점 후광까지 화면 안 ${outer.y1} / ${h}`);
+    else assert.ok(faceBottom + 10 * s <= h + 1e-9, `${at} 아래 그림자까지 화면 안`); // 카드가 화면 높이에 꽉 차면 초점 후광 끝(2px × 배율)만 밑에 닿을 수 있다(배율 1의 지금과 같은 비율)
+    const k = p.image.w / ART.width;
+    const logo = { x0: p.logo.x, y0: p.logo.y, x1: p.logo.x + p.logo.w, y1: p.logo.y + p.logo.w / LOGO_RATIO };
+    assert.equal(overlap(outer, logo), false, `${at} 버튼과 제목`);
+    for (const [x0, y0, x1, y1] of ART.avoid) {
+      const head = { x0: p.image.x + x0 * k, y0: p.image.y + y0 * k, x1: p.image.x + x1 * k, y1: p.image.y + y1 * k };
+      assert.equal(overlap(outer, head), false, `${at} 버튼이 머리를 가린다`);
+    }
+  }
+  const at1920 = planIntroLayout({ w: 1920, h: 1080, dpr: 1, art: ART, logoRatio: LOGO_RATIO });
+  assert.ok(Math.abs(at1920.button.h - 113.4) < 1e-9, `1920×1080 면 높이 ${at1920.button.h}`);
 });
