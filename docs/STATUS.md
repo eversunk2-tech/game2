@@ -11,7 +11,7 @@
 | 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
 | `origin/main`(사이트) | **`cd190ce`**(2026-10-17): 게임 인트로(캔바 그림, 꽉 채우기/카드) → 학년 고르기 → 영역 화면, 앱 이름 "입체도형 공방", 쌓기나무 1~4차시, 직육면체 탐구 넓히기(상자 크기·도감 주문 54칸·손잡이). 배포 성공 · **GitHub CI 통과** · 사이트에서 인트로 그림 두 장이 하위 경로 `/game2/assets/`로 열리는 것을 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다(문서 커밋만 뒤따름) |
-| 지금 도는 것 | B0b 빌드 바탕 Build(2절) |
+| 지금 도는 것 | B0b 빌드 바탕 Build ∥ **c4** 큰 화면에서 [입장하기] 키우기 Build(2절) |
 
 ## 2. 진행 중인 일
 
@@ -19,6 +19,12 @@
 
 - 지침 [build-brief-b0b.md](games/net-workshop/build-brief-b0b.md). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) 7-3 안 B·7-4·7-5, B0c2가 큰 그림만 먼저 따로 냄.
 - 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(`main`으로 맞춘 뒤), 포트 5303, scratchpad `build-b0b/`. 끝나면 별도 Review(`review-brief-b0b.md`).
+
+### 2-1b. 함께: c4 큰 화면에서 [입장하기]도 커짐 (사용자 요청 10-17)
+
+- 사용자의 말: "1920 화면에서 selectio game 에서와 마찬가지 크기로 입장하기 크기 키워줘" → [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-11**(selectio의 `s = min(폭÷1280, 높이÷800)`을 1~1.35로 묶어 곱함 — 1920×1080에서 높이 약 113px).
+- 작업 폴더 `.worktrees/c1` · `track/c1`(`a2af9b7`에서), 포트 5304, scratchpad `build-c4/`. 지침 [build-brief-c4.md](games/net-workshop/build-brief-c4.md) / Review [review-brief-c4.md](games/net-workshop/review-brief-c4.md)(포트 5314, 결과 `review-c4.md`).
+- **B0b와 같은 파일의 다른 줄**을 고친다(줄 몫은 두 지침에 적음 — B0b 지침 덧붙임). 빨리 올리려고 따로 돌린다: Review 통과 → `main`에 합쳐 바로 올림 → `main`을 `track/b0`에 합쳐 B0b에 알림.
 
 ### 2-2. 이번에 올린 것 (2026-10-17, `cd190ce`)
 
@@ -38,7 +44,7 @@
 | `b0` · `track/b0` | B0b Build | — |
 | `blocks` · `track/blocks` `15da550` | 쉼 | 쌓기나무 S3(5차시 + 도전) — `main`으로 맞춘 뒤 |
 | `cuboid` · `track/cuboid` `8a96bcb`(`main`에 합쳐짐) | 쉼 | 각기둥 G1(직육면체 부품을 물려받음) — `main`으로 맞춘 뒤 |
-| `c1` · `track/c1` `0c4e626` | 쉼 | 작은 손질이 생기면 |
+| `c1` · `track/c1` | c4 Build | 작은 손질이 생기면 |
 
 ## 3. `main`에 합쳐 올릴 때 할 일 (다음에도 그대로 쓴다)
 
