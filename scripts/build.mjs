@@ -6,7 +6,9 @@
  *   CSS(<link>마다)             →  dist/assets/<이름>-<해시>.css  엔진 base.css는 모든 게임·게임 모음이 같은 파일 하나
  *   제목 글꼴                   →  dist/assets/display-<해시>.woff2  사이트 전체(게임 모음 + 모든 게임의 JS·CSS·HTML)에 쓰인 글자만 잘라 하나
  *   큰 그림(CSS url(), 16 KB 이상 래스터) → dist/assets/<이름>-<해시>.<확장자>  바이트 그대로(B0c2 — 캔바 AI 그림의 출처 정보가 남는다). 작은 그림·SVG는 data:
- *   게임 모음                   →  dist/index.html (CSS는 공통 파일)
+ *   사이트 맨 위 주소            →  dist/index.html = FRONT_GAME(입체도형 공방)의 게임 HTML과 같은 내용(spec-grade6 15-13 — 들어오면 인트로가 바로.
+ *                                  넘겨 주기 없음. 옛 주소 <id>.html도 그대로 열리고, 같은 출처라 저장 열쇠·기록이 같다)
+ *   선생님용 안내                →  dist/teacher.html (GUIDE_PAGE — 전의 게임 모음을 고쳐 씀, CSS는 공통 파일. 게임 목록은 game.json listed가 false인 게임을 뺀다)
  *
  * 주소는 모두 상대 주소(./assets/…, CSS 안에서는 ./이름, JS 사이는 ./이름) — 사이트가 하위 경로에 있다.
  * 검사(어기면 빌드 실패, checkSite): ① 바깥 주소 없음(결과물 전체에서 http(s)://·// — SVG 이름공간만 허용) ② 가리키는 파일이 모두 있음
@@ -22,7 +24,8 @@ import * as esbuild from 'esbuild';
 import { bootErrorHandler } from '../src/shared/core/reload.js';
 import { collectFontText, displayFontRule, isHangulSyllable, missingSymbols, readCmapOfDisplay, subsetDisplayFont } from './lib/font.mjs';
 import { loadGames } from './lib/games.mjs';
-import { escapeHtml, renderHub } from './lib/hub.mjs';
+import { escapeHtml } from './lib/hub.mjs';
+import { FRONT_GAME, GUIDE_PAGE, teacherGuideHtml } from './lib/site.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
@@ -38,6 +41,8 @@ export const ASSET_FILE_MIN = 16 * 1024;
 export const FIRST_LOAD_NOTICE = 300 * 1024;
 /** 바깥 주소 검사에서 허용하는 것: SVG 이름공간(문자열로만 쓰인다) */
 export const ALLOWED_URLS = ['http://www.w3.org/2000/svg'];
+// 사이트 맨 위 주소로 여는 게임(FRONT_GAME)·선생님용 안내 페이지 이름(GUIDE_PAGE)·사이트 주소(SITE_ADDRESSES): scripts/lib/site.mjs(개발 서버와 같이 쓴다)
+export { FRONT_GAME, GUIDE_PAGE, SITE_ADDRESSES } from './lib/site.mjs';
 
 const ASSET_LOADERS = {
   '.png': 'dataurl',
@@ -235,7 +240,7 @@ const SAFE_REL = /^\.\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+$/;
  *   ① 바깥 주소 없음: 모든 글 파일에서 http(s)://·// (SVG 이름공간만 허용)
  *   ② 가리키는 파일이 모두 있음: HTML의 src·href·url(), CSS의 url(), JS의 import — 그 파일 기준 상대 주소로 풀어 dist 안에 있어야 한다
  *   ③ '/'로 시작하는 주소 없음(하위 경로 /game2/에서 깨진다) — 상대 주소는 ./로 시작하고 ..로 위로 가지 않는다
- *   HTML의 <a href>는 같은 폴더의 다른 HTML(게임 모음의 게임 링크: "<id>.html")만 된다
+ *   HTML의 <a href>는 같은 폴더의 다른 HTML(선생님용 안내의 게임 링크 "<id>.html?intro=0", 게임의 [선생님용 안내] "./teacher.html")만 된다
  */
 export async function checkSite(outDir) {
   const problems = [];
@@ -308,6 +313,8 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
     found.scripts.forEach((s) => addEntry(s.file, game.meta.id));
     pages.push({ name: `${game.meta.id}.html`, label: game.dirName, html, ...found });
   }
+  const front = pages.find((p) => p.name === `${FRONT_GAME}.html`);
+  if (!front) throw new Error(`사이트 맨 위 주소로 열 게임(${FRONT_GAME})이 src/games에 없어요(scripts/lib/site.mjs FRONT_GAME).`);
   const styleDir = path.join(srcDir, 'shared/styles');
   const hubStyles = ['base.css', 'hub.css'].map((f) => ({ file: path.join(styleDir, f) }));
   hubStyles.forEach((s) => addEntry(s.file, null));
@@ -362,15 +369,15 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
   }
   const hubRels = hubStyles.map((s) => outputOf(s.file));
 
-  // 3. 게임 모음 HTML(글꼴 이름은 아직 모른다 — 자리표: ASCII라 글꼴 글자에는 영향이 없다)
+  // 3. 선생님용 안내 HTML(글꼴 이름은 아직 모른다 — 자리표: ASCII라 글꼴 글자에는 영향이 없다). 게임 카드·맨 위 링크는 인트로를 건너뛰는 주소(?intro=0)
   const FONT_SLOT = `${ASSET_DIR}/display-FONTSLOT.woff2`;
-  const hubHtml = renderHub({ games, hrefFor: (g) => `${g.meta.id}.html`, styles: { links: hubRels.map(href), head: fontHead(FONT_SLOT) } });
+  const guideHtml = teacherGuideHtml({ games, gameHref: (id) => `${id}.html`, styles: { links: hubRels.map(href), head: fontHead(FONT_SLOT) } });
   const drafts = pages.map((page) => ({ page, html: rewritePage(page.html, page, FONT_SLOT) }));
 
   // 4. 제목 글꼴: 사이트 전체(게임 모음 + 모든 게임의 JS·CSS·HTML)에 쓰인 글자 → display-해시.woff2 하나
   const textOf = (rel) => (/\.(js|css)$/.test(rel) ? Buffer.from(outputs.get(rel)).toString('utf8') : '');
   const textOutputs = [...outputs.keys()].filter((rel) => /\.(js|css)$/.test(rel));
-  const siteText = collectFontText([hubHtml, ...drafts.map((d) => d.html), ...textOutputs.map(textOf)].join('\n'));
+  const siteText = collectFontText([guideHtml, ...drafts.map((d) => d.html), ...textOutputs.map(textOf)].join('\n'));
   const cmap = await readCmapOfDisplay();
   const kept = [...siteText].filter((ch) => cmap.has(ch.codePointAt(0)));
   const woff2 = Buffer.from(await subsetDisplayFont(kept.join(''), 'woff2'));
@@ -423,9 +430,12 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
   for (const { page, html } of drafts) {
     const jsFirst = [...new Set(page.scripts.flatMap((s) => s.closure))];
     const lazy = page.scripts.flatMap((s) => s.lazy);
-    await emit(page.name, html, { cssRels: page.styles.map((s) => s.rel), jsFirst, lazy });
+    const opts = { cssRels: page.styles.map((s) => s.rel), jsFirst, lazy };
+    await emit(page.name, html, opts);
+    // 사이트 맨 위 주소: 그 게임 HTML과 같은 내용(같은 폴더라 ./assets/ 주소가 그대로 맞다 — 넘겨 주기 없이 인트로가 바로)
+    if (page === front) await emit('index.html', html, opts);
   }
-  await emit('index.html', hubHtml, { cssRels: hubRels });
+  await emit(GUIDE_PAGE, guideHtml, { cssRels: hubRels });
   log(`  ✓ dist/${fontRel}  제목 글꼴 ${kept.length}자 ${kb(woff2.length)} (사이트 전체에 하나)`);
 
   // 6. 검사 ① ② ③ (어기면 실패)

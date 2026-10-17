@@ -64,7 +64,11 @@ test('처음 화면: [시작하기] 자리에 학년 카드 둘(5학년 · 6학�
   await expect(page.locator('.brand-mark')).toHaveText('입');
   await expect(page).toHaveTitle(NAME);
   await expect(page.locator('.eyebrow')).toHaveText('5·6학년 수학 · 전개도와 쌓기나무');
-  await expect(page.locator('.lead')).toContainText('쌓기나무');
+  // B0d(spec-grade6 15-15 시안 A): 학년 고르기에는 소개 글(.lead)·오른쪽 그림이 없고 "공부할 학년을 골라요" 아래 큰 학년 카드(큰 숫자는 화면 읽기에서 숨김) — 전에는 소개 글에 '쌓기나무'
+  await expect(page.locator('.lead, .hero-art')).toHaveCount(0);
+  await expect(page.getByRole('heading', { level: 2, name: '공부할 학년을 골라요' })).toBeVisible();
+  await expect(page.locator('.grade-card .grade-num')).toHaveText(['5', '6']);
+  for (const num of await page.locator('.grade-num').all()) await expect(num).toHaveAttribute('aria-hidden', 'true');
   await expect(page.getByRole('button', { name: '시작하기' })).toHaveCount(0);
   await expect(page.getByRole('list', { name: '학년' })).toBeVisible();
   await expect(page.locator('.grade-card')).toHaveCount(2);
@@ -470,7 +474,8 @@ async function layoutOf(page) {
       .filter((r) => r.left < -0.5 || r.right > innerWidth + 0.5).length;
     const spill = [...document.querySelectorAll('.area-card')].flatMap((c) => {
       const box = c.getBoundingClientRect();
-      return [...c.querySelectorAll('.area-title, .area-line, .area-meta .chip, .area-art')].map((el) => el.getBoundingClientRect())
+      // B0d(시안 A): 휴대폰의 학년 카드는 작은 그림을 뺀다(display: none — 상자가 0,0에 0×0이라 넘침으로 세지 않는다). 보이는 것은 모두 그대로 센다
+      return [...c.querySelectorAll('.area-title, .area-line, .area-meta .chip, .area-art')].filter((el) => el.getClientRects().length > 0).map((el) => el.getBoundingClientRect())
         .filter((r) => r.right > box.right + 0.5 || r.bottom > box.bottom + 0.5 || r.left < box.left - 0.5);
     }).length;
     return { hScroll: doc.scrollWidth - doc.clientWidth, vScroll: doc.scrollHeight - innerHeight, small, outside, spill };
@@ -617,9 +622,10 @@ test('터치(태블릿): 학년 카드 → 영역 카드를 눌러 단계 지도
   expect(errors).toEqual([]);
 });
 
-test('게임 모음 카드: 새 이름 "입체도형 공방", 쌓기나무 문장이 든 요약, 표지에 전개도 조각과 쌓기나무, 주소는 그대로 net-workshop.html', async ({ page }) => {
-  await page.goto(fileUrl('index.html'));
-  const hubCard = page.locator(`a.hub-card[href="${FILE}"]`);
+// B0d(spec-grade6 15-13): 게임 모음은 선생님용 안내(teacher.html)가 되었고, 카드는 인트로를 건너뛰고 학년 고르기로 가는 주소(?intro=0)다 — 카드의 모습은 그대로
+test('선생님용 안내의 카드: 새 이름 "입체도형 공방", 쌓기나무 문장이 든 요약, 표지에 전개도 조각과 쌓기나무, 주소는 net-workshop.html?intro=0(학년 고르기)', async ({ page }) => {
+  await page.goto(fileUrl('teacher.html'));
+  const hubCard = page.locator(`a.hub-card[href="${FILE}?intro=0"]`);
   await expect(hubCard).toHaveCount(1);
   await expect(hubCard.locator('.hub-card-title')).toHaveText(NAME);
   await expect(hubCard.locator('.hub-card-summary')).toContainText('쌓기나무');

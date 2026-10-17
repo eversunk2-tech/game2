@@ -175,6 +175,8 @@ createGameApp({
   grades: GRADES,
   areas: AREAS,
   intro: INTRO, // 앱을 열면 인트로부터(수업 주소 ?lesson=·?area=·?grade=·?stage=로 열면 인트로 없이)
+  teacherGuide: './teacher.html', // 학년 고르기 맨 아래 오른쪽의 [선생님용 안내] → 빌드가 만드는 선생님용 안내 페이지(spec-grade6 15-13, scripts/build.mjs GUIDE_PAGE. 안내의 카드는 ?intro=0)
+  footer: '© 2026 PSC. All rights reserved.', // 학년 고르기·학년 화면 맨 아래 저작권 글(spec-grade6 15-14 — 안내 페이지도 같은 글: scripts/lib/hub.mjs COPYRIGHT)
   // 처음 화면(학년·영역을 고르기 전)의 놀이 방법: 모든 영역에 같은 몇 줄. 영역의 단계 지도·한 차시 주소에서는 그 영역의 줄(AREAS의 howTo)
   howTo: [
     '학년을 고른 다음, 공부할 영역을 골라요. 영역을 누르면 그 영역의 차시와 단계가 나와요.',

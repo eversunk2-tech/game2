@@ -221,3 +221,32 @@ test('처음 스크립트를 받지 못하면 HTML이 한 번만 새로 고친�
   expect(await page.evaluate(() => sessionStorage.getItem('edu:reload-once'))).toBe(null);
   expect(notNetwork(errors)).toEqual([]);
 });
+
+// review-b0b B0b-2: ?fx=low(느린 기기)와 움직임 줄이기에서는 "불러오는 중"의 점 셋이 멈춰 있다(common-rules 7절 "?fx=low면 끝 상태로") — 보통 실행에서는 움직인다
+test('?fx=low·움직임 줄이기: "불러오는 중"의 점 셋은 멈춘 채 또렷하다(도는 움직임 0) — 보통은 움직인다', async ({ page }) => {
+  test.setTimeout(60_000);
+  const errors = collectErrors(page);
+  const dots = page.locator('.play-loading-dots i');
+  for (const { label, query, reduced, moving } of [
+    { label: '보통', query: '', reduced: false, moving: true },
+    { label: '?fx=low', query: '&fx=low', reduced: false, moving: false },
+    { label: '움직임 줄이기', query: '', reduced: true, moving: false },
+  ]) {
+    await page.emulateMedia({ reducedMotion: reduced ? 'reduce' : 'no-preference' });
+    const hold = await holdRequests(page, BLOCKS);
+    await page.goto(fileUrl(FILE, `?unlock=all&seed=1&sound=off&stage=blocks-copy${query}`));
+    await expect(page.locator('.play-loading'), label).toBeVisible();
+    await expect(dots).toHaveCount(3);
+    // 받기를 붙잡아 둔 동안이라 쪽지는 사라지지 않는다 — 그 사이에 점의 움직임을 센다
+    const running = await dots.evaluateAll((list) => list.flatMap((d) => d.getAnimations()).filter((a) => a.playState === 'running').length);
+    if (moving) expect(running, label).toBe(3);
+    else {
+      expect(running, label).toBe(0);
+      expect(await dots.evaluateAll((list) => list.map((d) => getComputedStyle(d).opacity)), `${label}: 멈춘 점은 흐리지 않다`).toEqual(['1', '1', '1']);
+    }
+    hold.open();
+    await expect(page.locator('.blk-stage')).toBeVisible();
+    await page.unroute(BLOCKS);
+  }
+  expect(errors).toEqual([]);
+});

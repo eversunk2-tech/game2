@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { COVER_ATTRIBUTES, loadGames, prepareCover, validateGameMeta } from '../../scripts/lib/games.mjs';
+import { COVER_ATTRIBUTES, isListed, loadGames, prepareCover, validateGameMeta } from '../../scripts/lib/games.mjs';
 
 const GAMES_DIR = fileURLToPath(new URL('../../src/games', import.meta.url));
 
@@ -44,6 +44,18 @@ test('game.json 검사가 흔한 실수를 잡는다', () => {
   assert.deepEqual(validateGameMeta({ ...ok, color: '#2f6f5e' }, 'fraction-factory'), []);
   assert.equal(validateGameMeta({ ...ok, color: 'green' }, 'fraction-factory').length, 1);
   assert.equal(validateGameMeta({ ...ok, color: '#2f6f5e; background:url(x)' }, 'fraction-factory').length, 1);
+  // listed는 선택 필드(선생님용 안내의 게임 목록에 보이는가): 있으면 true·false만
+  assert.deepEqual(validateGameMeta({ ...ok, listed: false }, 'fraction-factory'), []);
+  assert.deepEqual(validateGameMeta({ ...ok, listed: true }, 'fraction-factory'), []);
+  for (const listed of ['false', 0, null, 'no']) assert.equal(validateGameMeta({ ...ok, listed }, 'fraction-factory').length, 1, String(listed));
+});
+
+test('선생님용 안내의 게임 목록: listed가 false인 게임(예시 게임)과 템플릿은 빠지고 나머지는 보인다 (spec-grade6 15-13)', async () => {
+  const games = await loadGames(GAMES_DIR, { includeTemplates: true });
+  assert.deepEqual(games.filter(isListed).map((g) => g.dirName), ['net-workshop']);
+  assert.equal(games.find((g) => g.dirName === 'sample-divisor-sort').meta.listed, false, '예시 게임은 목록에서 뺀다(파일은 그대로 만든다)');
+  assert.equal(isListed({ isTemplate: false, meta: { id: 'a' } }), true, 'listed가 없으면 보인다');
+  assert.equal(isListed({ isTemplate: false, meta: { id: 'a', listed: true } }), true);
 });
 
 test('표지 cover.svg: 게임 모음에 그대로 넣을 수 있는 그림만 받는다', async () => {

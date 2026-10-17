@@ -37,7 +37,9 @@ test('lazyModule: 기다리는 사이에 단계에서 나갔으면(ctx.signal.ab
   assert.equal(typeof (await lazy.play({ signal: new AbortController().signal }, () => () => {})), 'function');
 });
 
-test('lazyModule: 받지 못하면 LOAD_FAILED 표시가 붙은 오류(엔진의 불러오기 실패 화면). 다음에는 다시 받아 본다. preload는 실패해도 조용하다', async () => {
+// B0b-1: 이름만 사실대로 — lazyModule은 다음에 load()를 다시 부른다(이 검사가 보는 것). 브라우저는 한 번 실패한 모듈 주소를 기억해 같은 실패를 돌려주므로
+// 실제 페이지에서는 불러오기 실패 화면의 [새로 고침]으로 풀린다(engine.md 2절 "늦게 불러오기")
+test('lazyModule: 받지 못하면 LOAD_FAILED 표시가 붙은 오류(엔진의 불러오기 실패 화면). 다음에는 load()를 다시 부른다. preload는 실패해도 조용하다', async () => {
   let tries = 0;
   const lazy = lazyModule(() => {
     tries += 1;

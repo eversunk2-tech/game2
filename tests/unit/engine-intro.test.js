@@ -48,6 +48,14 @@ test('인트로로 시작하는가: 수업 주소(?stage=·?lesson=·?area=·?gr
   assert.equal(opensWithIntro(null), true);
 });
 
+test('?intro=0: 인트로를 건너뛰고 처음 화면(학년 고르기)으로 — 수업 주소가 함께 오면 수업 주소가 그대로 먼저다. 0이 아닌 값은 뜻이 없다 (spec-grade6 15-13)', () => {
+  assert.equal(readUrlOptions('?intro=0').intro, '0');
+  assert.equal(readUrlOptions('').intro, null);
+  for (const q of ['?intro=0', '?sound=off&intro=0', '?intro=0&unlock=all&seed=1&fx=low', '?intro=0&lesson=cube', '?intro=0&grade=6', '?stage=cube-judge&intro=0']) assert.equal(opensWithIntro(readUrlOptions(q)), false, q);
+  for (const q of ['?intro=1', '?intro=', '?intro=no', '?intro=00', '?intro', '?Intro=0']) assert.equal(opensWithIntro(readUrlOptions(q)), true, q);
+  assert.equal(opensWithIntro({ intro: '0' }), false);
+});
+
 /** 그림 파일 머리에서 크기 읽기: PNG(IHDR) · JPEG(SOF) */
 function pngSize(buf) {
   assert.equal(buf.toString('latin1', 1, 4), 'PNG');

@@ -5781,8 +5781,11 @@ for (const mode of ['움직임 줄이기', 'fx=low']) {
 test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 끌기·휠·키에 반응하지 않으며, 놀이 방법에 돌려 보기·크게 작게 보기를 알린다', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromebook', '처음 화면 그림의 값은 크롬북 화면에서 확인');
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?sound=off'));
-  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
+  // B0d(spec-grade6 15-15 시안 A): 학년 고르기에는 오른쪽 그림이 없다 — 그림은 한 차시 주소(?lesson=)의 처음 화면에 그대로 남는다(값도 그대로). 들어가는 길만 바뀜
+  await page.goto(fileUrl(FILE, '?sound=off&intro=0'));
+  await expect(page.locator('.grade-card')).toHaveCount(2);
+  await expect(page.locator('.hero-net, .hero-art')).toHaveCount(0);
+  await page.goto(fileUrl(FILE, '?sound=off&lesson=cube'));
   await page.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); })); // 처음 화면 그림이 제 크기에 맞춰진 뒤(크기 관찰자 — 주소로 바로 열 때는 load 전에 끝나던 것)
   const hero = page.locator('.hero-net .fold-stage');
   const read = () => page.evaluate(() => ({
@@ -5809,6 +5812,7 @@ test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 
   expect(await read()).toEqual(HERO);
   expect(await hero.evaluate((el) => getComputedStyle(el).touchAction)).toBe('manipulation');
   // 정육면체 전개도의 놀이 방법은 그 영역의 것이다(B0a: 처음 화면의 놀이 방법은 학년·영역을 고르기 전의 공통 줄) — 학년 카드 → 영역 카드 → [놀이 방법]
+  await page.goto(fileUrl(FILE, '?sound=off&intro=0'));
   await page.getByRole('button', { name: /^5학년/ }).click();
   await page.getByRole('button', { name: /^정육면체의 전개도/ }).click();
   await page.getByRole('button', { name: '놀이 방법' }).click();

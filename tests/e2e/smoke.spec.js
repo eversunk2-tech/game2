@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { DIST, SERVER_ORIGIN, SITE_BASE, SITE_URL, collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helpers.js';
+import { DIST, GUIDE_FILE, SERVER_ORIGIN, SITE_BASE, SITE_URL, collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helpers.js';
 
 // 모든 게임에 공통으로 적용되는 기본 검사. 새 게임을 만들면 자동으로 포함된다.
 
@@ -33,13 +33,22 @@ async function openStageMap(page) {
   else await page.getByRole('button', { name: '시작하기' }).click();
 }
 
-test('게임 모음 페이지가 모든 게임으로 연결된다', async ({ page }) => {
+/** 게임 폴더의 game.json(목록 표시 값 listed — false면 선생님용 안내 목록에서 빠지고 주소로만 연다) */
+const gameMeta = (file) => JSON.parse(readFileSync(path.resolve('src/games', file.replace(/\.html$/, ''), 'game.json'), 'utf8'));
+
+// B0d(spec-grade6 15-13): 게임 모음 → 선생님용 안내. 게임 링크는 인트로를 건너뛰는 주소(?intro=0)이고, 목록에서 뺀 게임(예시 게임)은 링크가 없이 주소로만 열린다
+test('선생님용 안내 페이지가 목록에 보이는 모든 게임으로 연결된다 (목록에서 뺀 게임은 주소로 열린다)', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl('index.html'));
+  await page.goto(fileUrl(GUIDE_FILE));
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  let listed = 0;
   for (const file of gameFiles()) {
-    await expect(page.locator(`a[href="${file}"]`)).toHaveCount(1);
+    const shown = gameMeta(file).listed !== false;
+    await expect(page.locator(`a.hub-card[href="${file}?intro=0"]`), file).toHaveCount(shown ? 1 : 0);
+    if (!shown) await expect(page.locator(`a[href^="${file}"]`), file).toHaveCount(0); // 그 게임은 아래 "오류 없이 열리고"에서 주소로 연다
+    if (shown) listed += 1;
   }
+  expect(listed).toBeGreaterThan(0);
   expect(await hasHorizontalScroll(page)).toBe(false);
   expect(errors).toEqual([]);
 });
@@ -120,7 +129,7 @@ function pageFiles(name) {
 }
 
 // 사이트와 같은 조건(B0b — 하위 경로 /game2/, 여러 파일): 테스트 서버(scripts/serve.mjs)가 GitHub Pages처럼 /game2/ 아래로 준다
-for (const file of ['index.html', ...gameFiles()]) {
+for (const file of ['index.html', GUIDE_FILE, ...gameFiles()]) {
   test(`${file}: 하위 경로(/game2/)에서 열리고, 모든 요청이 같은 출처·하위 경로 안이며 응답 400 이상이 없고, 이 페이지의 해시 파일(늦게 받는 묶음 포함)이 모두 받아진다`, async ({ page }) => {
     test.setTimeout(60_000);
     const errors = collectErrors(page);
@@ -142,7 +151,7 @@ for (const file of ['index.html', ...gameFiles()]) {
     expect(page.url().startsWith(SITE_URL)).toBe(true);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
     const want = pageFiles(file);
-    expect(want.length).toBeGreaterThan(file === 'index.html' ? 2 : 4);
+    expect(want.length).toBeGreaterThan(file === GUIDE_FILE ? 2 : 4); // B0d: index.html은 이제 입체도형 공방(게임)이고 선생님용 안내가 게임 모음 자리
     for (const rel of want) expect(rel, rel).toMatch(/^assets\/[a-z0-9-]+-[A-Z0-9]{8}\.[a-z0-9]+$/);
     // 늦게 받는 묶음은 처음 화면이 그려진 뒤 한가할 때 미리 받는다 — 모두 받아질 때까지(받아지지 않으면 시간 예산 안에 실패)
     await expect.poll(() => want.filter((rel) => requested.get(`${SITE_URL}${rel}`) !== 200), { timeout: 30_000 }).toEqual([]);
@@ -158,7 +167,7 @@ test('테스트 서버는 사이트와 같은 조건: 하위 경로 밖은 404, 
   const moved = await request.get(`${SERVER_ORIGIN}/game2`, { maxRedirects: 0 });
   expect(moved.status()).toBe(301);
   expect(moved.headers().location).toBe('/game2/');
-  for (const file of ['index.html', ...gameFiles()]) {
+  for (const file of ['index.html', GUIDE_FILE, ...gameFiles()]) {
     const r = await request.get(fileUrl(file), { headers: { 'Accept-Encoding': 'gzip' } });
     expect(r.status(), file).toBe(200);
     expect(r.headers()['content-encoding'], file).toBe('gzip');

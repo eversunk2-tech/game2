@@ -79,6 +79,7 @@ import {
  *   ?lesson=<id>  그 차시 묶음의 단계만 보이기 (게임이 lessons를 쓸 때)
  *   ?area=<id>    그 영역의 단계 지도로 바로 (게임이 areas를 쓸 때. ?lesson=이 함께 오면 ?lesson=이 이긴다)
  *   ?grade=<n>    그 학년 화면으로 바로 (영역에 학년이 있을 때. ?lesson= > ?area= > ?grade=)
+ *   ?intro=0      게임 인트로를 건너뛰고 처음 화면(학년 고르기)으로 (게임이 intro를 쓸 때. 위 수업 주소가 없을 때만 뜻이 있다 — 선생님용 안내의 게임 카드)
  *   ?fx=low       효과 줄이기: 색종이·화면 움직임 끔 (느린 기기. CPU 코어 2개 이하면 자동)
  */
 export function readUrlOptions(search = globalThis.location?.search ?? '') {
@@ -89,6 +90,7 @@ export function readUrlOptions(search = globalThis.location?.search ?? '') {
     lessonId: params.get('lesson'),
     areaId: params.get('area'),
     gradeId: params.get('grade'),
+    intro: params.get('intro'),
     sound: params.get('sound') !== 'off',
     seed: params.get('seed'),
     fx: params.get('fx'),
@@ -374,8 +376,11 @@ export function planIntro(intro, game) {
   return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo, art };
 }
 
-/** 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로 */
-export const opensWithIntro = (options) => !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
+/**
+ * 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로.
+ * ?intro=0이면 인트로 없이 처음 화면(학년 고르기)으로 — 선생님용 안내의 게임 카드가 쓴다(spec-grade6 15-13). 다른 값(?intro=1 등)은 뜻이 없다
+ */
+export const opensWithIntro = (options) => options?.intro !== '0' && !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
 
 /** 인트로 그림이 풀리기를(디코딩) 기다리는 가장 긴 시간. 그 안에 안 풀리면 그냥 시작한다(그때까지는 하늘색 바탕과 반짝임이 보인다) */
 const INTRO_WAIT_MS = 1500;
@@ -474,8 +479,10 @@ export const PLAY_LOADING_MS = 400;
  * → { play(ctx, run), preload() }
  *   play(ctx, run): 묶음을 받은 뒤(이미 받았으면 곧바로) 그 단계가 아직 열려 있을 때만(ctx.signal) run(모듈)을 불러 그 값(정리 함수)을 주는 Promise.
  *     기다리는 사이에 단계에서 나갔으면 run을 부르지 않는다(아무것도 그리지 않는다). 받지 못하면 LOAD_FAILED 표시가 붙은 오류 → 엔진의 실패 화면
- *   preload(): 미리 받아 두기(createGameApp의 preload에 넣는다). 실패해도 조용하다 — 그 단계에 들어갈 때 다시 받아 본다
- * 같은 묶음은 한 번만 받는다(받지 못했으면 다음에 다시 받아 본다).
+ *   preload(): 미리 받아 두기(createGameApp의 preload에 넣는다). 실패해도 조용하다(화면에 아무것도 보이지 않는다)
+ * 같은 묶음은 한 번만 받는다. 받지 못했으면 다음에 load()를 다시 부르지만, 브라우저(Chrome에서 확인 — review-b0b B0b-1)는 한 번 실패한
+ * 모듈 주소를 그 페이지가 살아 있는 동안 기억해 다시 요청하지 않고 같은 실패를 돌려준다. 그래서 미리 받기가 실패했으면(교실 망이 잠깐 끊김 등)
+ * 그 단계에 들어갈 때 불러오기 실패 화면이 나오고, 그 화면의 [새로 고침](페이지를 다시 엶)으로 풀린다 — 모은 별·기록은 그대로다.
  */
 export function lazyModule(load) {
   if (typeof load !== 'function') throw new Error('lazyModule: () => import(…) 함수가 필요해요.');
@@ -507,7 +514,7 @@ function schedulePreload(preload) {
       try {
         Promise.resolve(fn()).catch(() => {});
       } catch {
-        // 미리 받기는 실패해도 그만이다(그 단계에 들어갈 때 다시 받는다)
+        // 미리 받기는 실패해도 조용하다(그 단계에 들어갈 때 불러오기 실패 화면 → [새로 고침] — lazyModule 주석, B0b-1)
       }
     }
   };
@@ -515,6 +522,25 @@ function schedulePreload(preload) {
   // 첫 그림 다음: rAF는 그리기 바로 전, 그 뒤의 setTimeout은 그린 뒤
   if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(() => setTimeout(whenIdle, 0));
   else setTimeout(whenIdle, 0);
+}
+
+/**
+ * 선생님용 안내 페이지 주소(선택 — spec-grade6 15-13): 같은 사이트의 상대 주소(예: './teacher.html').
+ * 처음 화면(학년 고르기 — 한 차시 주소 화면은 빼고)의 맨 아래 줄 오른쪽에 작은 [선생님용 안내] 링크로 나온다(같은 탭). 없으면 null
+ */
+export function planTeacherGuide(value) {
+  if (value == null || value === false) return null;
+  const href = typeof value === 'string' ? value.trim() : '';
+  // 바깥 주소(http:·//)·'/'로 시작하는 주소는 받지 않는다 — 사이트가 하위 경로(/game2/)에도 있다
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(href) || /\s/.test(href)) throw new Error("createGameApp: teacherGuide는 같은 사이트의 상대 주소예요(예: './teacher.html').");
+  return href;
+}
+
+/** 저작권 글(선택 — spec-grade6 15-14): 처음 화면(한 차시 주소 화면은 빼고)·학년 화면 맨 아래에 작게. 없으면 null */
+export function planFooter(value) {
+  if (value == null || value === false) return null;
+  if (typeof value !== 'string' || !value.trim()) throw new Error('createGameApp: footer는 글자예요(예: 저작권 한 줄).');
+  return value.trim();
 }
 
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
@@ -540,6 +566,8 @@ export function createGameApp({
   collections: collectionDefs = null,
   intro: introDef = null,
   preload = null,
+  teacherGuide = null,
+  footer = null,
   options = readUrlOptions(),
 }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
@@ -551,6 +579,9 @@ export function createGameApp({
   if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
   if (rewardOptions != null && typeof rewardOptions !== 'object') throw new Error('createGameApp: rewards는 { ranks, thresholds, badges, off } 객체예요.');
   const introPlan = planIntro(introDef, game); // 게임 인트로(선택). null이면 인트로가 없다 — 아래 화면이 모두 지금과 같다
+  // 처음 화면·학년 화면 맨 아래 줄(선택 — spec-grade6 15-13·15-14): 선생님용 안내 페이지 주소, 저작권 글. 주지 않는 게임은 화면이 지금과 같다
+  const teacherHref = planTeacherGuide(teacherGuide);
+  const footerText = planFooter(footer);
 
   // 공통 게임 요소 설정 (rewards.off면 점수·칭호·도장을 모두 숨긴다)
   const rewardsOn = !rewardOptions?.off;
@@ -723,44 +754,64 @@ export function createGameApp({
     const eyebrow = plan.current ? plan.current.title : game.subtitle ?? defaultSubtitle(game);
     const grade = gradeLabel(game);
     const { before, mark, after } = splitTitleMark(game.title);
+    const lines = howToLines(lessonArea);
+    // 학년 고르기(학년이 있는 게임의 처음 화면): 시안 A "큰 두 칸"(spec-grade6 15-15) — 내 공방 카드는 낮은 한 줄, 오른쪽 그림 없음
+    const gradePick = Boolean(areaMode && gradePlan);
     let art = null;
-    if (heroArt) {
+    if (heroArt && !gradePick) {
       try {
         art = heroArt(h);
       } catch (error) {
         console.error(error);
       }
     }
-    const lines = howToLines(lessonArea);
     const card = rewardsOn && workshopCard({
       rank: rewardStore.rank(),
       stars: { total: progress.totalStars(), max: progress.maxStars },
       collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
       badges: { count: earnedCount(), total: badgeDefs.length },
+      compact: gradePick,
     });
     // 인트로가 있는 게임: 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽에 [← 처음으로] → 인트로
     const toIntro = introPlan && !plan.current && button('← 처음으로', () => openIntro(), 'btn btn-small btn-back btn-intro');
-    return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}` },
+    // 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만, 한 차시 주소 화면은 빼고): 저작권 글 · [선생님용 안내]
+    const foot = !plan.current && screenFoot({ teacher: true });
+    const titleMain = h('h1', { class: 'title-main' }, before, h('span', { class: 'mark' }, mark), after);
+    const more = areaMode && h('div', { class: 'actions hero-more' },
+      lines.length > 0 && button('놀이 방법', () => show(howToScreen()), 'btn', 'info'),
+      button('학습 기록', () => show(reportScreen()), 'btn', 'book'),
+    );
+    if (gradePick) {
+      // 맨 위 띠 한 줄(← 처음으로 · 게임 이름 · 윗줄 글) → "공부할 학년을 골라요" → 큰 학년 카드 둘(화면에 남는 높이를 채운다) → 내 공방 한 줄 · 놀이 방법 · 학습 기록 → 맨 아래 줄.
+      // 오른쪽 그림(heroArt)과 소개 글(summary)은 이 화면에 없다
+      return h('section', { class: `screen screen-title grade-pick${foot ? ' has-foot' : ''}` },
+        h('div', { class: 'title-chips title-band' },
+          toIntro,
+          titleMain,
+          eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
+          grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
+        ),
+        h('h2', { class: 'grade-ask' }, '공부할 학년을 골라요'),
+        gradeCards(),
+        h('div', { class: 'hero-foot' }, card, more),
+        foot,
+      );
+    }
+    return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}${foot ? ' has-foot' : ''}` },
       h('div', { class: 'hero-copy' },
         (eyebrow || grade || toIntro) && h('div', { class: 'title-chips' },
           toIntro,
           eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
           grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
         ),
-        h('h1', { class: 'title-main' }, before, h('span', { class: 'mark' }, mark), after),
+        titleMain,
         game.summary && h('p', { class: 'lead' }, game.summary),
         // 영역이 있으면 [시작하기] 자리에 영역 카드(누르면 그 영역의 단계 지도). 놀이 방법·학습 기록은 내 공방 카드 옆에 세로로
-        // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다)
+        // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다). 학년이 있으면 위의 학년 고르기 화면
         areaMode
           ? [
-            gradePlan ? gradeCards() : areaCards(areaPlan, startAreaId(areaPlan, storage.get(AREA_KEY, null))),
-            h('div', { class: 'hero-foot' },
-              card,
-              h('div', { class: 'actions hero-more' },
-                lines.length > 0 && button('놀이 방법', () => show(howToScreen()), 'btn', 'info'),
-                button('학습 기록', () => show(reportScreen()), 'btn', 'book'),
-              ),
-            ),
+            areaCards(areaPlan, startAreaId(areaPlan, storage.get(AREA_KEY, null))),
+            h('div', { class: 'hero-foot' }, card, more),
           ]
           : [
             h('div', { class: 'actions' },
@@ -778,7 +829,19 @@ export function createGameApp({
         h('span', { class: 'scrap scrap-3' }),
         h('span', { class: 'ruler' }),
       ),
+      foot,
     );
+  }
+
+  /**
+   * 처음 화면·학년 화면의 맨 아래 줄(spec-grade6 15-13·15-14·15-15): 가운데 저작권 글(footer) · 오른쪽 작은 [선생님용 안내](teacherGuide — 처음 화면에만,
+   * 같은 탭으로 여는 링크). 둘 다 없으면 null(화면이 지금과 같다). 화면의 맨 끝(margin-top: auto — 남는 높이가 있으면 화면 맨 아래, 내용이 화면보다 길면
+   * 내용 바로 아래)이라 키보드 차례는 학년 카드·놀이 방법·학습 기록 다음이다
+   */
+  function screenFoot({ teacher = false } = {}) {
+    const note = footerText && h('p', { class: 'screen-copyright' }, footerText);
+    const guide = teacher && teacherHref && h('a', { class: 'btn btn-small btn-teacher', href: teacherHref }, '선생님용 안내');
+    return note || guide ? h('footer', { class: 'screen-foot' }, note, guide) : null;
   }
 
   /**
@@ -1028,7 +1091,10 @@ export function createGameApp({
     }));
   }
 
-  /** 처음 화면의 학년 카드: 작은 그림 · "5학년" · 학년 설명 · 그 학년의 모은 별. 지난번에 하던 학년(처음이면 첫 학년)에 "여기부터!" */
+  /**
+   * 학년 고르기의 큰 학년 카드(시안 A): 왼쪽(태블릿 세로는 위) 색 칸의 큰 학년 숫자 · "5학년" · 학년 설명 · 그 학년의 모은 별 · 작은 그림.
+   * 지난번에 하던 학년(처음이면 첫 학년)에 "여기부터!"
+   */
   function gradeCards() {
     const here = startGrade(gradePlan, savedArea());
     return h('ul', { class: 'area-cards grade-cards', 'aria-label': '학년' }, gradePlan.map((g) => {
@@ -1048,6 +1114,7 @@ export function createGameApp({
             openGrade(g.grade);
           },
         },
+          h('span', { class: 'grade-num', 'aria-hidden': 'true' }, String(g.grade)), // 큰 학년 숫자(시안 A — 화면 읽기는 카드 이름으로)
           art && h('span', { class: 'area-art', 'aria-hidden': 'true' }, art),
           h('span', { class: 'area-title' }, g.title),
           g.note && h('span', { class: 'area-line' }, g.note),
@@ -1064,7 +1131,8 @@ export function createGameApp({
     const g = gradeEntry(currentGrade) ?? gradeEntry(startGrade(gradePlan, savedArea()));
     currentGrade = g.grade;
     const { stars, max } = gradeStars(g);
-    return h('section', { class: 'screen screen-grade', dataset: { grade: String(g.grade) } },
+    const foot = screenFoot(); // 맨 아래 저작권 글(게임이 footer를 줄 때만)
+    return h('section', { class: `screen screen-grade${foot ? ' has-foot' : ''}`, dataset: { grade: String(g.grade) } },
       h('div', { class: 'screen-head grade-head' },
         h('div', { class: 'grade-title' },
           button('← 학년 고르기', () => show(titleScreen()), 'btn btn-small btn-back'),
@@ -1075,6 +1143,7 @@ export function createGameApp({
       g.note && h('p', { class: 'grade-note' }, g.note),
       h('p', { class: 'grade-guide' }, '공부할 영역을 골라요.'),
       areaCards(g.areas, startAreaId(areaPlan, savedArea(), g.areas)),
+      foot,
     );
   }
 
