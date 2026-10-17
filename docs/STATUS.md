@@ -8,10 +8,10 @@
 | 구분 | 상태 |
 | --- | --- |
 | 앱 | **"입체도형 공방"**(id `net-workshop` — 주소·저장 열쇠는 그대로) — 초등 5~6학년 수학. 5학년 전개도(정육면체·직육면체) + 6학년 각기둥·쌓기나무·원기둥을 한 앱에. 화면 차례(만드는 중): **게임 인트로 → [입장하기] → 학년 고르기(5학년·6학년) → 학년 화면(영역 카드) → 영역 단계 지도 → 단계** |
-| 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
+| 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로, 2026-10-17 연결) |
 | `origin/main`(사이트) | **`cd190ce`**(2026-10-17): 게임 인트로(캔바 그림, 꽉 채우기/카드) → 학년 고르기 → 영역 화면, 앱 이름 "입체도형 공방", 쌓기나무 1~4차시, 직육면체 탐구 넓히기(상자 크기·도감 주문 54칸·손잡이). 배포 성공 · **GitHub CI 통과** · 사이트에서 인트로 그림 두 장이 하위 경로 `/game2/assets/`로 열리는 것을 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다(문서 커밋만 뒤따름) |
-| 지금 도는 것 | B0b Build ∥ c4 Build — 일시정지(2-0절) 뒤 "이어서"로 다시 돎(같은 서브에이전트가 멈춘 곳부터) |
+| 지금 도는 것 | B0b Review ∥ c4 Review ∥ **B0d Build**(첫 화면은 인트로·선생님용 안내 — 2-1c) |
 
 ## 2. 진행 중인 일
 
@@ -27,14 +27,20 @@
 
 - 지침 [build-brief-b0b.md](games/net-workshop/build-brief-b0b.md). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) 7-3 안 B·7-4·7-5, B0c2가 큰 그림만 먼저 따로 냄.
 - 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(`main`으로 맞춘 뒤), 포트 5303, scratchpad `build-b0b/`. 끝나면 별도 Review(`review-brief-b0b.md`).
-- 진행(10-17): Build 끝(`1d2240a` — 단위 322, e2e 457·0·95 보통·글꼴 흉내, 처음 받는 양 gzip 204→181 KB + 쌓기나무 묶음 27 KB 따로, `?` 뒤만 바꿔 다시 열기 1.3초 → 0.24초, 느린 망 첫 화면은 비슷, 예시 게임은 느린 망에서 0.58 → 0.74초). 사용자 결정 **15-12**(게임 모음 안내글을 "사이트 주소로 연다"로) → 같은 Build가 고치는 중 → 그다음 Review(`review-brief-b0b.md`, 포트 5316~5319, scratchpad `review-b0b/`).
+- 진행(10-17): Build 끝(`1d2240a` — 단위 322, e2e 457·0·95 보통·글꼴 흉내, 처음 받는 양 gzip 204→181 KB + 쌓기나무 묶음 27 KB 따로, `?` 뒤만 바꿔 다시 열기 1.3초 → 0.24초, 느린 망 첫 화면은 비슷, 예시 게임은 느린 망에서 0.58 → 0.74초). 사용자 결정 **15-12**(게임 모음 안내글을 "사이트 주소로 연다"로) → 고침(`20770eb`, 안내글 "게임 링크를 학생에게 나눠 주세요. 학생은 이 사이트 주소로 열어요.") → **Review 중**(`review-brief-b0b.md`, 포트 5316~5319, scratchpad `review-b0b/`, 결과 `review-b0b.md`).
 
 ### 2-1b. 함께: c4 큰 화면에서 [입장하기]도 커짐 (사용자 요청 10-17)
 
 - 사용자의 말: "1920 화면에서 selectio game 에서와 마찬가지 크기로 입장하기 크기 키워줘" → [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-11**(selectio의 `s = min(폭÷1280, 높이÷800)`을 1~1.35로 묶어 곱함 — 1920×1080에서 높이 약 113px).
 - 작업 폴더 `.worktrees/c1` · `track/c1`(`a2af9b7`에서), 포트 5304, scratchpad `build-c4/`. 지침 [build-brief-c4.md](games/net-workshop/build-brief-c4.md) / Review [review-brief-c4.md](games/net-workshop/review-brief-c4.md)(포트 5314, 결과 `review-c4.md`).
-- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고치는 중(지침 덧붙임). 고친 뒤 Review는 한 번에(review-brief-c4 덧붙임 포함).
+- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고침(`5919f53` — 손 칸 [1675, 1378, 1795, 1442], 왼쪽으로만 min(버튼 폭×0.2, 무대 폭×0.05), 1920에서 58px·1366×768에서 42px) → 세로 카드에서는 옮겨도 손이 안 보임 → 사용자 결정 **"안 보이면 옮기지 않기 (추천)"** → Build가 다시 고치는 중. 그 뒤 Review는 한 번에(review-brief-c4 덧붙임·덧붙임 2). 지침 밖 `app.js` `planIntro` 2줄은 코디네이터가 받아들임.
 - **B0b와 같은 파일의 다른 줄**을 고친다(줄 몫은 두 지침에 적음 — B0b 지침 덧붙임). 빨리 올리려고 따로 돌린다: Review 통과 → `main`에 합쳐 바로 올림 → `main`을 `track/b0`에 합쳐 B0b에 알림.
+
+### 2-1c. 함께: B0d 첫 화면은 인트로 · 게임 모음은 "선생님용 안내"로 (사용자 요청 10-17)
+
+- 사용자의 말과 결정: [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-13**(사이트 맨 위 주소 → 인트로, 학년 고르기 구석에 [선생님용 안내], 안내 페이지의 "입체도형 공방" 카드 → 학년 고르기(`?intro=0`), 예시 게임 카드는 뺌 — 사용자 결정).
+- 작업 폴더 **`.worktrees/b0d`** · 브랜치 `track/b0d`(`track/b0` `20770eb` 위 — B0b가 고치는 `hub.mjs`·`build.mjs`를 같이 고치므로), 포트 5325(개발)·5326(e2e), scratchpad `build-b0d/`. 지침 [build-brief-b0d.md](games/net-workshop/build-brief-b0d.md). Review 지침은 Build가 끝날 때 쓴다.
+- 올리는 순서(계획): c4 → B0b → B0d. B0b Review가 고칠 것을 내면 `track/b0d`에도 합쳐 준다. c4가 `main`에 오르면 `main`을 `track/b0`·`track/b0d`에 합친다.
 
 ### 2-2. 이번에 올린 것 (2026-10-17, `cd190ce`)
 
@@ -51,10 +57,11 @@
 
 | 폴더 · 브랜치 | 지금 | 다음에 쓸 때 |
 | --- | --- | --- |
-| `b0` · `track/b0` | B0b Build | — |
+| `b0` · `track/b0` | B0b Review | — |
 | `blocks` · `track/blocks` `15da550` | 쉼 | 쌓기나무 S3(5차시 + 도전) — `main`으로 맞춘 뒤 |
 | `cuboid` · `track/cuboid` `8a96bcb`(`main`에 합쳐짐) | 쉼 | 각기둥 G1(직육면체 부품을 물려받음) — `main`으로 맞춘 뒤 |
-| `c1` · `track/c1` | c4 Build | 작은 손질이 생기면 |
+| `c1` · `track/c1` | c4 Review | 작은 손질이 생기면 |
+| `b0d` · `track/b0d` | B0d Build(10-17 새로 만듦) | 합친 뒤 지워도 됨 |
 
 ## 3. `main`에 합쳐 올릴 때 할 일 (다음에도 그대로 쓴다)
 
@@ -63,7 +70,7 @@
 - 합친 화면을 한 번 직접 연다(처음 화면부터 단계 지도까지, 콘솔 오류 0).
 - 푸시한 뒤 GitHub Actions의 배포·CI 결과를 확인한다(커밋 해시는 **전체 40자**로 `gh run list --commit`에 넣는다 — 짧은 해시는 빈 결과).
 - 이 문서와 [HANDOFF.md](HANDOFF.md)의 "끝난 것"을 고친다.
-- 사이트 확인은 Playwright로 `https://eversunk2-tech.github.io/game2/net-workshop.html`을 열어 응답 400 이상 0·콘솔 오류 0·스크린샷을 본다(10-17에 처음 함).
+- 사이트 확인은 Playwright로 **두 사이트**(`https://eversunk2-tech.github.io/game2/net-workshop.html`, `https://solid-figure.pages.dev/net-workshop.html`)를 열어 응답 400 이상 0·콘솔 오류 0·스크린샷을 본다(10-17에 처음 함). Cloudflare 빌드 결과는 대시보드에서만 보인다 — 사이트를 열어 새 판인지 확인한다.
 
 ## 4. 그다음 할 일 (순서)
 
@@ -125,6 +132,7 @@
 - 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다(10-16에도 비워짐).
 - 포트: 5173은 다른 프로젝트(`history game`), 5183은 사용자가 이 앱을 보는 개발 서버. 트랙마다 5301(cuboid)·5302(blocks)·5303(b0)·5304(c1), Review는 5311~5314·5321. 다른 프로젝트(`selectio game`)의 서버가 다른 포트(예: 5336)에 떠 있을 수 있다 — 건드리지 않는다. **서버를 내릴 때는 자기가 띄운 PID만**(`pkill -f` 금지).
 - 여러 트랙이 브라우저 테스트를 함께 돌릴 때는 `-- --workers=4`. 값이 어긋나는 실패는 부하 탓으로 넘기지 않는다.
+- **Cloudflare Pages**(2026-10-17 사용자가 연결 — 코디네이터는 화면을 보기만 하며 안내): 프로젝트 `solid-figure`(주소 `https://solid-figure.pages.dev`), GitHub `eversunk2-tech/game2`의 `main`, Framework preset None, Build command `npm run build`, Build output `dist`, 환경 변수 `NODE_VERSION=22`. `/net-workshop.html`을 `/net-workshop`으로 308 넘겨 준다(쿼리 그대로). 연결할 때 처음 잘못 만든 Worker "game2"는 사용자에게 지우거나 Git 연결을 끊으라고 안내함(지웠는지는 확인 못 함). 학생 기록(브라우저 저장)은 주소마다 따로다 — 반에는 한 주소만 나눠 준다. 저장소에 Cloudflare 설정 파일은 없다.
 - GitHub: `eversunk2-tech/game2`(공개). 사용량 한도에 걸리면 서브에이전트가 도중에 끊긴다(10-14) — 한도가 풀린 뒤 처음부터 다시 맡긴다.
 
 ## 9. 지금까지 한 일 (짧게)
