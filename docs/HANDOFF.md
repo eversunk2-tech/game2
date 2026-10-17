@@ -38,6 +38,10 @@
 12. 동시 진행 1차(2026-10-14 올림): **2차 직육면체 차시**([review-cuboid.md](games/net-workshop/review-cuboid.md) — 재검토 통과. 사용자 결정 spec 16-14: 내 맘대로 전개도는 2가지에서 끝낼 수 있고 3가지면 별 3개(정육면체도), 54가지 점수 상한) + **쌓기나무 바탕과 1·2차시**([review-blocks.md](games/net-workshop/review-blocks.md) — 재검토·재검토 2 통과. 사용자 결정 spec-grade6 15-3·15-4).
    - 테스트(합친 `main`): 단위 252개, 브라우저 366개 중 306 통과 · 60 건너뜀(글꼴 흉내 0 실패. 보통은 전부터 있던 "주사위 주문 배치" 1건이 컴퓨터가 바쁠 때 흔들림 — 검사 손질 `c2`가 고치는 중).
 
+13. 검사 손질 `c2`·직육면체 손질 `M2c`(`4e7b216`), 작은 수정 `c3` 끌기 안내(`0c4e626`) — 2026-10-14~16 올림, **GitHub CI 통과.**
+14. **2026-10-17 올림(`cd190ce`)**: 영역·학년 화면과 앱 이름 "입체도형 공방"(B0a — [review-b0a.md](games/net-workshop/review-b0a.md)), 쌓기나무 3·4차시(S2·S2b — [review-blocks-s2.md](games/net-workshop/review-blocks-s2.md)), 직육면체 탐구 넓히기(M3·M3b — 상자 크기 정하기·도감 주문 54칸·돌리기 손잡이, [review-m3.md](games/net-workshop/review-m3.md)), **게임 인트로**(B0c·B0c2 — 캔바 그림 바이트 그대로·큰 그림 `dist/assets/`로 따로·꽉 채우기/카드 규칙, [review-b0c.md](games/net-workshop/review-b0c.md)). 모두 Review 통과.
+   - 테스트(합친 `main`): 단위 307개, 브라우저 438 통과 · 0 실패 · 94 건너뜀(보통·글꼴 흉내 모두). 그림 폴더에 Finder가 만든 `.DS_Store`가 있으면 단위 검사 하나가 실패한다(저장소·CI와는 무관 — B0b에서 숨김 파일을 빼게 고친다).
+
 ### 남은 것 (모두 "고치면 좋음" 이하, [review.md](games/net-workshop/review.md))
 
 - N2c-1 (고치면 좋음): 1366 화면에서 머리가 두 줄이 되는 넓은 글꼴(한글 1.15em 이상)이면 판 → 무대가 0.38~0.46px 어긋난다(눈에는 안 보임). e2e 2건이 정확히 0을 기대해 그런 글꼴에서는 실패한다.
