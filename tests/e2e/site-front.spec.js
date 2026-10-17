@@ -183,7 +183,7 @@ test('선생님용 안내: [← 학년 고르기]와 입체도형 공방 카드�
   await page.goto(fileUrl(GUIDE_FILE));
   await expect(page).toHaveTitle('선생님용 안내 - 입체도형 공방');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('입체도형 공방 선생님용 안내');
-  await expect(page.locator('.lead')).toContainText('학생에게는 이 사이트 주소를 나눠 주세요.');
+  await expect(page.locator('.lead')).toHaveText('아래 카드를 누르면 학년 선택 페이지로 이동해요.'); // 사용자가 정한 한 문장 그대로(B0d 덧붙임 6 — 전에는 세 문장)
   await expect(page.locator('.hub-card')).toHaveCount(1);
   await expect(page.locator('.hub-card .hub-card-title')).toHaveText('입체도형 공방');
   await expect(page.locator('a[href^="sample-divisor-sort"]')).toHaveCount(0);

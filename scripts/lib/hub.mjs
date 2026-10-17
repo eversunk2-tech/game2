@@ -194,7 +194,7 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
 
 /**
  * 선생님용 안내 페이지(spec-grade6 15-13 — 빌드가 dist/teacher.html로). 학년 고르기의 [선생님용 안내]가 여기로 온다.
- *   맨 위 [← 학년 고르기](home.href — 인트로를 건너뛰는 주소) · 제목 "<앱 이름> 선생님용 안내" · 짧은 안내글(학생은 사이트 주소로 → 인트로) ·
+ *   맨 위 [← 학년 고르기](home.href — 인트로를 건너뛰는 주소) · 제목 "<앱 이름> 선생님용 안내" · 안내글 한 문장(사용자가 정한 글 — spec-grade6 15-13 덧붙임 6) ·
  *   게임 카드(목록에 보이는 게임만 — game.json "listed": false인 예시 게임은 빠진다. 카드도 인트로를 건너뛰는 주소) ·
  *   선생님용 주소 옵션 · 기록 안내(+ 학생 기록은 사이트 주소마다 따로: sites) · 맨 아래 저작권 글
  * @param {object} p
@@ -219,7 +219,7 @@ export function renderTeacherGuide({ games, hrefFor, home, sites = [], copyright
   <header class="hub-header">
     <p class="eyebrow"><span class="dot" aria-hidden="true"></span>2022 개정 교육과정 · 초등 5~6학년</p>
     <h1>${escapeHtml(before)}<span class="mark">${escapeHtml(mark)}</span>${escapeHtml(after)}</h1>
-    <p class="lead">학생에게는 이 사이트 주소를 나눠 주세요. 사이트 주소로 열면 ${escapeHtml(home.title)}의 인트로 화면이 바로 나와요. 아래 카드를 누르면 인트로를 건너뛰고 학년 고르기로 가요.</p>
+    <p class="lead">아래 카드를 누르면 학년 선택 페이지로 이동해요.</p>
     ${promises(games)}
   </header>
   ${filters(games)}

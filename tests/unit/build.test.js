@@ -319,10 +319,10 @@ test('선생님용 안내(dist/teacher.html, spec-grade6 15-13·15-14): 맨 위 
   assert.match(guide, /<a class="btn btn-small btn-back" href="net-workshop\.html\?intro=0">← 학년 고르기<\/a>/);
   assert.ok(guide.indexOf('btn-back') < guide.indexOf('<h1>'), '돌아가는 링크가 제목보다 위');
   assert.match(guide, /<h1>입체도형 공방 선생님용 <span class="mark">안내<\/span><\/h1>/);
-  // 짧은 안내글: 학생은 사이트 주소로 연다(15-12의 뜻) → 사이트 주소로 열면 인트로
+  // 안내글: 사용자가 정한 한 문장 그대로(B0d 덧붙임 6 — 전에는 "학생에게는 이 사이트 주소를 나눠 주세요. 사이트 주소로 열면 … 인트로 …" 세 문장)
   const lead = /<p class="lead">([^<]+)<\/p>/.exec(guide)[1];
-  assert.match(lead, /학생에게는 이 사이트 주소를 나눠 주세요\./);
-  assert.match(lead, /사이트 주소로 열면 입체도형 공방의 인트로 화면이 바로 나와요\./);
+  assert.equal(lead, '아래 카드를 누르면 학년 선택 페이지로 이동해요.');
+  assert.equal((guide.match(/<p class="lead">/g) ?? []).length, 1, '안내글은 한 곳');
   assert.doesNotMatch(guide, /HTML 파일 하나|내려받으면|인터넷 없이/);
   // 게임 카드: 입체도형 공방 하나(예시 게임은 뺀다 — 사용자 결정 15-13), 카드는 학년 고르기로
   assert.deepEqual(links.slice(1), ['net-workshop.html?intro=0'], '맨 위 링크 다음은 게임 카드 하나뿐');
