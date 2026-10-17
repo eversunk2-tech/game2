@@ -27,6 +27,7 @@
 
 - 지침 [build-brief-b0b.md](games/net-workshop/build-brief-b0b.md). 근거 [spec-grade6.md](games/net-workshop/spec-grade6.md) 7-3 안 B·7-4·7-5, B0c2가 큰 그림만 먼저 따로 냄.
 - 작업 폴더 `.worktrees/b0` · 브랜치 `track/b0`(`main`으로 맞춘 뒤), 포트 5303, scratchpad `build-b0b/`. 끝나면 별도 Review(`review-brief-b0b.md`).
+- 진행(10-17): Build 끝(`1d2240a` — 단위 322, e2e 457·0·95 보통·글꼴 흉내, 처음 받는 양 gzip 204→181 KB + 쌓기나무 묶음 27 KB 따로, `?` 뒤만 바꿔 다시 열기 1.3초 → 0.24초, 느린 망 첫 화면은 비슷, 예시 게임은 느린 망에서 0.58 → 0.74초). 사용자 결정 **15-12**(게임 모음 안내글을 "사이트 주소로 연다"로) → 같은 Build가 고치는 중 → 그다음 Review(`review-brief-b0b.md`, 포트 5316~5319, scratchpad `review-b0b/`).
 
 ### 2-1b. 함께: c4 큰 화면에서 [입장하기]도 커짐 (사용자 요청 10-17)
 
