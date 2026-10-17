@@ -75,3 +75,7 @@
 
 - 사용자 요청(spec-grade6 **15-11**)으로 작은 손질 **c4**(큰 화면에서 [입장하기]도 커짐)가 다른 작업 폴더(`.worktrees/c1`)에서 함께 돈다. 아래 줄은 **c4 몫이니 B0b는 건드리지 않는다**: `src/shared/core/intro-fit.js`의 `introButtonHeight` 둘레(35행 안팎)·`planIntroLayout` 안의 `btnH`·`button = …` 줄(73·104·108·115행 안팎), `src/shared/ui/app.js`의 인트로 CSS 변수 `vars` 줄(788행 안팎), `src/shared/styles/base.css`의 [입장하기] 블록(1025~1058행 안팎).
 - B0b 몫은 그대로다: B0c-1(그림이 없을 때 — `app.js` 782행 안팎의 `planIntroLayout({ … art: art ?? … })`와 `intro-fit.js`의 그에 따른 줄), B0c-2·B0c-12 등. c4가 먼저 `main`에 올라가면 코디네이터가 `main`을 이 가지에 합쳐 준다 — 그때 알려 준다.
+
+## 덧붙임 2 (2026-10-17) — 사용자 결정: 게임 모음 안내글 (spec-grade6 15-12)
+
+- `scripts/lib/hub.mjs:131`의 "게임 하나가 HTML 파일 하나라서 내려받으면 인터넷 없이도 열 수 있어요"를 **사이트 주소로 연다는 사실에 맞는 해요체 문장**으로 바꾼다(예: "학생은 이 사이트 주소로 열어요."). 그 글을 찾는 검사가 있으면 새 뜻으로. 게임 모음 화면 불변 비교의 의도한 차이에 이 줄을 더해 보고.
