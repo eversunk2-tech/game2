@@ -33,7 +33,7 @@ src/shared/
 │   └── audio.js          효과음 (파일 없이 Web Audio)
 ├── styles/
 │   ├── base.css          디자인 토큰(색·글꼴·간격·그림자)과 기본 부품, 엔진 화면
-│   └── hub.css           선생님용 안내 페이지(빌드 dist/teacher.html)·개발용 게임 모음(개발 서버 /)
+│   └── hub.css           선생님용 안내 페이지(빌드 dist/teacher.html · 개발 서버 …/teacher.html)·개발용 게임 모음(개발 서버 /__games/)
 └── fonts/OFL.txt         제목 글꼴(Do Hyeon) 라이선스. 글꼴 파일은 npm 패키지에서 빌드가 잘라 넣는다
 ```
 

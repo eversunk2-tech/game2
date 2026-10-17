@@ -23,8 +23,9 @@ import { gzipSync } from 'node:zlib';
 import * as esbuild from 'esbuild';
 import { bootErrorHandler } from '../src/shared/core/reload.js';
 import { collectFontText, displayFontRule, isHangulSyllable, missingSymbols, readCmapOfDisplay, subsetDisplayFont } from './lib/font.mjs';
-import { isListed, loadGames } from './lib/games.mjs';
-import { COPYRIGHT, escapeHtml, renderTeacherGuide } from './lib/hub.mjs';
+import { loadGames } from './lib/games.mjs';
+import { escapeHtml } from './lib/hub.mjs';
+import { FRONT_GAME, GUIDE_PAGE, teacherGuideHtml } from './lib/site.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
@@ -40,12 +41,8 @@ export const ASSET_FILE_MIN = 16 * 1024;
 export const FIRST_LOAD_NOTICE = 300 * 1024;
 /** 바깥 주소 검사에서 허용하는 것: SVG 이름공간(문자열로만 쓰인다) */
 export const ALLOWED_URLS = ['http://www.w3.org/2000/svg'];
-/** 사이트 맨 위 주소(dist/index.html)로 여는 게임 — 그 게임 HTML을 index.html로도 내보낸다(spec-grade6 15-13) */
-export const FRONT_GAME = 'net-workshop';
-/** 선생님용 안내 페이지 이름(게임 main.js의 teacherGuide: './teacher.html'과 같아야 한다 — tests/unit/build.test.js) */
-export const GUIDE_PAGE = 'teacher.html';
-/** 같은 사이트가 올라가 있는 주소(선생님용 안내에 글로만 — 학생 기록은 주소마다 따로다). 바깥 주소 검사 ①에 걸리지 않게 https://는 빼고 쓴다 */
-export const SITE_ADDRESSES = ['eversunk2-tech.github.io/game2/', 'solid-figure.pages.dev'];
+// 사이트 맨 위 주소로 여는 게임(FRONT_GAME)·선생님용 안내 페이지 이름(GUIDE_PAGE)·사이트 주소(SITE_ADDRESSES): scripts/lib/site.mjs(개발 서버와 같이 쓴다)
+export { FRONT_GAME, GUIDE_PAGE, SITE_ADDRESSES } from './lib/site.mjs';
 
 const ASSET_LOADERS = {
   '.png': 'dataurl',
@@ -317,7 +314,7 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
     pages.push({ name: `${game.meta.id}.html`, label: game.dirName, html, ...found });
   }
   const front = pages.find((p) => p.name === `${FRONT_GAME}.html`);
-  if (!front) throw new Error(`사이트 맨 위 주소로 열 게임(${FRONT_GAME})이 src/games에 없어요(scripts/build.mjs FRONT_GAME).`);
+  if (!front) throw new Error(`사이트 맨 위 주소로 열 게임(${FRONT_GAME})이 src/games에 없어요(scripts/lib/site.mjs FRONT_GAME).`);
   const styleDir = path.join(srcDir, 'shared/styles');
   const hubStyles = ['base.css', 'hub.css'].map((f) => ({ file: path.join(styleDir, f) }));
   hubStyles.forEach((s) => addEntry(s.file, null));
@@ -374,15 +371,7 @@ export async function build({ rootDir = ROOT, outDir = path.join(rootDir, 'dist'
 
   // 3. 선생님용 안내 HTML(글꼴 이름은 아직 모른다 — 자리표: ASCII라 글꼴 글자에는 영향이 없다). 게임 카드·맨 위 링크는 인트로를 건너뛰는 주소(?intro=0)
   const FONT_SLOT = `${ASSET_DIR}/display-FONTSLOT.woff2`;
-  const skipIntro = (id) => `${id}.html?intro=0`;
-  const guideHtml = renderTeacherGuide({
-    games: games.filter(isListed),
-    hrefFor: (g) => skipIntro(g.meta.id),
-    home: { href: skipIntro(FRONT_GAME), title: games.find((g) => g.meta.id === FRONT_GAME).meta.title },
-    sites: SITE_ADDRESSES,
-    copyright: COPYRIGHT,
-    styles: { links: hubRels.map(href), head: fontHead(FONT_SLOT) },
-  });
+  const guideHtml = teacherGuideHtml({ games, gameHref: (id) => `${id}.html`, styles: { links: hubRels.map(href), head: fontHead(FONT_SLOT) } });
   const drafts = pages.map((page) => ({ page, html: rewritePage(page.html, page, FONT_SLOT) }));
 
   // 4. 제목 글꼴: 사이트 전체(게임 모음 + 모든 게임의 JS·CSS·HTML)에 쓰인 글자 → display-해시.woff2 하나

@@ -1,7 +1,7 @@
 /**
  * 게임 카드가 있는 페이지 둘(모습: docs/design/spec.md 3절 "게임 모음" — 게임 카드 = 표지(cover.svg 또는 게임 색 무늬 + 첫 글자) + 설명):
- *   renderTeacherGuide  선생님용 안내 페이지 — 빌드가 dist/teacher.html로(spec-grade6 15-13: 지금의 게임 모음을 고쳐 씀. 사이트 맨 위 주소는 게임 인트로)
- *   renderHub           개발용 게임 모음 — 개발 서버의 / (템플릿·예시 게임까지 모두. 빌드는 더 내보내지 않는다)
+ *   renderTeacherGuide  선생님용 안내 페이지 — 빌드의 dist/teacher.html·개발 서버의 …/teacher.html(scripts/lib/site.mjs teacherGuideHtml — spec-grade6 15-13: 전의 게임 모음을 고쳐 씀. 사이트 맨 위 주소는 게임 인트로)
+ *   renderHub           개발용 게임 모음 — 개발 서버의 /__games/ (템플릿·예시 게임까지 모두. 빌드는 더 내보내지 않는다)
  * 같은 주소에서 기록을 읽을 수 있으면 "이어 하기 · 별 n개"를 보인다(작은 인라인 스크립트, 못 읽으면 그대로).
  */
 import { splitTitleMark } from '../../src/shared/core/title-mark.js';
@@ -166,7 +166,7 @@ ${body}
 `;
 
 /**
- * 개발용 게임 모음(개발 서버 scripts/dev.mjs의 /): 템플릿·예시 게임까지 모든 게임 카드.
+ * 개발용 게임 모음(개발 서버 scripts/dev.mjs의 /__games/): 템플릿·예시 게임까지 모든 게임 카드.
  * @param {object} p
  * @param {Array} p.games   loadGames() 결과
  * @param {(game) => string} p.hrefFor  게임 링크 주소

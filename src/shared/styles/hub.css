@@ -1,4 +1,4 @@
-/* 선생님용 안내(dist/teacher.html)·개발용 게임 모음 페이지 전용 스타일. base.css 위에 얹는다. (docs/design/spec.md 3절 "게임 모음") */
+/* 선생님용 안내(dist/teacher.html · 개발 서버 …/teacher.html)·개발용 게임 모음(개발 서버 /__games/) 페이지 전용 스타일. base.css 위에 얹는다. (docs/design/spec.md 3절 "게임 모음") */
 .hub { max-width: 1240px; margin: 0 auto; padding: 22px 24px 32px; display: flex; flex-direction: column; gap: 22px; }
 /* 선생님용 안내: 맨 위 [← 학년 고르기] · 기록 안내의 사이트 주소(글로만) · 맨 아래 가운데 저작권 글(base.css .screen-copyright와 같은 모양) */
 .guide { gap: 18px; }
