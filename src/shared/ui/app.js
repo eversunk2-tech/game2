@@ -79,6 +79,7 @@ import {
  *   ?lesson=<id>  그 차시 묶음의 단계만 보이기 (게임이 lessons를 쓸 때)
  *   ?area=<id>    그 영역의 단계 지도로 바로 (게임이 areas를 쓸 때. ?lesson=이 함께 오면 ?lesson=이 이긴다)
  *   ?grade=<n>    그 학년 화면으로 바로 (영역에 학년이 있을 때. ?lesson= > ?area= > ?grade=)
+ *   ?intro=0      게임 인트로를 건너뛰고 처음 화면(학년 고르기)으로 (게임이 intro를 쓸 때. 위 수업 주소가 없을 때만 뜻이 있다 — 선생님용 안내의 게임 카드)
  *   ?fx=low       효과 줄이기: 색종이·화면 움직임 끔 (느린 기기. CPU 코어 2개 이하면 자동)
  */
 export function readUrlOptions(search = globalThis.location?.search ?? '') {
@@ -89,6 +90,7 @@ export function readUrlOptions(search = globalThis.location?.search ?? '') {
     lessonId: params.get('lesson'),
     areaId: params.get('area'),
     gradeId: params.get('grade'),
+    intro: params.get('intro'),
     sound: params.get('sound') !== 'off',
     seed: params.get('seed'),
     fx: params.get('fx'),
@@ -373,8 +375,11 @@ export function planIntro(intro, game) {
   return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo, art };
 }
 
-/** 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로 */
-export const opensWithIntro = (options) => !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
+/**
+ * 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로.
+ * ?intro=0이면 인트로 없이 처음 화면(학년 고르기)으로 — 선생님용 안내의 게임 카드가 쓴다(spec-grade6 15-13). 다른 값(?intro=1 등)은 뜻이 없다
+ */
+export const opensWithIntro = (options) => options?.intro !== '0' && !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
 
 /** 인트로 그림이 풀리기를(디코딩) 기다리는 가장 긴 시간. 그 안에 안 풀리면 그냥 시작한다(그때까지는 하늘색 바탕과 반짝임이 보인다) */
 const INTRO_WAIT_MS = 1500;
@@ -473,8 +478,10 @@ export const PLAY_LOADING_MS = 400;
  * → { play(ctx, run), preload() }
  *   play(ctx, run): 묶음을 받은 뒤(이미 받았으면 곧바로) 그 단계가 아직 열려 있을 때만(ctx.signal) run(모듈)을 불러 그 값(정리 함수)을 주는 Promise.
  *     기다리는 사이에 단계에서 나갔으면 run을 부르지 않는다(아무것도 그리지 않는다). 받지 못하면 LOAD_FAILED 표시가 붙은 오류 → 엔진의 실패 화면
- *   preload(): 미리 받아 두기(createGameApp의 preload에 넣는다). 실패해도 조용하다 — 그 단계에 들어갈 때 다시 받아 본다
- * 같은 묶음은 한 번만 받는다(받지 못했으면 다음에 다시 받아 본다).
+ *   preload(): 미리 받아 두기(createGameApp의 preload에 넣는다). 실패해도 조용하다(화면에 아무것도 보이지 않는다)
+ * 같은 묶음은 한 번만 받는다. 받지 못했으면 다음에 load()를 다시 부르지만, 브라우저(Chrome에서 확인 — review-b0b B0b-1)는 한 번 실패한
+ * 모듈 주소를 그 페이지가 살아 있는 동안 기억해 다시 요청하지 않고 같은 실패를 돌려준다. 그래서 미리 받기가 실패했으면(교실 망이 잠깐 끊김 등)
+ * 그 단계에 들어갈 때 불러오기 실패 화면이 나오고, 그 화면의 [새로 고침](페이지를 다시 엶)으로 풀린다 — 모은 별·기록은 그대로다.
  */
 export function lazyModule(load) {
   if (typeof load !== 'function') throw new Error('lazyModule: () => import(…) 함수가 필요해요.');
@@ -506,7 +513,7 @@ function schedulePreload(preload) {
       try {
         Promise.resolve(fn()).catch(() => {});
       } catch {
-        // 미리 받기는 실패해도 그만이다(그 단계에 들어갈 때 다시 받는다)
+        // 미리 받기는 실패해도 조용하다(그 단계에 들어갈 때 불러오기 실패 화면 → [새로 고침] — lazyModule 주석, B0b-1)
       }
     }
   };
@@ -514,6 +521,49 @@ function schedulePreload(preload) {
   // 첫 그림 다음: rAF는 그리기 바로 전, 그 뒤의 setTimeout은 그린 뒤
   if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(() => setTimeout(whenIdle, 0));
   else setTimeout(whenIdle, 0);
+}
+
+/**
+ * 선생님용 안내 페이지 주소(선택 — spec-grade6 15-13): 같은 사이트의 상대 주소(예: './teacher.html').
+ * 처음 화면(학년 고르기 — 한 차시 주소 화면은 빼고)의 맨 아래 줄 오른쪽에 작은 [선생님용 안내] 링크로 나온다(같은 탭). 없으면 null
+ */
+export function planTeacherGuide(value) {
+  if (value == null || value === false) return null;
+  const href = typeof value === 'string' ? value.trim() : '';
+  // 바깥 주소(http:·//)·'/'로 시작하는 주소는 받지 않는다 — 사이트가 하위 경로(/game2/)에도 있다
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/)/i.test(href) || /\s/.test(href)) throw new Error("createGameApp: teacherGuide는 같은 사이트의 상대 주소예요(예: './teacher.html').");
+  return href;
+}
+
+/** 저작권 글(선택 — spec-grade6 15-14): 처음 화면(한 차시 주소 화면은 빼고)·학년 화면 맨 아래에 작게. 없으면 null */
+export function planFooter(value) {
+  if (value == null || value === false) return null;
+  if (typeof value !== 'string' || !value.trim()) throw new Error('createGameApp: footer는 글자예요(예: 저작권 한 줄).');
+  return value.trim();
+}
+
+/**
+ * 맨 아래 줄과 내용 사이의 가장 작은 틈(px). 둘 가운데 작은 쪽을 쓴다:
+ *   줄의 것 — [선생님용 안내](버튼)는 FOOT_GAP, 저작권 글(누르지 않는 작은 글)은 FOOT_GAP_TEXT
+ *   내용 — 카드·버튼·글은 FOOT_GAP(그림자·들뜸까지), 꾸밈 그림(처음 화면 오른쪽 매트·자·색종이 — 화면 읽기에서 숨김)은 FOOT_GAP_ART(기울어진 자의 상자는 그림보다 크다)
+ * 맨 아래 줄과 화면 아래 끝 사이의 가장 작은 틈: 버튼이 있는 줄은 FOOT_EDGE, 저작권 글만 있는 줄은 FOOT_EDGE_TEXT
+ */
+export const FOOT_GAP = 8;
+export const FOOT_GAP_TEXT = 4;
+export const FOOT_GAP_ART = 2;
+export const FOOT_EDGE = 4;
+export const FOOT_EDGE_TEXT = 2;
+
+/**
+ * 맨 아래 줄을 어디에 놓을까(순수 함수 — 엔진이 화면 크기가 바뀔 때마다 부른다, tests/unit에서 검사).
+ *   parts: 줄 안의 것들(저작권 글·[선생님용 안내])을 그 자리에 놓았을 때의 상자들 { left, top, right, bottom, gap? }
+ *   content: 화면의 내용 상자들 { left, top, right, bottom, gap? }
+ *   둘의 gap(없으면 FOOT_GAP) 가운데 작은 쪽보다 가까우면 겹친 것으로 본다
+ * → 'bottom'(그 자리 그대로 — 내용과 겹치지 않는다) 또는 'below'(겹친다 — 엔진은 다른 자리를 찾는다)
+ */
+export function footPlacement(parts, content) {
+  const hits = (a, b, gap) => a.left < b.right && a.right > b.left && a.top < b.bottom + gap && a.bottom > b.top - gap;
+  return parts.some((p) => content.some((c) => hits(p, c, Math.min(p.gap ?? FOOT_GAP, c.gap ?? FOOT_GAP)))) ? 'below' : 'bottom';
 }
 
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
@@ -539,6 +589,8 @@ export function createGameApp({
   collections: collectionDefs = null,
   intro: introDef = null,
   preload = null,
+  teacherGuide = null,
+  footer = null,
   options = readUrlOptions(),
 }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
@@ -550,6 +602,9 @@ export function createGameApp({
   if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
   if (rewardOptions != null && typeof rewardOptions !== 'object') throw new Error('createGameApp: rewards는 { ranks, thresholds, badges, off } 객체예요.');
   const introPlan = planIntro(introDef, game); // 게임 인트로(선택). null이면 인트로가 없다 — 아래 화면이 모두 지금과 같다
+  // 처음 화면·학년 화면 맨 아래 줄(선택 — spec-grade6 15-13·15-14): 선생님용 안내 페이지 주소, 저작권 글. 주지 않는 게임은 화면이 지금과 같다
+  const teacherHref = planTeacherGuide(teacherGuide);
+  const footerText = planFooter(footer);
 
   // 공통 게임 요소 설정 (rewards.off면 점수·칭호·도장을 모두 숨긴다)
   const rewardsOn = !rewardOptions?.off;
@@ -686,6 +741,65 @@ export function createGameApp({
       heading.focus({ preventScroll: true });
     }
     globalThis.scrollTo?.(0, 0);
+    const foot = screen.querySelector(':scope > .screen-foot');
+    if (foot) screenCleanups.push(fitScreenFoot(screen, foot)); // 맨 아래 줄이 있는 화면(처음 화면·학년 화면)만
+  }
+
+  /**
+   * 맨 아래 줄의 자리(footPlacement로 겹침을 본다). 차례대로 처음으로 맞는 것:
+   *   1. 둘 다 화면 맨 아래 오른쪽(앱 아래 여백 안으로 내려가 화면 아래 끝에서 FOOT_EDGE px 위까지): 저작권 글 · [선생님용 안내]
+   *   2. 아래에 버튼(48px)이 들어갈 틈이 없는 낮은 화면: [선생님용 안내]만 화면 맨 위 오른쪽(소리 버튼 아래 — .is-top), 저작권 글은 맨 아래 오른쪽
+   *   3. 그래도 겹치면(휴대폰처럼 내용이 화면보다 길 때): 내용 바로 아래(.is-below — 페이지가 그만큼 길어진다)
+   * 어느 쪽이든 position: absolute라 카드·버튼의 자리를 바꾸지 않는다(카드를 밀어 올리지 않는다). 화면·내용의 크기가 바뀔 때(창 크기,
+   * 글꼴을 받은 뒤)마다 다시 정한다. → 정리 함수
+   */
+  function fitScreenFoot(screen, foot) {
+    const content = [...screen.children].filter((el) => el !== foot)
+      .flatMap((el) => (el.matches('.hero-copy, .hero-art') ? [...el.children] : [el])); // 처음 화면은 글 칸·그림 칸의 조각마다(그림 칸의 빈 곳은 쓴다)
+    const note = foot.querySelector('.screen-copyright');
+    const guide = foot.querySelector('.btn-teacher');
+    const rect = (el) => el.getBoundingClientRect();
+    const boxOf = (el) => {
+      const b = rect(el);
+      return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, width: b.width, height: b.height, gap: el.closest('.hero-art') ? FOOT_GAP_ART : FOOT_GAP };
+    };
+    const partOf = (el) => {
+      const b = rect(el);
+      return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, gap: el === note ? FOOT_GAP_TEXT : FOOT_GAP };
+    };
+    const fits = (parts, boxes) => footPlacement(parts.filter(Boolean).map(partOf), boxes) === 'bottom';
+    // 줄의 아래 끝: 앱 아래 여백 안으로 내려가 화면 아래 끝에서 FOOT_EDGE(버튼이 줄에 있을 때)·FOOT_EDGE_TEXT(저작권 글만) 위까지
+    const drop = (edge) => foot.style.setProperty('--foot-drop', `${Math.max(0, (parseFloat(getComputedStyle(root).paddingBottom) || 0) - edge)}px`);
+    // 맨 위 오른쪽의 [선생님용 안내]: 줄(foot) 안의 절대 자리라 화면 맨 위까지의 거리를 준다(줄이 움직이면 다시)
+    const pinTop = () => guide.style.setProperty('--teacher-top', `${Math.round(rect(screen).top - rect(foot).top)}px`);
+    const fit = () => {
+      if (!screen.isConnected) return;
+      drop(guide ? FOOT_EDGE : FOOT_EDGE_TEXT);
+      foot.classList.remove('is-below');
+      guide?.classList.remove('is-top');
+      const boxes = content.map(boxOf).filter((b) => b.width > 0 && b.height > 0);
+      if (fits([note, guide], boxes)) return; // 1
+      let top = false;
+      if (guide) {
+        guide.classList.add('is-top');
+        drop(FOOT_EDGE_TEXT);
+        pinTop();
+        top = fits([guide], boxes);
+        if (!top) {
+          guide.classList.remove('is-top');
+          drop(FOOT_EDGE);
+        } else if (fits([note], boxes)) return; // 2
+      }
+      const bottom = Math.max(...boxes.map((b) => b.bottom)); // 3
+      foot.style.setProperty('--foot-top', `${Math.ceil(bottom - rect(screen).top + FOOT_GAP)}px`);
+      foot.classList.add('is-below');
+      if (top) pinTop();
+    };
+    fit();
+    if (typeof globalThis.ResizeObserver !== 'function') return () => {};
+    const watch = new ResizeObserver(() => fit());
+    for (const el of [screen, ...content]) watch.observe(el);
+    return () => watch.disconnect();
   }
 
   /** 버튼: label은 글자(접근 이름), iconName은 글자 앞(또는 after면 뒤)에 붙는 그림 */
@@ -739,7 +853,9 @@ export function createGameApp({
     });
     // 인트로가 있는 게임: 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽에 [← 처음으로] → 인트로
     const toIntro = introPlan && !plan.current && button('← 처음으로', () => openIntro(), 'btn btn-small btn-back btn-intro');
-    return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}` },
+    // 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만, 한 차시 주소 화면은 빼고): 저작권 글 · [선생님용 안내]
+    const foot = !plan.current && screenFoot({ teacher: true });
+    return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}${foot ? ' has-foot' : ''}` },
       h('div', { class: 'hero-copy' },
         (eyebrow || grade || toIntro) && h('div', { class: 'title-chips' },
           toIntro,
@@ -777,7 +893,19 @@ export function createGameApp({
         h('span', { class: 'scrap scrap-3' }),
         h('span', { class: 'ruler' }),
       ),
+      foot,
     );
+  }
+
+  /**
+   * 처음 화면·학년 화면의 맨 아래 줄(spec-grade6 15-13·15-14): 저작권 글(footer) · [선생님용 안내](teacherGuide — 처음 화면에만, 같은 탭으로 여는 링크).
+   * 둘 다 없으면 null(화면이 지금과 같다). 자리는 엔진이 화면을 보인 뒤 정한다(fitScreenFoot — 화면 맨 아래, 내용과 겹치면 내용 바로 아래).
+   * DOM은 화면의 끝이라 키보드 차례는 학년 카드·놀이 방법·학습 기록 다음이다
+   */
+  function screenFoot({ teacher = false } = {}) {
+    const note = footerText && h('p', { class: 'screen-copyright' }, footerText);
+    const guide = teacher && teacherHref && h('a', { class: 'btn btn-small btn-teacher', href: teacherHref }, icon('user'), '선생님용 안내');
+    return note || guide ? h('footer', { class: 'screen-foot' }, note, guide) : null;
   }
 
   /**
@@ -1063,7 +1191,8 @@ export function createGameApp({
     const g = gradeEntry(currentGrade) ?? gradeEntry(startGrade(gradePlan, savedArea()));
     currentGrade = g.grade;
     const { stars, max } = gradeStars(g);
-    return h('section', { class: 'screen screen-grade', dataset: { grade: String(g.grade) } },
+    const foot = screenFoot(); // 맨 아래 저작권 글(게임이 footer를 줄 때만)
+    return h('section', { class: `screen screen-grade${foot ? ' has-foot' : ''}`, dataset: { grade: String(g.grade) } },
       h('div', { class: 'screen-head grade-head' },
         h('div', { class: 'grade-title' },
           button('← 학년 고르기', () => show(titleScreen()), 'btn btn-small btn-back'),
@@ -1074,6 +1203,7 @@ export function createGameApp({
       g.note && h('p', { class: 'grade-note' }, g.note),
       h('p', { class: 'grade-guide' }, '공부할 영역을 골라요.'),
       areaCards(g.areas, startAreaId(areaPlan, savedArea(), g.areas)),
+      foot,
     );
   }
 

@@ -7,10 +7,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import subsetFont from 'subset-font';
-import { ASSET_FILE_MIN, FIRST_LOAD_NOTICE, build, checkSite, cssRefs, findUrls, htmlRefs, jsRefs } from '../../scripts/build.mjs';
+import { ASSET_FILE_MIN, FIRST_LOAD_NOTICE, FRONT_GAME, GUIDE_PAGE, SITE_ADDRESSES, build, checkSite, cssRefs, findUrls, htmlRefs, jsRefs } from '../../scripts/build.mjs';
 import { DISPLAY_FONT, collectFontText, isHangulSyllable, missingSymbols, readCmap } from '../../scripts/lib/font.mjs';
 import { loadGames } from '../../scripts/lib/games.mjs';
-import { FILTER_MIN_GAMES, renderHub } from '../../scripts/lib/hub.mjs';
+import { COPYRIGHT, FILTER_MIN_GAMES, URL_OPTIONS, renderHub, renderTeacherGuide } from '../../scripts/lib/hub.mjs';
 import { createGame } from '../../scripts/new-game.mjs';
 
 // 여러 파일 빌드(B0b — spec-grade6.md 7-3절 안 B · 7-4절). 전에는 "게임마다 HTML 한 파일" 검사였다(7-4절 표: "HTML 한 파일"·"400 KB 이하" 검사를
@@ -57,10 +57,11 @@ async function staticFiles(outDir, rel) {
   return seen;
 }
 
-test('여러 파일 빌드: dist에는 게임 HTML·게임 모음·assets/만, assets/의 이름은 <이름>-<해시>. 게임 HTML은 ./assets/의 CSS·모듈 스크립트(onerror)·modulepreload·글꼴 preload를 가리킨다', async () => {
+// B0d(spec-grade6 15-13): 사이트 맨 위 index.html은 게임 모음 대신 입체도형 공방의 게임 HTML(인트로가 바로), 게임 모음은 선생님용 안내 teacher.html로 바뀌었다
+test('여러 파일 빌드: dist에는 게임 HTML·맨 위 index.html(입체도형 공방과 같은 내용)·선생님용 안내·assets/만, assets/의 이름은 <이름>-<해시>. 게임 HTML은 ./assets/의 CSS·모듈 스크립트(onerror)·modulepreload·글꼴 preload를 가리킨다', async () => {
   const { outDir, games } = await site();
   const top = (await readdir(outDir)).sort();
-  assert.deepEqual(top, ['assets', 'index.html', ...games.map((id) => `${id}.html`)].sort());
+  assert.deepEqual(top, ['assets', 'index.html', GUIDE_PAGE, ...games.map((id) => `${id}.html`)].sort());
   const assets = await readdir(path.join(outDir, 'assets'));
   for (const name of assets) assert.match(name, /^[a-z0-9-]+-[A-Z0-9]{8}\.(js|css|woff2|png|jpe?g|gif|webp)$/, name);
   assert.equal(assets.filter((n) => n.startsWith('display-') && n.endsWith('.woff2')).length, 1, '제목 글꼴은 사이트에 하나');
@@ -90,11 +91,15 @@ test('여러 파일 빌드: dist에는 게임 HTML·게임 모음·assets/만, a
     assert.match(html, /Copyright 2018 The Do Hyeon Project Authors\. SIL Open Font License 1\.1/);
     assert.doesNotMatch(html, /data:(font|image\/(png|jpeg))/, `${id}: 글꼴·큰 그림이 HTML에 다시 들어가지 않는다`);
   }
-  const hub = await read(outDir, 'index.html');
-  for (const id of games) assert.match(hub, new RegExp(`href="${id}\\.html"`));
-  assert.doesNotMatch(hub, /_template/);
-  assert.match(hub, /<link rel="stylesheet" href="\.\/assets\/base-[A-Z0-9]{8}\.css">\s*<link rel="stylesheet" href="\.\/assets\/hub-[A-Z0-9]{8}\.css">/, '게임 모음: CSS는 인라인 대신 공통 파일');
-  assert.doesNotMatch(hub, /<style>[^<]{2000,}/, '게임 모음에 큰 인라인 CSS가 없다');
+  // 맨 위 주소 = 입체도형 공방 HTML 그대로(바이트까지 — 넘겨 주기 없음, 같은 ./assets/ 파일·같은 저장 열쇠)
+  assert.equal(FRONT_GAME, 'net-workshop');
+  assert.equal(await read(outDir, 'index.html'), await read(outDir, `${FRONT_GAME}.html`));
+  // 선생님용 안내(전의 게임 모음): 목록에 보이는 게임(예시 게임 빼고)만 인트로를 건너뛰는 주소로, CSS는 공통 파일
+  const guide = await read(outDir, GUIDE_PAGE);
+  assert.deepEqual([...guide.matchAll(/<a class="hub-card" href="([^"]+)"/g)].map((m) => m[1]), [`${FRONT_GAME}.html?intro=0`]);
+  assert.doesNotMatch(guide, /sample-divisor-sort|_template/);
+  assert.match(guide, /<link rel="stylesheet" href="\.\/assets\/base-[A-Z0-9]{8}\.css">\s*<link rel="stylesheet" href="\.\/assets\/hub-[A-Z0-9]{8}\.css">/, '선생님용 안내: CSS는 인라인 대신 공통 파일');
+  assert.doesNotMatch(guide, /<style>[^<]{2000,}/, '선생님용 안내에 큰 인라인 CSS가 없다');
 });
 
 test('빌드 검사 ①②③: 바깥 주소 없음(SVG 이름공간만) · 가리키는 파일이 모두 있음 · "/"로 시작하는 주소 없음 — 빌드의 검사와 이 검사가 따로 짠 검사 모두', async () => {
@@ -119,10 +124,12 @@ test('빌드 검사 ①②③: 바깥 주소 없음(SVG 이름공간만) · 가�
     const refs = rel.endsWith('.html') ? refsInHtml(text) : rel.endsWith('.css') ? refsInCss(text) : refsInJs(text);
     for (const ref of refs) {
       assert.ok(!ref.startsWith('/'), `${rel}: '/'로 시작 ${ref}`);
-      const isPage = rel === 'index.html' && /^[a-z0-9-]+\.html$/.test(ref);
+      // 선생님용 안내의 게임 링크만 "<id>.html"(인트로를 건너뛰는 ?intro=0까지) — 그 밖은 ./ 상대 주소 (B0d: 전에는 게임 모음 index.html의 "<id>.html")
+      const [plain, query] = ref.split('?');
+      const isPage = rel === GUIDE_PAGE && /^[a-z0-9-]+\.html$/.test(plain) && (query === undefined || query === 'intro=0');
       if (!isPage) assert.match(ref, /^\.\/[A-Za-z0-9._/-]+$/, `${rel}: ${ref}`);
       assert.ok(!ref.includes('..'), `${rel}: ${ref}`);
-      assert.ok(all.includes(path.posix.normalize(path.posix.join(path.posix.dirname(rel), ref))), `${rel}: 없는 파일 ${ref}`);
+      assert.ok(all.includes(path.posix.normalize(path.posix.join(path.posix.dirname(rel), plain))), `${rel}: 없는 파일 ${ref}`);
       checked += 1;
     }
   }
@@ -181,7 +188,7 @@ test('참조 읽기: HTML의 src·href·url(), CSS의 url()·@import, JS의 impo
   assert.deepEqual(findUrls('new URL(location.href)'), []);
 });
 
-test('입체도형 공방의 인트로 그림(사용자가 캔바에서 받은 2880 원본)은 dist/assets/로 바이트 그대로(md5 같음) 나가고 게임 CSS가 ./ 상대 주소로 가리킨다. 게임 모음·예시 게임은 따로 나가는 그림이 없다', async () => {
+test('입체도형 공방의 인트로 그림(사용자가 캔바에서 받은 2880 원본)은 dist/assets/로 바이트 그대로(md5 같음) 나가고 게임 CSS가 ./ 상대 주소로 가리킨다. 선생님용 안내·예시 게임은 따로 나가는 그림이 없다', async () => {
   const { outDir, files } = await site();
   const info = files.find((f) => f.name === 'net-workshop.html');
   const css = await Promise.all(info.css.map((rel) => read(outDir, rel)));
@@ -194,7 +201,8 @@ test('입체도형 공방의 인트로 그림(사용자가 캔바에서 받은 2
   assert.equal(md5(await readFile(path.join(outDir, title))), 'aa28acc246cf72c99d8a9a5a1367777f');
   assert.deepEqual(info.assets.map((a) => a.name).sort(), [bg, title]);
   for (const text of [await read(outDir, 'net-workshop.html'), ...css]) assert.doesNotMatch(text, /data:image\/(jpeg|png)/); // 큰 그림이 다시 data:로 들어가지 않는다
-  for (const name of ['index.html', 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).assets, [], name);
+  for (const name of [GUIDE_PAGE, 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).assets, [], name);
+  assert.deepEqual(files.find((f) => f.name === 'index.html').assets, info.assets, '맨 위 주소는 입체도형 공방과 같은 그림'); // B0d: 전에는 게임 모음(그림 없음)
 });
 
 test('제목 글꼴: 사이트 전체(게임 모음 + 모든 게임의 HTML·JS·CSS)에 쓰인 글자만 잘라 display-해시.woff2 하나. 쓰인 한글은 모두 글꼴 안에 있고 모든 페이지가 같은 파일을 가리킨다', async () => {
@@ -244,7 +252,9 @@ test('④ 크기는 막지 않고 보고: 게임마다 처음 받는 크기(gzip
   const lazy = (await Promise.all(nw.lazy[0].files.map((rel) => read(outDir, rel)))).join('\n');
   assert.ok(lazy.includes('여기는 ') && !first.includes('판 밖에는 놓을 수 없어요.'), '쌓기 판의 안내 글은 늦게 받는 묶음에만');
   assert.ok(first.includes('어느 방향에서 보았을까'), '쌓기나무의 차시·단계 목록은 처음 받는 JS에');
-  for (const name of ['index.html', 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).lazy, [], name);
+  for (const name of [GUIDE_PAGE, 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).lazy, [], name);
+  const front = files.find((f) => f.name === 'index.html'); // B0d: 맨 위 주소는 입체도형 공방과 같은 파일을 받는다(전에는 게임 모음)
+  assert.deepEqual({ js: front.js, css: front.css, lazy: front.lazy.map((b) => b.entry), gzip: front.firstLoad.gzip }, { js: nw.js, css: nw.css, lazy: nw.lazy.map((b) => b.entry), gzip: nw.firstLoad.gzip });
   assert.equal(FIRST_LOAD_NOTICE, 300 * 1024);
 });
 
@@ -282,14 +292,61 @@ test('게임 모음: 표지(cover.svg)·게임 색을 넣고, 거르기 칩은 �
   assert.doesNotMatch(many, /status-ribbon/); // 완료된 게임에는 띠가 없다
 });
 
-test('게임 모음의 선생님용 주소 옵션: ?lesson= 다음에 ?area=·?grade=가 있고 차례(lesson, area, grade)를 알린다 (review-b0a B0a-6, engine.md 8절)', async () => {
+// B0d: ?intro=0이 ?grade= 다음에 더해졌다(spec-grade6 15-13). 선생님용 안내와 개발용 게임 모음이 같은 목록(URL_OPTIONS)을 쓴다
+test('선생님용 주소 옵션: ?lesson= 다음에 ?area=·?grade=가 있고 차례(lesson, area, grade)를 알린다(review-b0a B0a-6). 그 다음 ?intro=0 (engine.md 8절)', async () => {
   const games = await loadGames(path.join(ROOT, 'src/games'));
   const hub = renderHub({ games, hrefFor: (g) => `${g.meta.id}.html`, styles: { links: ['./assets/base.css'], head: '<meta name="x">' } });
-  const opts = [...hub.matchAll(/<li><code>([^<]+)<\/code>([^<]*)<\/li>/g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(opts.map((o) => o[0]), ['?lesson=차시-id', '?area=영역-id', '?grade=6', '?unlock=all', '?stage=단계-id', '?seed=1', '?sound=off', '?fx=low']);
-  assert.equal(opts[1][1], '그 영역의 단계 지도로 바로');
-  assert.match(opts[2][1], /^그 학년 화면으로 바로 \(함께 쓰면 lesson, area, grade 차례\)$/);
-  assert.match(hub, /<link rel="stylesheet" href="\.\/assets\/base\.css">\s*<meta name="x">\s*<\/head>/, 'styles.head는 <head> 끝에');
+  const guide = renderTeacherGuide({ games, hrefFor: (g) => `${g.meta.id}.html?intro=0`, home: { href: 'net-workshop.html?intro=0', title: '입체도형 공방' }, styles: { links: ['./assets/base.css'], head: '<meta name="x">' } });
+  for (const [name, html] of [['개발용 게임 모음', hub], ['선생님용 안내', guide]]) {
+    const opts = [...html.matchAll(/<li><code>([^<]+)<\/code>([^<]*)<\/li>/g)].map((m) => [m[1], m[2]]);
+    assert.deepEqual(opts.map((o) => o[0]), ['?lesson=차시-id', '?area=영역-id', '?grade=6', '?intro=0', '?unlock=all', '?stage=단계-id', '?seed=1', '?sound=off', '?fx=low'], name);
+    assert.equal(opts[1][1], '그 영역의 단계 지도로 바로');
+    assert.match(opts[2][1], /^그 학년 화면으로 바로 \(함께 쓰면 lesson, area, grade 차례\)$/);
+    assert.equal(opts[3][1], '인트로 없이 학년 고르기부터');
+    assert.deepEqual(opts, URL_OPTIONS, name);
+    assert.match(html, /<link rel="stylesheet" href="\.\/assets\/base\.css">\s*<meta name="x">\s*<\/head>/, `${name}: styles.head는 <head> 끝에`);
+  }
+});
+
+test('선생님용 안내(dist/teacher.html, spec-grade6 15-13·15-14): 맨 위 [← 학년 고르기] · 제목에 앱 이름 · 학생은 사이트 주소로(인트로) · 입체도형 공방 카드만(학년 고르기로) · 기록은 주소마다 따로(두 주소) · 맨 아래 저작권 글', async () => {
+  const { outDir } = await site();
+  const guide = await read(outDir, GUIDE_PAGE);
+  assert.equal(GUIDE_PAGE, 'teacher.html');
+  assert.match(guide, /<title>선생님용 안내 - 입체도형 공방<\/title>/);
+  // 맨 위: 학년 고르기로 돌아가는 링크(인트로를 건너뛴다) — 본문의 첫 링크
+  const links = [...guide.matchAll(/<a\b[^>]*href="([^"]+)"[^>]*>/g)].map((m) => m[1]);
+  assert.equal(links[0], 'net-workshop.html?intro=0');
+  assert.match(guide, /<a class="btn btn-small btn-back" href="net-workshop\.html\?intro=0">← 학년 고르기<\/a>/);
+  assert.ok(guide.indexOf('btn-back') < guide.indexOf('<h1>'), '돌아가는 링크가 제목보다 위');
+  assert.match(guide, /<h1>입체도형 공방 선생님용 <span class="mark">안내<\/span><\/h1>/);
+  // 짧은 안내글: 학생은 사이트 주소로 연다(15-12의 뜻) → 사이트 주소로 열면 인트로
+  const lead = /<p class="lead">([^<]+)<\/p>/.exec(guide)[1];
+  assert.match(lead, /학생에게는 이 사이트 주소를 나눠 주세요\./);
+  assert.match(lead, /사이트 주소로 열면 입체도형 공방의 인트로 화면이 바로 나와요\./);
+  assert.doesNotMatch(guide, /HTML 파일 하나|내려받으면|인터넷 없이/);
+  // 게임 카드: 입체도형 공방 하나(예시 게임은 뺀다 — 사용자 결정 15-13), 카드는 학년 고르기로
+  assert.deepEqual(links.slice(1), ['net-workshop.html?intro=0'], '맨 위 링크 다음은 게임 카드 하나뿐');
+  assert.match(guide, /<span class="hub-card-title">입체도형 공방<\/span>/);
+  assert.doesNotMatch(guide, /약수·배수|sample-divisor-sort/);
+  // 기록 안내: 학생 기록은 사이트 주소마다 따로 — 두 주소를 정확히(글로만, 바깥 주소 검사 ①에 걸리지 않게 https://는 빼고)
+  assert.deepEqual(SITE_ADDRESSES, ['eversunk2-tech.github.io/game2/', 'solid-figure.pages.dev']);
+  const privacy = /<section class="panel hub-privacy">([\s\S]*?)<\/section>/.exec(guide)[1];
+  assert.match(privacy, /학생 기록은 그 기기의 브라우저에만 남고 어디에도 전송되지 않아요\./);
+  assert.match(privacy, /<b>학생 기록은 사이트 주소마다 따로 남아요\.<\/b> 같은 게임이 두 주소\(<span class="site-name">eversunk2-tech\.github\.io\/game2\/<\/span> · <span class="site-name">solid-figure\.pages\.dev<\/span>\)에 있으니 한 반에는 한 주소만 나눠 주세요\./);
+  // 맨 아래 저작권 글(사용자 요청 15-14 덧붙임 2 — 글자 그대로), 본문의 마지막 글
+  assert.equal(COPYRIGHT, '© 2026 PSC. All rights reserved.');
+  assert.match(guide, /<p class="screen-copyright guide-copyright">© 2026 PSC\. All rights reserved\.<\/p>\s*<\/div>\s*<script>/);
+});
+
+test('게임과 빌드가 같은 이름을 쓴다: 입체도형 공방 main.js의 teacherGuide = ./teacher.html(GUIDE_PAGE), footer = 선생님용 안내의 저작권 글(COPYRIGHT)', async () => {
+  const main = await readFile(path.join(ROOT, 'src/games', FRONT_GAME, 'main.js'), 'utf8');
+  assert.ok(main.includes(`teacherGuide: './${GUIDE_PAGE}',`), 'teacherGuide');
+  assert.ok(main.includes(`footer: '${COPYRIGHT}',`), 'footer');
+  // 예시 게임·템플릿은 주지 않는다(화면이 지금과 같다)
+  for (const dir of ['sample-divisor-sort', '_template']) {
+    const src = await readFile(path.join(ROOT, 'src/games', dir, 'main.js'), 'utf8');
+    assert.doesNotMatch(src, /teacherGuide|footer:/, dir);
+  }
 });
 
 test('제목 글꼴에 없는 기호를 알려 준다 (가운뎃점은 제목 자리에 쓰지 않는다)', async () => {

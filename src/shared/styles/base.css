@@ -448,6 +448,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .play-loading-dots i:nth-child(2) { animation-delay: 0.15s; }
 .play-loading-dots i:nth-child(3) { animation-delay: 0.3s; }
 @keyframes loading-dot { 0%, 100% { opacity: 0.25; transform: scale(0.7); } 50% { opacity: 1; transform: none; } }
+/* 움직임 줄이기·?fx=low: 점 셋은 멈춘 채 또렷하게(review-b0b B0b-2 — 끝없이 도는 움직임이 남지 않게) */
+.fx-low .play-loading-dots i { animation: none; }
+@media (prefers-reduced-motion: reduce) { .play-loading-dots i { animation: none !important; } }
 /* 불러오기 실패 화면: 새 버전이 올라왔어요 + [새로 고침] */
 .screen-reload { justify-content: center; align-items: center; }
 .reload-panel { width: min(100%, 600px); display: flex; flex-direction: column; gap: 12px; padding: 26px 28px; }
@@ -678,6 +681,24 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; width: 100%; }
 .hero-foot .workshop-card { flex: 1 1 300px; margin-top: 0; }
 .hero.has-areas .hero-more { flex-direction: column; align-items: stretch; gap: 12px; }
+/* 처음 화면·학년 화면의 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만 — spec-grade6 15-13·15-14): 오른쪽 아래 구석에 저작권 글 · 작은 [선생님용 안내].
+   자리는 엔진(fitScreenFoot)이 정한다: 화면 맨 아래(--foot-drop만큼 앱 아래 여백으로 내려감), 내용과 겹치면 내용 바로 아래(.is-below, --foot-top).
+   position: absolute라 카드·버튼의 자리는 그대로다. 빈 곳은 누름을 받지 않는다(밑의 것을 가리지 않게) */
+.screen.has-foot { position: relative; }
+.screen-foot {
+  position: absolute; left: 0; right: 0; bottom: calc(-1 * var(--foot-drop, 0px));
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 16px;
+  pointer-events: none;
+}
+.screen-foot > * { pointer-events: auto; }
+.screen-foot.is-below { bottom: auto; top: var(--foot-top, 100%); padding-bottom: 12px; }
+/* 아래에 버튼이 들어갈 틈이 없는 낮은 화면: [선생님용 안내]만 화면 맨 위 오른쪽(소리 버튼 아래). 저작권 글은 아래에 남는다 */
+.screen-foot .btn-teacher.is-top { position: absolute; right: 0; top: var(--teacher-top, 0px); }
+/* 저작권 글: 본문보다 작고 차분하게(옅은 잉크 — 바탕과 대비 4.5:1 넘음) */
+.screen-copyright { margin: 0; font-size: 0.8125rem; line-height: 1.25; color: var(--ink-2); }
+/* [선생님용 안내]: 학생이 먼저 누를 곳이 아니라 작고 덜 띄게(옅은 종이 · 옅은 잉크 글자 · 얕은 그림자). 누르는 높이는 48px 그대로 */
+.btn-teacher { padding: 6px 14px; gap: 6px; font-size: 0.95rem; background: var(--paper-2); color: var(--ink-2); box-shadow: 0 2px 0 var(--ink); }
+.btn-teacher .icon { width: 1em; height: 1em; }
 /* 단계 지도: 영역 탭(role="tablist"). 지금 보는 영역은 눌린 키 모양(내려앉고 그림자 없음) + 잉크 바탕 흰 글자 — 색만으로 구분하지 않는다 */
 .area-tabs { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .area-tab {

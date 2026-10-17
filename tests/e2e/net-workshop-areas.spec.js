@@ -617,9 +617,10 @@ test('터치(태블릿): 학년 카드 → 영역 카드를 눌러 단계 지도
   expect(errors).toEqual([]);
 });
 
-test('게임 모음 카드: 새 이름 "입체도형 공방", 쌓기나무 문장이 든 요약, 표지에 전개도 조각과 쌓기나무, 주소는 그대로 net-workshop.html', async ({ page }) => {
-  await page.goto(fileUrl('index.html'));
-  const hubCard = page.locator(`a.hub-card[href="${FILE}"]`);
+// B0d(spec-grade6 15-13): 게임 모음은 선생님용 안내(teacher.html)가 되었고, 카드는 인트로를 건너뛰고 학년 고르기로 가는 주소(?intro=0)다 — 카드의 모습은 그대로
+test('선생님용 안내의 카드: 새 이름 "입체도형 공방", 쌓기나무 문장이 든 요약, 표지에 전개도 조각과 쌓기나무, 주소는 net-workshop.html?intro=0(학년 고르기)', async ({ page }) => {
+  await page.goto(fileUrl('teacher.html'));
+  const hubCard = page.locator(`a.hub-card[href="${FILE}?intro=0"]`);
   await expect(hubCard).toHaveCount(1);
   await expect(hubCard.locator('.hub-card-title')).toHaveText(NAME);
   await expect(hubCard.locator('.hub-card-summary')).toContainText('쌓기나무');

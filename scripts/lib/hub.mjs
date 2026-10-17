@@ -1,6 +1,7 @@
 /**
- * 게임 모음(허브) 페이지 HTML. 빌드(dist/index.html)와 개발 서버(/)가 함께 쓴다.
- * 모습: docs/design/spec.md 3절 "게임 모음". 게임 카드 = 표지(cover.svg 또는 게임 색 무늬 + 첫 글자) + 설명.
+ * 게임 카드가 있는 페이지 둘(모습: docs/design/spec.md 3절 "게임 모음" — 게임 카드 = 표지(cover.svg 또는 게임 색 무늬 + 첫 글자) + 설명):
+ *   renderTeacherGuide  선생님용 안내 페이지 — 빌드가 dist/teacher.html로(spec-grade6 15-13: 지금의 게임 모음을 고쳐 씀. 사이트 맨 위 주소는 게임 인트로)
+ *   renderHub           개발용 게임 모음 — 개발 서버의 / (템플릿·예시 게임까지 모두. 빌드는 더 내보내지 않는다)
  * 같은 주소에서 기록을 읽을 수 있으면 "이어 하기 · 별 n개"를 보인다(작은 인라인 스크립트, 못 읽으면 그대로).
  */
 import { splitTitleMark } from '../../src/shared/core/title-mark.js';
@@ -93,28 +94,62 @@ var kind=b.getAttribute('data-kind'),v=b.getAttribute('data-value');
 document.querySelectorAll('.hub-item').forEach(function(li){var ok=kind==='all'||(kind==='subject'?li.getAttribute('data-subject')===v:li.getAttribute('data-grades').split(' ').indexOf(v)>=0);li.hidden=!ok;});});});
 })();`;
 
-/**
- * @param {object} p
- * @param {Array} p.games   loadGames() 결과
- * @param {(game) => string} p.hrefFor  게임 링크 주소
- * @param {{ inline?: string, links?: string[], head?: string }} p.styles  인라인 CSS 또는 스타일시트 주소(빌드는 ./assets/의 공통 CSS 파일 — B0b),
- *   head: <head> 끝에 그대로 넣을 조각(빌드: 제목 글꼴 미리 받기·@font-face)
- */
-export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 학습게임' }) {
-  const head = [
+/** 선생님용 주소 옵션(docs/engine.md 8절과 같은 설명 — 선생님용 안내·개발용 게임 모음이 함께 쓴다) */
+export const URL_OPTIONS = [
+  ['?lesson=차시-id', '그 차시만 보이기'],
+  ['?area=영역-id', '그 영역의 단계 지도로 바로'],
+  ['?grade=6', '그 학년 화면으로 바로 (함께 쓰면 lesson, area, grade 차례)'],
+  ['?intro=0', '인트로 없이 학년 고르기부터'],
+  ['?unlock=all', '모든 단계 열기'],
+  ['?stage=단계-id', '그 단계로 바로 시작'],
+  ['?seed=1', '모두 같은 문제 순서'],
+  ['?sound=off', '소리 끄고 시작'],
+  ['?fx=low', '효과 줄이기 (느린 기기)'],
+];
+
+/** 저작권 글(사용자 요청 spec-grade6 15-14 — 학년 고르기·학년 화면(게임 main.js의 footer)과 선생님용 안내 맨 아래에 같은 글) */
+export const COPYRIGHT = '© 2026 PSC. All rights reserved.';
+
+/** <head>에 넣을 스타일: 인라인 CSS 또는 스타일시트 주소(빌드는 ./assets/의 공통 CSS 파일 — B0b) + head 조각(빌드: 제목 글꼴 미리 받기·@font-face) */
+function headOf(styles) {
+  return [
     styles.inline != null
       ? `<style>${styles.inline}</style>`
       : (styles.links ?? []).map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join('\n  '),
     styles.head ?? '',
   ].filter(Boolean).join('\n  ');
-  const list = games.length > 0
-    ? `<ul class="hub-list">\n${games.map((g) => card(g, hrefFor(g))).join('\n')}\n</ul>`
-    : '<p class="panel">아직 게임이 없어요.</p>';
-  const { before, mark, after } = splitTitleMark(title);
+}
+
+/** 게임 카드 목록(없으면 안내 한 줄) */
+const listOf = (games, hrefFor) => (games.length > 0
+  ? `<ul class="hub-list">\n${games.map((g) => card(g, hrefFor(g))).join('\n')}\n</ul>`
+  : '<p class="panel">아직 게임이 없어요.</p>');
+
+/** 약속 칩 셋(기록은 이 기기에만 · 한 판 n분 · 로그인·광고 없음) */
+function promises(games) {
   const minutes = games.map((g) => g.meta.playMinutes).filter((m) => typeof m === 'number');
   const playChip = minutes.length ? `한 판 ${Math.max(...minutes)}분 안팎` : '한 판 10분 안팎';
+  return `<ul class="hub-promises" aria-label="약속">
+      <li class="chip chip-ink">${iconSvg('shield')}기록은 이 기기에만 남아요</li>
+      <li class="chip chip-ink">${iconSvg('clock')}${escapeHtml(playChip)}</li>
+      <li class="chip chip-ink">${iconSvg('user')}로그인·광고 없음</li>
+    </ul>`;
+}
 
-  return `<!doctype html>
+/** 아래 판 둘: 선생님용 주소 옵션 · 기록 안내(extra: 기록 안내에 덧붙일 글 — 이미 escape한 HTML) */
+function footerPanels(extra = '') {
+  return `<footer class="hub-footer">
+    <section class="panel hub-note">
+      <h2>${iconSvg('flag')}선생님용 주소 옵션 <small>게임 주소 뒤에 붙여요</small></h2>
+      <ul class="opt-list">
+        ${URL_OPTIONS.map(([code, text]) => `<li><code>${escapeHtml(code)}</code>${escapeHtml(text)}</li>`).join('\n        ')}
+      </ul>
+    </section>
+    <section class="panel hub-privacy">${iconSvg('shield')}<p><b>학생 기록은 그 기기의 브라우저에만 남고 어디에도 전송되지 않아요.</b> 순위표·친구 비교가 없어요. 같은 기기를 함께 쓰면 게임의 학습 기록 화면에서 지울 수 있어요.${extra}</p></section>
+  </footer>`;
+}
+
+const page = ({ title, head, body }) => `<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8">
@@ -124,38 +159,73 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
   ${head}
 </head>
 <body>
-<div class="hub">
-  <header class="hub-header">
-    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>2022 개정 교육과정 · 초등 5~6학년</p>
-    <h1>${escapeHtml(before)}<span class="mark">${escapeHtml(mark)}</span>${escapeHtml(after)}</h1>
-    <p class="lead">게임 링크를 학생에게 나눠 주세요. 학생은 이 사이트 주소로 열어요.</p>
-    <ul class="hub-promises" aria-label="약속">
-      <li class="chip chip-ink">${iconSvg('shield')}기록은 이 기기에만 남아요</li>
-      <li class="chip chip-ink">${iconSvg('clock')}${escapeHtml(playChip)}</li>
-      <li class="chip chip-ink">${iconSvg('user')}로그인·광고 없음</li>
-    </ul>
-  </header>
-  ${filters(games)}
-  ${list}
-  <footer class="hub-footer">
-    <section class="panel hub-note">
-      <h2>${iconSvg('flag')}선생님용 주소 옵션 <small>게임 주소 뒤에 붙여요</small></h2>
-      <ul class="opt-list">
-        <li><code>?lesson=차시-id</code>그 차시만 보이기</li>
-        <li><code>?area=영역-id</code>그 영역의 단계 지도로 바로</li>
-        <li><code>?grade=6</code>그 학년 화면으로 바로 (함께 쓰면 lesson, area, grade 차례)</li>
-        <li><code>?unlock=all</code>모든 단계 열기</li>
-        <li><code>?stage=단계-id</code>그 단계로 바로 시작</li>
-        <li><code>?seed=1</code>모두 같은 문제 순서</li>
-        <li><code>?sound=off</code>소리 끄고 시작</li>
-        <li><code>?fx=low</code>효과 줄이기 (느린 기기)</li>
-      </ul>
-    </section>
-    <section class="panel hub-privacy">${iconSvg('shield')}<p><b>학생 기록은 그 기기의 브라우저에만 남고 어디에도 전송되지 않아요.</b> 순위표·친구 비교가 없어요. 같은 기기를 함께 쓰면 게임의 학습 기록 화면에서 지울 수 있어요.</p></section>
-  </footer>
-</div>
+${body}
 <script>${SCRIPT}</script>
 </body>
 </html>
 `;
+
+/**
+ * 개발용 게임 모음(개발 서버 scripts/dev.mjs의 /): 템플릿·예시 게임까지 모든 게임 카드.
+ * @param {object} p
+ * @param {Array} p.games   loadGames() 결과
+ * @param {(game) => string} p.hrefFor  게임 링크 주소
+ * @param {{ inline?: string, links?: string[], head?: string }} p.styles  인라인 CSS 또는 스타일시트 주소,
+ *   head: <head> 끝에 그대로 넣을 조각
+ */
+export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 학습게임' }) {
+  const { before, mark, after } = splitTitleMark(title);
+  return page({
+    title,
+    head: headOf(styles),
+    body: `<div class="hub">
+  <header class="hub-header">
+    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>2022 개정 교육과정 · 초등 5~6학년</p>
+    <h1>${escapeHtml(before)}<span class="mark">${escapeHtml(mark)}</span>${escapeHtml(after)}</h1>
+    <p class="lead">게임 링크를 학생에게 나눠 주세요. 학생은 이 사이트 주소로 열어요.</p>
+    ${promises(games)}
+  </header>
+  ${filters(games)}
+  ${listOf(games, hrefFor)}
+  ${footerPanels()}
+</div>`,
+  });
+}
+
+/**
+ * 선생님용 안내 페이지(spec-grade6 15-13 — 빌드가 dist/teacher.html로). 학년 고르기의 [선생님용 안내]가 여기로 온다.
+ *   맨 위 [← 학년 고르기](home.href — 인트로를 건너뛰는 주소) · 제목 "<앱 이름> 선생님용 안내" · 짧은 안내글(학생은 사이트 주소로 → 인트로) ·
+ *   게임 카드(목록에 보이는 게임만 — game.json "listed": false인 예시 게임은 빠진다. 카드도 인트로를 건너뛰는 주소) ·
+ *   선생님용 주소 옵션 · 기록 안내(+ 학생 기록은 사이트 주소마다 따로: sites) · 맨 아래 저작권 글
+ * @param {object} p
+ * @param {Array} p.games  목록에 보일 게임(loadGames() 결과에서 고른 것)
+ * @param {(game) => string} p.hrefFor  게임 카드의 주소
+ * @param {{ href: string, title: string }} p.home  맨 위 링크의 주소와 앱 이름(사이트 맨 위 주소로 여는 게임)
+ * @param {string[]} [p.sites]  같은 게임이 올라가 있는 사이트 주소들(글로만 보인다 — 링크가 아니다)
+ * @param {string} [p.copyright]
+ * @param {{ inline?: string, links?: string[], head?: string }} p.styles
+ */
+export function renderTeacherGuide({ games, hrefFor, home, sites = [], copyright = COPYRIGHT, styles }) {
+  const title = `${home.title} 선생님용 안내`;
+  const { before, mark, after } = splitTitleMark(title);
+  const where = sites.length > 1
+    ? ` <b>학생 기록은 사이트 주소마다 따로 남아요.</b> 같은 게임이 두 주소(${sites.map((s) => `<span class="site-name">${escapeHtml(s)}</span>`).join(' · ')})에 있으니 한 반에는 한 주소만 나눠 주세요.`
+    : '';
+  return page({
+    title: `선생님용 안내 - ${home.title}`,
+    head: headOf(styles),
+    body: `<div class="hub guide">
+  <nav class="guide-top" aria-label="돌아가기"><a class="btn btn-small btn-back" href="${escapeHtml(home.href)}">← 학년 고르기</a></nav>
+  <header class="hub-header">
+    <p class="eyebrow"><span class="dot" aria-hidden="true"></span>2022 개정 교육과정 · 초등 5~6학년</p>
+    <h1>${escapeHtml(before)}<span class="mark">${escapeHtml(mark)}</span>${escapeHtml(after)}</h1>
+    <p class="lead">학생에게는 이 사이트 주소를 나눠 주세요. 사이트 주소로 열면 ${escapeHtml(home.title)}의 인트로 화면이 바로 나와요. 아래 카드를 누르면 인트로를 건너뛰고 학년 고르기로 가요.</p>
+    ${promises(games)}
+  </header>
+  ${filters(games)}
+  ${listOf(games, hrefFor)}
+  ${footerPanels(where)}
+  <p class="screen-copyright guide-copyright">${escapeHtml(copyright)}</p>
+</div>`,
+  });
 }

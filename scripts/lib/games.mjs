@@ -6,6 +6,8 @@ export const MODES = ['개인', '모둠', '개인·모둠'];
 export const REQUIRED_FILES = ['game.json', 'index.html', 'main.js'];
 const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+/** 선생님용 안내의 게임 목록에 보이는가: game.json의 listed가 false면 빠진다(예시 게임 — 파일은 그대로 만들어 주소로만 연다, spec-grade6 15-13) */
+export const isListed = (game) => !game.isTemplate && game.meta?.listed !== false;
 /** 게임 폴더의 표지 그림(선택). 게임 모음 카드에 그대로 넣는다. */
 export const COVER_FILE = 'cover.svg';
 
@@ -34,6 +36,9 @@ export function validateGameMeta(meta, dirName) {
   if (!STATUSES.includes(meta.status)) errors.push(`status는 ${STATUSES.join(', ')} 중 하나예요.`);
   if (meta.color !== undefined && !(typeof meta.color === 'string' && COLOR_PATTERN.test(meta.color))) {
     errors.push(`color는 "#2f6f5e"처럼 # 뒤 16진수 6자리예요 (선택 필드): ${meta.color}`);
+  }
+  if (meta.listed !== undefined && typeof meta.listed !== 'boolean') {
+    errors.push(`listed는 true나 false예요 (선택 필드 — false면 선생님용 안내의 게임 목록에서 빠지고 주소로만 열려요): ${meta.listed}`);
   }
   return errors;
 }

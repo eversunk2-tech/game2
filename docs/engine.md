@@ -288,7 +288,8 @@ createGameApp({
 
 - **영역의 파일을 둘로 나눈다**: 단계 목록(`id`·`title`·`goal`·`thumb`·`lesson` — 단계 지도·학년·영역 화면이 쓴다)과 그 그림에 필요한 것은 바탕 쪽 파일(쌓기나무: `blocks/blocks-stages.js`·`blocks/index.js`), 문제 만들기·판정·화면은 늦게 받는 쪽 파일(`blocks/blocks-play.js`가 들머리). 바탕 쪽 파일이 늦게 받는 쪽 파일을 `import`하면 그 코드가 다시 바탕 묶음에 들어간다 — 바탕 쪽은 `import()`로만 닿게 한다. 빌드 로그의 "늦게 받는 묶음"과 처음 받는 크기로 확인한다. 바탕과 늦은 쪽이 함께 쓰는 파일(쌓기나무의 `block-view.js` — 단계 카드 그림이 쓴다)은 바탕 묶음(같이 쓰는 `chunk-…`)에 들어간다
 - **각기둥·원기둥(G1~)도 같은 방법**: `prism/` 같은 폴더에 `prism-stages.js`(차시·단계 목록, 순수 데이터) · `index.js`(단계 카드 그림을 붙인 목록) · `prism-play.js`(들머리 — `playPrismStage(stage, ctx)`)를 두고, `main.js`에 `const PRISM_PLAY = lazyModule(() => import('./prism/prism-play.js'))`, `preload`에 `PRISM_PLAY.preload`, `playStage`에 `stage.area === 'prism'` 갈래를 더한다. 단위 검사는 지금처럼 `*-logic.js`를 바로 가져온다(Node에서는 나눔과 상관없다)
-- **`lazyModule(load)`** → `{ play(ctx, run), preload() }`. `load`는 `() => import('./…')`. 같은 묶음은 한 번만 받는다(받지 못했으면 다음에 다시 받아 본다). `play`는 받은 뒤(이미 받았으면 곧바로) **그 단계가 아직 열려 있을 때만**(`ctx.signal`) `run(모듈)`을 불러 그 값(정리 함수)을 주는 Promise다. `preload`는 실패해도 조용하다
+- **`lazyModule(load)`** → `{ play(ctx, run), preload() }`. `load`는 `() => import('./…')`. 같은 묶음은 한 번만 받는다. `play`는 받은 뒤(이미 받았으면 곧바로) **그 단계가 아직 열려 있을 때만**(`ctx.signal`) `run(모듈)`을 불러 그 값(정리 함수)을 주는 Promise다. `preload`는 실패해도 조용하다(화면에 아무것도 없다)
+  - **한 번 받지 못한 묶음은 같은 페이지에서 다시 받지 못한다**(review-b0b B0b-1): `lazyModule`은 실패한 뒤 `load()`를 다시 부르지만, 브라우저(Chrome에서 확인)는 실패한 모듈 주소를 그 페이지가 살아 있는 동안 기억해 다시 요청하지 않고 같은 실패를 돌려준다. 그래서 미리 받기가 실패했으면(교실 망이 잠깐 끊김 등) 그 단계에 들어갈 때 아래 불러오기 실패 화면이 나오고, 그 화면의 [새로 고침](페이지를 다시 엶)으로 풀린다 — 모은 별·기록은 그대로다
 - **엔진이 하는 것**(`playStage`가 Promise를 돌려줄 때):
   - 받는 동안 0.4초(`PLAY_LOADING_MS`)가 넘으면 화면 가운데에 떠 있는 쪽지 **"불러오는 중이에요"**(`.play-loading`, `role="status"`, `position: fixed` — 머리·무대의 자리를 바꾸지 않는다). 그보다 빨리 받으면 아무것도 보이지 않는다. 플레이 머리([← 단계 선택]·제목·목표)는 처음부터 보인다
   - 기다리는 사이에 나가면(← 단계 선택 등) 받은 뒤 **아무것도 그리지 않는다**(`run`을 부르지 않는다). 받은 Promise가 정리 함수를 주면 바로 부른다

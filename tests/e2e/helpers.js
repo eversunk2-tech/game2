@@ -134,7 +134,13 @@ export function srcBody(file, text) {
   return WIDE_TEXT.mode !== 'off' && file.endsWith(`${path.sep}base.css`) ? `${text}\n/* E2E_WIDE_TEXT */\n${wideTextCss()}\n` : text;
 }
 
-export const gameFiles = () => readdirSync(DIST).filter((f) => f.endsWith('.html') && f !== 'index.html');
+/**
+ * 빌드한 페이지 가운데 게임이 아닌 것(B0d — spec-grade6 15-13): 사이트 맨 위 주소 index.html(입체도형 공방과 같은 HTML — scripts/build.mjs FRONT_GAME,
+ * 공통 검사는 net-workshop.html로 한다)·선생님용 안내 teacher.html(GUIDE_PAGE — 전의 게임 모음)
+ */
+export const FRONT_FILE = 'index.html';
+export const GUIDE_FILE = 'teacher.html';
+export const gameFiles = () => readdirSync(DIST).filter((f) => f.endsWith('.html') && f !== FRONT_FILE && f !== GUIDE_FILE);
 
 /** 빌드한 페이지의 주소: 테스트 서버의 하위 경로 아래(…/game2/<name>) — 서버는 보통 실행이면 dist/, 글꼴 흉내면 그 복사본을 준다 (B0b: 전에는 file://) */
 export const fileUrl = (name, query = '') => `${SITE_URL}${name}${query}`;
