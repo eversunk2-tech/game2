@@ -11,9 +11,17 @@
 | 사이트 | `https://eversunk2-tech.github.io/game2/` — `origin/main`이 자동 배포된다 |
 | `origin/main`(사이트) | **`cd190ce`**(2026-10-17): 게임 인트로(캔바 그림, 꽉 채우기/카드) → 학년 고르기 → 영역 화면, 앱 이름 "입체도형 공방", 쌓기나무 1~4차시, 직육면체 탐구 넓히기(상자 크기·도감 주문 54칸·손잡이). 배포 성공 · **GitHub CI 통과** · 사이트에서 인트로 그림 두 장이 하위 경로 `/game2/assets/`로 열리는 것을 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다(문서 커밋만 뒤따름) |
-| 지금 도는 것 | B0b 빌드 바탕 Build ∥ **c4** 큰 화면에서 [입장하기] 키우기 Build(2절) |
+| 지금 도는 것 | **일시정지(2026-10-17 저녁, 사용자 요청)** — B0b Build·c4 Build 모두 멈춤, 둘 다 커밋 전(2-0절) |
 
 ## 2. 진행 중인 일
+
+### 2-0. 일시정지 (2026-10-17, 사용자 "일시정지해줘")
+
+- 멈춘 것: **B0b Build**(`.worktrees/b0`)와 **c4 Build**(`.worktrees/c1`). 띄워 둔 테스트·서버는 남은 것 없음(확인함).
+- **둘 다 커밋 전** — 고친 내용은 작업 폴더에 커밋하지 않은 채 남아 있다(지우지 않음).
+  - B0b: 21개 파일 고침 + 새 파일 7개(`scripts/serve.mjs`, `blocks/blocks-play.js`·`blocks-stages.js`, `src/shared/core/reload.js`, `tests/e2e/engine-lazy.spec.js`, `tests/unit/engine-lazy.test.js`·`serve.test.js`). 멈출 때 e2e를 돌리며 문서(`dev-guide.md`)를 고치던 중. 덧붙임(c4와 줄 몫 나눔)은 메시지로 받음.
+  - c4: 6개 파일 고침(`intro-fit.js`·`base.css`·`app.js`·`engine.md`·검사 둘). 멈출 때 보통 e2e 439 통과·0 실패를 본 뒤 글꼴 흉내 실행을 시작하던 참(그 결과 없음). 최종 보고 없음.
+- **이어서 할 때**: 두 Build에게 `git status`·`git diff`로 지금 파일을 다시 읽고 시작하게 하고, 끝까지 돌지 못한 측정·테스트(B0b의 e2e·처음 여는 시간, c4의 글꼴 흉내 e2e·느린 기기·기기 표)는 다시 돌리게 한다. c4를 먼저 끝내 올리고 → `main`을 `track/b0`에 합쳐 B0b에 알린다.
 
 ### 2-1. 지금: B0b 빌드 바탕
 
