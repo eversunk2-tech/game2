@@ -97,12 +97,16 @@ document.querySelectorAll('.hub-item').forEach(function(li){var ok=kind==='all'|
  * @param {object} p
  * @param {Array} p.games   loadGames() 결과
  * @param {(game) => string} p.hrefFor  게임 링크 주소
- * @param {{ inline?: string, links?: string[] }} p.styles  인라인 CSS 또는 스타일시트 주소
+ * @param {{ inline?: string, links?: string[], head?: string }} p.styles  인라인 CSS 또는 스타일시트 주소(빌드는 ./assets/의 공통 CSS 파일 — B0b),
+ *   head: <head> 끝에 그대로 넣을 조각(빌드: 제목 글꼴 미리 받기·@font-face)
  */
 export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 학습게임' }) {
-  const head = styles.inline != null
-    ? `<style>${styles.inline}</style>`
-    : (styles.links ?? []).map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join('\n  ');
+  const head = [
+    styles.inline != null
+      ? `<style>${styles.inline}</style>`
+      : (styles.links ?? []).map((href) => `<link rel="stylesheet" href="${escapeHtml(href)}">`).join('\n  '),
+    styles.head ?? '',
+  ].filter(Boolean).join('\n  ');
   const list = games.length > 0
     ? `<ul class="hub-list">\n${games.map((g) => card(g, hrefFor(g))).join('\n')}\n</ul>`
     : '<p class="panel">아직 게임이 없어요.</p>';
@@ -138,6 +142,8 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
       <h2>${iconSvg('flag')}선생님용 주소 옵션 <small>게임 주소 뒤에 붙여요</small></h2>
       <ul class="opt-list">
         <li><code>?lesson=차시-id</code>그 차시만 보이기</li>
+        <li><code>?area=영역-id</code>그 영역의 단계 지도로 바로</li>
+        <li><code>?grade=6</code>그 학년 화면으로 바로 (함께 쓰면 lesson, area, grade 차례)</li>
         <li><code>?unlock=all</code>모든 단계 열기</li>
         <li><code>?stage=단계-id</code>그 단계로 바로 시작</li>
         <li><code>?seed=1</code>모두 같은 문제 순서</li>

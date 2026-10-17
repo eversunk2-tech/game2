@@ -1,15 +1,20 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
+import { createHash } from 'node:crypto';
 import { appendFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { gzipSync } from 'node:zlib';
 import subsetFont from 'subset-font';
-import { ASSET_FILE_MIN, assetRefs, build, findExternalRefs } from '../../scripts/build.mjs';
+import { ASSET_FILE_MIN, FIRST_LOAD_NOTICE, build, checkSite, cssRefs, findUrls, htmlRefs, jsRefs } from '../../scripts/build.mjs';
 import { DISPLAY_FONT, collectFontText, isHangulSyllable, missingSymbols, readCmap } from '../../scripts/lib/font.mjs';
 import { loadGames } from '../../scripts/lib/games.mjs';
 import { FILTER_MIN_GAMES, renderHub } from '../../scripts/lib/hub.mjs';
 import { createGame } from '../../scripts/new-game.mjs';
+
+// 여러 파일 빌드(B0b — spec-grade6.md 7-3절 안 B · 7-4절). 전에는 "게임마다 HTML 한 파일" 검사였다(7-4절 표: "HTML 한 파일"·"400 KB 이하" 검사를
+// "가리키는 파일이 모두 있음·바깥 주소 없음·글꼴이 쓰인 글자를 모두 가짐"으로 바꾼다)
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const temps = [];
@@ -20,79 +25,227 @@ const tempDir = async () => {
 };
 after(() => Promise.all(temps.map((d) => rm(d, { recursive: true, force: true }))));
 
-test('게임마다 HTML 한 파일(+ 큰 그림은 assets/에)과 게임 모음을 만든다. HTML이 가리키는 그림은 모두 assets/에 있다', async () => {
-  const outDir = await tempDir();
-  const { games, files: info } = await build({ outDir, quiet: true });
-  const files = (await readdir(outDir)).filter((f) => f.endsWith('.html')).sort();
-  assert.deepEqual(files, ['index.html', ...games.map((id) => `${id}.html`)].sort());
-  assert.deepEqual((await readdir(outDir)).filter((f) => !f.endsWith('.html')), ['assets']); // 그 밖의 것은 따로 나간 그림 폴더뿐
+/** 한 번 빌드한 결과를 여러 검사가 같이 본다 */
+let built = null;
+const site = () => {
+  built ??= (async () => {
+    const outDir = await tempDir();
+    const result = await build({ outDir, quiet: true });
+    return { outDir, ...result };
+  })();
+  return built;
+};
+const read = (outDir, rel) => readFile(path.join(outDir, rel), 'utf8');
+const md5 = (b) => createHash('md5').update(b).digest('hex');
+
+/** 이 검사가 따로 짠 참조 읽기(빌드의 htmlRefs·cssRefs·jsRefs를 쓰지 않는다) */
+const refsInHtml = (html) => [...html.matchAll(/\s(?:src|href)="([^"]*)"/g)].map((m) => m[1]).filter((r) => !r.startsWith('data:'));
+const refsInCss = (css) => [...css.matchAll(/url\(\s*"?([^")]*)"?\s*\)/g)].map((m) => m[1]).filter((r) => !r.startsWith('data:') && !r.startsWith('#'));
+const refsInJs = (js) => [...js.matchAll(/(?:from|import)\s*\(?\s*"(\.\/[^"]+)"/g)].map((m) => m[1]);
+
+/** 들머리 JS에서 정적으로 닿는 파일(import … from "…"만, import()는 빼고) — 이 검사가 따로 계산 */
+async function staticFiles(outDir, rel) {
+  const seen = [];
+  const walk = async (r) => {
+    if (seen.includes(r)) return;
+    seen.push(r);
+    const js = await read(outDir, r);
+    for (const m of js.matchAll(/(?:^|[;}\s])(?:import|export)\s*[\w$*\s{},]*?\s*from\s*"(\.\/[^"]+)"/g)) await walk(path.posix.join(path.posix.dirname(r), m[1]));
+    for (const m of js.matchAll(/(?:^|[;}\s])import\s*"(\.\/[^"]+)"/g)) await walk(path.posix.join(path.posix.dirname(r), m[1]));
+  };
+  await walk(rel);
+  return seen;
+}
+
+test('여러 파일 빌드: dist에는 게임 HTML·게임 모음·assets/만, assets/의 이름은 <이름>-<해시>. 게임 HTML은 ./assets/의 CSS·모듈 스크립트(onerror)·modulepreload·글꼴 preload를 가리킨다', async () => {
+  const { outDir, games } = await site();
+  const top = (await readdir(outDir)).sort();
+  assert.deepEqual(top, ['assets', 'index.html', ...games.map((id) => `${id}.html`)].sort());
+  const assets = await readdir(path.join(outDir, 'assets'));
+  for (const name of assets) assert.match(name, /^[a-z0-9-]+-[A-Z0-9]{8}\.(js|css|woff2|png|jpe?g|gif|webp)$/, name);
+  assert.equal(assets.filter((n) => n.startsWith('display-') && n.endsWith('.woff2')).length, 1, '제목 글꼴은 사이트에 하나');
+  assert.equal(assets.filter((n) => /^base-.*\.css$/.test(n)).length, 1, '엔진 CSS는 모든 페이지가 같은 파일 하나');
 
   for (const id of games) {
-    const html = await readFile(path.join(outDir, `${id}.html`), 'utf8');
-    assert.deepEqual(findExternalRefs(html), [], id);
-    for (const ref of assetRefs(html)) assert.ok((await readFile(path.join(outDir, ref))).length >= ASSET_FILE_MIN, `${id}: ${ref}`);
-    assert.deepEqual(info.find((f) => f.name === `${id}.html`).assets.map((a) => a.name).sort(), assetRefs(html).sort(), id);
-    assert.doesNotMatch(html, /type=["']module["']/, `${id}: 모듈 스크립트는 file://에서 열리지 않음`);
-    assert.match(html, /<style>/);
-    assert.match(html, /<script>/);
+    const html = await read(outDir, `${id}.html`);
+    const source = await readFile(path.join(ROOT, 'src/games', id, 'index.html'), 'utf8');
+    // 스타일시트는 원본 index.html의 <link> 수 그대로, 모두 ./assets/의 해시 이름
+    const sheets = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)">/g)].map((m) => m[1]);
+    assert.equal(sheets.length, [...source.matchAll(/rel="stylesheet"/g)].length, id);
+    for (const s of sheets) assert.match(s, /^\.\/assets\/[a-z0-9-]+-[A-Z0-9]{8}\.css$/, id);
+    assert.match(sheets[0], /^\.\/assets\/base-/, `${id}: 첫 스타일시트는 엔진 base.css`);
+    // 모듈 스크립트 하나(게임 id 이름) + 처음 스크립트 실패 때 한 번만 새로 고침(onerror)
+    const scripts = [...html.matchAll(/<script\b([^>]*)>/g)].map((m) => m[1]);
+    assert.equal(scripts.length, 1, `${id}: 스크립트는 모듈 하나뿐(인라인 스크립트 없음)`);
+    assert.match(scripts[0], new RegExp(`type="module" src="\\./assets/${id}-[A-Z0-9]{8}\\.js" onerror="`), id);
+    assert.match(scripts[0], /edu:reload-once/);
+    // modulepreload = 들머리에서 정적으로 닿는 JS 모두(이 검사가 JS의 import를 따라가 따로 계산), import()로 늦게 받는 묶음은 넣지 않는다
+    const entry = /src="\.\/(assets\/[^"]+\.js)"/.exec(scripts[0])[1];
+    const preload = [...html.matchAll(/<link rel="modulepreload" href="\.\/([^"]+)">/g)].map((m) => m[1]);
+    assert.deepEqual(preload.sort(), (await staticFiles(outDir, entry)).sort(), id);
+    // 글꼴: 미리 받기(crossorigin — 글꼴은 CORS 모드로 받는다) + @font-face
+    const font = /<link rel="preload" href="\.\/(assets\/display-[A-Z0-9]{8}\.woff2)" as="font" type="font\/woff2" crossorigin>/.exec(html)?.[1];
+    assert.ok(font, `${id}: 글꼴 preload`);
+    assert.ok(html.includes(`@font-face{font-family:"Do Hyeon";src:url(./${font}) format("woff2")`), id);
+    assert.match(html, /Copyright 2018 The Do Hyeon Project Authors\. SIL Open Font License 1\.1/);
+    assert.doesNotMatch(html, /data:(font|image\/(png|jpeg))/, `${id}: 글꼴·큰 그림이 HTML에 다시 들어가지 않는다`);
   }
-
-  const hub = await readFile(path.join(outDir, 'index.html'), 'utf8');
-  assert.deepEqual(findExternalRefs(hub), []);
+  const hub = await read(outDir, 'index.html');
   for (const id of games) assert.match(hub, new RegExp(`href="${id}\\.html"`));
   assert.doesNotMatch(hub, /_template/);
+  assert.match(hub, /<link rel="stylesheet" href="\.\/assets\/base-[A-Z0-9]{8}\.css">\s*<link rel="stylesheet" href="\.\/assets\/hub-[A-Z0-9]{8}\.css">/, '게임 모음: CSS는 인라인 대신 공통 파일');
+  assert.doesNotMatch(hub, /<style>[^<]{2000,}/, '게임 모음에 큰 인라인 CSS가 없다');
 });
 
-test('입체도형 공방의 인트로 그림(사용자가 캔바에서 받은 2880 원본)은 dist/assets/로 바이트 그대로(md5 같음) 나가고 HTML은 ./assets/ 상대 주소로 가리킨다. 게임 모음·예시 게임은 따로 나가는 그림이 없다', async () => {
-  const { createHash } = await import('node:crypto');
-  const outDir = await tempDir();
-  const { files } = await build({ outDir, quiet: true });
-  const md5 = (b) => createHash('md5').update(b).digest('hex');
-  const html = await readFile(path.join(outDir, 'net-workshop.html'), 'utf8');
-  const refs = assetRefs(html).sort();
-  assert.equal(refs.length, 2);
-  assert.match(refs[0], /^assets\/intro-bg-[A-Z0-9]+\.jpg$/);
-  assert.match(refs[1], /^assets\/intro-title-[A-Z0-9]+\.png$/);
-  assert.equal(md5(await readFile(path.join(outDir, refs[0]))), 'a0ca1de662f43b43b63964d18f635e0c');
-  assert.equal(md5(await readFile(path.join(outDir, refs[1]))), 'aa28acc246cf72c99d8a9a5a1367777f');
-  for (const ref of refs) assert.ok(html.includes(`url("./${ref}")`) || html.includes(`url(./${ref})`), ref);
-  assert.doesNotMatch(html, /data:image\/(jpeg|png)/); // 큰 그림이 HTML 안에 다시 들어가지 않는다
-  assert.ok(Buffer.byteLength(html) < 800 * 1024, `${Buffer.byteLength(html)} bytes`);
-  for (const name of ['index.html', 'sample-divisor-sort.html']) {
-    assert.deepEqual(files.find((f) => f.name === name).assets, [], name);
-    assert.deepEqual(assetRefs(await readFile(path.join(outDir, name), 'utf8')), [], name);
+test('빌드 검사 ①②③: 바깥 주소 없음(SVG 이름공간만) · 가리키는 파일이 모두 있음 · "/"로 시작하는 주소 없음 — 빌드의 검사와 이 검사가 따로 짠 검사 모두', async () => {
+  const { outDir } = await site();
+  assert.deepEqual(await checkSite(outDir), []);
+  const all = [];
+  const walk = async (base) => {
+    for (const e of await readdir(path.join(outDir, base), { withFileTypes: true })) {
+      const rel = base ? `${base}/${e.name}` : e.name;
+      if (e.isDirectory()) await walk(rel);
+      else all.push(rel);
+    }
+  };
+  await walk('');
+  let checked = 0;
+  for (const rel of all.filter((r) => /\.(html|js|css)$/.test(r))) {
+    const text = await read(outDir, rel);
+    // ① 결과물 전체에서 http(s)://·// — SVG 이름공간을 지운 뒤 하나도 없다
+    const rest = text.split('http://www.w3.org/2000/svg').join('');
+    assert.doesNotMatch(rest, /https?:|\/\//, `${rel}: 바깥 주소`);
+    // ② ③ 가리키는 것은 모두 같은 폴더 기준 ./ 상대 주소이고 파일이 있다
+    const refs = rel.endsWith('.html') ? refsInHtml(text) : rel.endsWith('.css') ? refsInCss(text) : refsInJs(text);
+    for (const ref of refs) {
+      assert.ok(!ref.startsWith('/'), `${rel}: '/'로 시작 ${ref}`);
+      const isPage = rel === 'index.html' && /^[a-z0-9-]+\.html$/.test(ref);
+      if (!isPage) assert.match(ref, /^\.\/[A-Za-z0-9._/-]+$/, `${rel}: ${ref}`);
+      assert.ok(!ref.includes('..'), `${rel}: ${ref}`);
+      assert.ok(all.includes(path.posix.normalize(path.posix.join(path.posix.dirname(rel), ref))), `${rel}: 없는 파일 ${ref}`);
+      checked += 1;
+    }
   }
+  assert.ok(checked > 20, `참조 ${checked}개`);
+  // 빌드에 걸린 HTML·CSS·JS의 해시 파일은 모두 어딘가에서 가리킨다(남는 파일 없음)
+  const pointed = new Set();
+  for (const rel of all.filter((r) => /\.(html|js|css)$/.test(r))) {
+    const text = await read(outDir, rel);
+    const refs = rel.endsWith('.html') ? refsInHtml(text) : rel.endsWith('.css') ? refsInCss(text) : refsInJs(text);
+    for (const ref of refs) pointed.add(path.posix.normalize(path.posix.join(path.posix.dirname(rel), ref)));
+  }
+  assert.deepEqual(all.filter((r) => r.startsWith('assets/') && !pointed.has(r)), []);
 });
 
-/** HTML에 data: 주소로 넣은 제목 글꼴(woff2)을 꺼낸다 */
-const embeddedFont = (html) => {
-  const m = html.match(/@font-face\{font-family:"Do Hyeon";src:url\(data:font\/woff2;base64,([A-Za-z0-9+/=]+)\) format\("woff2"\)/);
-  return m ? Buffer.from(m[1], 'base64') : null;
-};
-
-test('제목 글꼴: 파일마다 쓰인 글자만 잘라 넣고, 쓰인 한글이 모두 글꼴 안에 있으며, 알려 주는 파일 크기는 실제 크기와 같다', async () => {
+test('빌드 검사는 바깥 주소 · 없는 파일 · "/"로 시작하는 주소 · 위로 가는 주소를 잡는다 (일부러 깨 본 결과물)', async () => {
   const outDir = await tempDir();
-  const { files } = await build({ outDir, quiet: true });
+  await mkdir(path.join(outDir, 'assets'));
+  const put = (rel, text) => writeFile(path.join(outDir, rel), text);
+  await put('assets/ok-AAAAAAAA.js', 'export const a=1;');
+  await put('assets/ok-BBBBBBBB.css', '.a{background:url(./ok-CCCCCCCC.png)}');
+  await writeFile(path.join(outDir, 'assets/ok-CCCCCCCC.png'), Buffer.alloc(10));
+  await put('good.html', '<link rel="stylesheet" href="./assets/ok-BBBBBBBB.css"><script type="module" src="./assets/ok-AAAAAAAA.js"></script><svg xmlns="http://www.w3.org/2000/svg"></svg><a href="good.html">a</a>');
+  assert.deepEqual(await checkSite(outDir), []);
+  const cases = [
+    ['a.html', '<script type="module" src="/assets/ok-AAAAAAAA.js"></script>', /'\/'로 시작/],
+    ['b.html', '<link rel="stylesheet" href="https://cdn.example.com/a.css">', /바깥 주소/],
+    ['c.html', '<img src="//cdn.example.com/a.png">', /바깥 주소/],
+    ['d.html', '<link rel="modulepreload" href="./assets/missing-AAAAAAAA.js">', /가리키는 파일이 없어요/],
+    ['e.html', '<link rel="stylesheet" href="../x.css">', /상대 주소/],
+    ['f.html', '<a href="nope.html">x</a>', /가리키는 파일이 없어요/],
+    ['assets/g-AAAAAAAA.css', '.a{background:url(/assets/ok-CCCCCCCC.png)}', /'\/'로 시작/],
+    ['assets/h-AAAAAAAA.css', '@import "./ok-BBBBBBBB.css";', /@import/],
+    ['assets/i-AAAAAAAA.js', 'import("./gone-AAAAAAAA.js");', /가리키는 파일이 없어요/],
+    ['assets/j-AAAAAAAA.js', 'import{a}from"/assets/ok-AAAAAAAA.js";', /'\/'로 시작/],
+    ['assets/k-AAAAAAAA.js', 'fetch("https://example.com/a")', /바깥 주소/],
+  ];
+  for (const [rel, text, expect] of cases) {
+    await put(rel, text);
+    const problems = await checkSite(outDir);
+    assert.ok(problems.some((p) => p.startsWith(`${rel}:`) && expect.test(p)), `${rel}: ${problems.join(' | ')}`);
+    await rm(path.join(outDir, rel));
+  }
+  assert.deepEqual(await checkSite(outDir), []);
+});
+
+test('참조 읽기: HTML의 src·href·url(), CSS의 url()·@import, JS의 import … from·import()·import "…" (data:·#는 뺀다). 바깥 주소 찾기는 SVG 이름공간만 허용', () => {
+  assert.deepEqual(htmlRefs('<img src="data:image/png;base64,AA"><link rel="icon" href="data:,">').map((r) => r.ref), []);
+  assert.deepEqual(htmlRefs('<script type="module" src="./assets/a-H.js"></script><link rel="stylesheet" href="a.css"><a href="x.html">x</a>').map((r) => r.ref), ['./assets/a-H.js', 'a.css', 'x.html']);
+  assert.deepEqual(htmlRefs('<style>.a{background:url(./a.png)}</style><div style="background:url(https://example.com/a.png)"></div>').map((r) => r.ref), ['./a.png', 'https://example.com/a.png']);
+  assert.deepEqual(htmlRefs('<svg><style>@import "https://example.com/a.css"; .x{}</style></svg>').map((r) => r.ref), ['@import https://example.com/a.css']);
+  assert.deepEqual(cssRefs('.a{background:url("./intro-bg-ABC.jpg")}.b{mask:url(./a.png)}.c{background:url(data:x)}.d{fill:url(#g)}'), ['./intro-bg-ABC.jpg', './a.png']);
+  assert.deepEqual(jsRefs('import{a as b,c}from"./chunk-A.js";import"./side-B.js";const m=()=>import("./lazy-C.js");s.setProperty("--from",1);'), ['./chunk-A.js', './lazy-C.js', './side-B.js']);
+  assert.deepEqual(findUrls('var n="http://www.w3.org/2000/svg";'), []);
+  assert.equal(findUrls('a="https://cdn.example.com/x.js"').length, 1);
+  assert.equal(findUrls('src="//cdn.example.com/x.js"').length, 1);
+  assert.deepEqual(findUrls('new URL(location.href)'), []);
+});
+
+test('입체도형 공방의 인트로 그림(사용자가 캔바에서 받은 2880 원본)은 dist/assets/로 바이트 그대로(md5 같음) 나가고 게임 CSS가 ./ 상대 주소로 가리킨다. 게임 모음·예시 게임은 따로 나가는 그림이 없다', async () => {
+  const { outDir, files } = await site();
+  const info = files.find((f) => f.name === 'net-workshop.html');
+  const css = await Promise.all(info.css.map((rel) => read(outDir, rel)));
+  const refs = css.flatMap(refsInCss).map((r) => path.posix.join('assets', r)).sort();
+  assert.equal(new Set(refs).size, 2);
+  const [bg, title] = [...new Set(refs)];
+  assert.match(bg, /^assets\/intro-bg-[A-Z0-9]+\.jpg$/);
+  assert.match(title, /^assets\/intro-title-[A-Z0-9]+\.png$/);
+  assert.equal(md5(await readFile(path.join(outDir, bg))), 'a0ca1de662f43b43b63964d18f635e0c');
+  assert.equal(md5(await readFile(path.join(outDir, title))), 'aa28acc246cf72c99d8a9a5a1367777f');
+  assert.deepEqual(info.assets.map((a) => a.name).sort(), [bg, title]);
+  for (const text of [await read(outDir, 'net-workshop.html'), ...css]) assert.doesNotMatch(text, /data:image\/(jpeg|png)/); // 큰 그림이 다시 data:로 들어가지 않는다
+  for (const name of ['index.html', 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).assets, [], name);
+});
+
+test('제목 글꼴: 사이트 전체(게임 모음 + 모든 게임의 HTML·JS·CSS)에 쓰인 글자만 잘라 display-해시.woff2 하나. 쓰인 한글은 모두 글꼴 안에 있고 모든 페이지가 같은 파일을 가리킨다', async () => {
+  const { outDir, files, font } = await site();
+  const woff2 = await readFile(path.join(outDir, font.name));
+  assert.match(font.name, /^assets\/display-[A-Z0-9]{8}\.woff2$/);
+  assert.equal(woff2.subarray(0, 4).toString('latin1'), 'wOF2');
+  assert.equal(woff2.length, font.bytes);
+  // 이 검사가 따로 모은 사이트의 글: dist의 모든 HTML·JS·CSS
+  const texts = [];
+  for (const name of await readdir(outDir)) if (name.endsWith('.html')) texts.push(await read(outDir, name));
+  for (const name of await readdir(path.join(outDir, 'assets'))) if (/\.(js|css)$/.test(name)) texts.push(await read(outDir, `assets/${name}`));
+  const hangul = [...collectFontText(texts.join('\n'))].filter(isHangulSyllable);
+  assert.ok(hangul.length > 300, `한글 ${hangul.length}자`);
+  const sfnt = await subsetFont(woff2, `${hangul.join('')}0A`, { targetFormat: 'sfnt' });
+  const cmap = readCmap(sfnt);
+  assert.deepEqual(hangul.filter((ch) => !cmap.has(ch.codePointAt(0))), [], '잘라 넣은 글꼴에 없는 글자');
+  assert.ok(cmap.has('0'.codePointAt(0)) && cmap.has('A'.codePointAt(0)), '숫자·영문');
   for (const info of files) {
-    const html = await readFile(path.join(outDir, info.name), 'utf8');
-    assert.equal(info.bytes, Buffer.byteLength(html));
+    assert.equal(info.font, font.name, info.name);
     assert.deepEqual(info.missing, [], `${info.name}: Do Hyeon에 없는 한글`);
-
-    const woff2 = embeddedFont(html);
-    assert.ok(woff2, `${info.name}: @font-face(data: woff2)가 없음`);
-    assert.equal(woff2.subarray(0, 4).toString('latin1'), 'wOF2');
-    assert.equal(woff2.length, info.fontBytes);
-    assert.match(html, /Copyright 2018 The Do Hyeon Project Authors\. SIL Open Font License 1\.1/);
-
-    // 넣은 글꼴을 다시 풀어 글자 표(cmap)를 읽고, 화면에 쓰일 수 있는 한글 음절이 모두 있는지 본다
-    const hangul = [...collectFontText(html)].filter(isHangulSyllable);
-    assert.ok(hangul.length > 50, `${info.name}: 한글 ${hangul.length}자`);
-    const sfnt = await subsetFont(woff2, `${hangul.join('')}0A`, { targetFormat: 'sfnt' });
-    const cmap = readCmap(sfnt);
-    const lost = hangul.filter((ch) => !cmap.has(ch.codePointAt(0)));
-    assert.deepEqual(lost, [], `${info.name}: 잘라 넣은 글꼴에 없는 글자`);
-    assert.ok(cmap.has('0'.codePointAt(0)) && cmap.has('A'.codePointAt(0)), `${info.name}: 숫자·영문`);
+    const html = await read(outDir, info.name);
+    assert.ok(html.includes(`href="./${font.name}" as="font"`) && html.includes(`url(./${font.name})`), info.name);
   }
+});
+
+test('④ 크기는 막지 않고 보고: 게임마다 처음 받는 크기(gzip — HTML·CSS·정적 JS·글꼴)와 늦게 받는 묶음. 쌓기나무의 플레이는 늦게 받는 묶음이고 처음 받는 파일에 없다', async () => {
+  const { outDir, files, font } = await site();
+  const gz = async (rel) => (rel.endsWith('.woff2') ? (await readFile(path.join(outDir, rel))).length : gzipSync(await readFile(path.join(outDir, rel)), { level: 9 }).length);
+  for (const info of files) {
+    // 이 검사가 따로 더한 값
+    const listed = info.firstLoad.files;
+    assert.equal(listed[0], info.name);
+    assert.ok(listed.includes(font.name), info.name);
+    let total = 0;
+    for (const rel of listed) total += await gz(rel);
+    assert.equal(info.firstLoad.gzip, total, info.name);
+  }
+  const nw = files.find((f) => f.name === 'net-workshop.html');
+  assert.equal(nw.lazy.length, 1);
+  assert.match(nw.lazy[0].entry, /^assets\/blocks-play-[A-Z0-9]{8}\.js$/);
+  assert.ok(nw.lazy[0].files.includes(nw.lazy[0].entry));
+  for (const rel of nw.lazy[0].files) assert.ok(!nw.firstLoad.files.includes(rel), `${rel}: 늦게 받는 파일이 처음 받는 파일에 있음`);
+  assert.ok(nw.lazy[0].gzip > 10 * 1024, `늦게 받는 묶음 ${nw.lazy[0].gzip} B`);
+  // 쌓기나무의 문제 만들기·화면 코드(blocks-logic.js의 makeBlockQuestions 등)는 처음 받는 JS에 없다 — 화면 글자 하나로 확인(놀이 화면의 버튼 글)
+  const first = (await Promise.all(nw.js.map((rel) => read(outDir, rel)))).join('\n');
+  const lazy = (await Promise.all(nw.lazy[0].files.map((rel) => read(outDir, rel)))).join('\n');
+  assert.ok(lazy.includes('여기는 ') && !first.includes('판 밖에는 놓을 수 없어요.'), '쌓기 판의 안내 글은 늦게 받는 묶음에만');
+  assert.ok(first.includes('어느 방향에서 보았을까'), '쌓기나무의 차시·단계 목록은 처음 받는 JS에');
+  for (const name of ['index.html', 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).lazy, [], name);
+  assert.equal(FIRST_LOAD_NOTICE, 300 * 1024);
 });
 
 test('글꼴 원본과 라이선스 파일이 있다', async () => {
@@ -126,24 +279,14 @@ test('게임 모음: 표지(cover.svg)·게임 색을 넣고, 거르기 칩은 �
   assert.doesNotMatch(many, /status-ribbon/); // 완료된 게임에는 띠가 없다
 });
 
-test('바깥 파일 참조를 찾아낸다', () => {
-  assert.deepEqual(findExternalRefs('<img src="data:image/png;base64,AA"><link rel="icon" href="data:,">'), []);
-  assert.equal(findExternalRefs('<script src="https://cdn.example.com/x.js"></script>').length, 1);
-  assert.equal(findExternalRefs('<img src="./cat.png">').length, 1);
-  assert.equal(findExternalRefs('<link rel="stylesheet" href="a.css">').length, 1);
-  assert.equal(findExternalRefs('<style>.a{background:url(./a.png)}</style>').length, 1);
-  assert.deepEqual(findExternalRefs('<script>new URL(location.href)</script>'), []);
-  // <style> 안(SVG 표지 안 포함)의 @import와 style="" 속성의 url()도 잡는다 (D1 Review 3번)
-  assert.deepEqual(findExternalRefs('<svg><style>@import "https://example.com/a.css"; .x{}</style></svg>'), ['@import https://example.com/a.css']);
-  assert.equal(findExternalRefs('<style>@import url(https://example.com/a.css);</style>').length, 2);
-  assert.equal(findExternalRefs('<div style="background:url(https://example.com/a.png)"></div>').length, 1);
-  assert.deepEqual(findExternalRefs('<div style="--game-color: #2f6f5e"></div><style>.a{background:url(data:image/png;base64,AA)}</style>'), []);
-  // 같이 내보낸 그림(./assets/이름)만 된다. '/'로 시작하는 주소(사이트가 하위 경로 /game2/), 다른 폴더, ../ 은 안 된다
-  assert.deepEqual(findExternalRefs('<style>.a{background:url("./assets/intro-bg-ABC123.jpg")}</style>'), []);
-  assert.equal(findExternalRefs('<style>.a{background:url(/assets/a.png)}</style>').length, 1);
-  assert.equal(findExternalRefs('<style>.a{background:url(./img/a.png)}</style>').length, 1);
-  assert.equal(findExternalRefs('<style>.a{background:url(./assets/../a.png)}</style>').length, 1);
-  assert.deepEqual(assetRefs('<style>.a{background:url("./assets/a-1.jpg")}.b{mask:url(./assets/a-1.jpg)}.c{background:url(data:x)}</style>'), ['assets/a-1.jpg']);
+test('게임 모음의 선생님용 주소 옵션: ?lesson= 다음에 ?area=·?grade=가 있고 차례(lesson, area, grade)를 알린다 (review-b0a B0a-6, engine.md 8절)', async () => {
+  const games = await loadGames(path.join(ROOT, 'src/games'));
+  const hub = renderHub({ games, hrefFor: (g) => `${g.meta.id}.html`, styles: { links: ['./assets/base.css'], head: '<meta name="x">' } });
+  const opts = [...hub.matchAll(/<li><code>([^<]+)<\/code>([^<]*)<\/li>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(opts.map((o) => o[0]), ['?lesson=차시-id', '?area=영역-id', '?grade=6', '?unlock=all', '?stage=단계-id', '?seed=1', '?sound=off', '?fx=low']);
+  assert.equal(opts[1][1], '그 영역의 단계 지도로 바로');
+  assert.match(opts[2][1], /^그 학년 화면으로 바로 \(함께 쓰면 lesson, area, grade 차례\)$/);
+  assert.match(hub, /<link rel="stylesheet" href="\.\/assets\/base\.css">\s*<meta name="x">\s*<\/head>/, 'styles.head는 <head> 끝에');
 });
 
 test('제목 글꼴에 없는 기호를 알려 준다 (가운뎃점은 제목 자리에 쓰지 않는다)', async () => {
@@ -151,12 +294,11 @@ test('제목 글꼴에 없는 기호를 알려 준다 (가운뎃점은 제목 �
   const cmap = readCmap(ttf);
   assert.deepEqual(missingSymbols('약수·배수 ㆍ → ★ ✦ … abc 가', cmap), ['·', '✦', '…']);
   assert.ok(cmap.has('ㆍ'.codePointAt(0)), '엔진이 제목 자리에 쓰는 구분 기호');
-  const outDir = await tempDir();
-  const { files } = await build({ outDir, quiet: true });
+  const { files } = await site();
   for (const info of files) assert.ok(Array.isArray(info.symbols), info.name);
 });
 
-test('템플릿으로 만든 새 게임은 바로 빌드된다', async () => {
+test('템플릿으로 만든 새 게임은 바로 빌드된다. 작은 그림은 CSS 안에 data:, 큰 그림(16 KB 이상)은 assets/로 바이트 그대로. 처음 받는 크기가 300 KB를 넘으면 알리기만 한다', async () => {
   const rootDir = await tempDir();
   await cp(path.join(ROOT, 'src'), path.join(rootDir, 'src'), { recursive: true });
   await mkdir(path.join(rootDir, 'docs'));
@@ -171,47 +313,65 @@ test('템플릿으로 만든 새 게임은 바로 빌드된다', async () => {
   assert.match(doc, /테스트 "게임" <1>/);
   assert.doesNotMatch(doc, /__GAME_(ID|TITLE)__/);
 
-  // CSS url()로 넣은 그림은 data: 주소로 들어간다 (docs/engine.md 7절)
+  const outDir = path.join(rootDir, 'dist');
+  const gameCss = async (result) => {
+    const info = result.files.find((file) => file.name === 'test-game.html');
+    const rel = info.css.find((r) => /^assets\/test-game-[A-Z0-9]{8}\.css$/.test(r));
+    assert.ok(rel, info.css.join(', '));
+    return { info, rel, text: await readFile(path.join(outDir, rel), 'utf8') };
+  };
+
+  // CSS url()로 넣은 SVG는 data: 주소로 들어간다 (docs/engine.md 7절)
   const gameDir = path.join(rootDir, 'src/games/test-game');
   await mkdir(path.join(gameDir, 'img'));
   await writeFile(path.join(gameDir, 'img/dot.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>');
   await appendFile(path.join(gameDir, 'style.css'), "\n.dot { background: url('./img/dot.svg'); }\n");
 
-  const { games } = await build({ rootDir, outDir: path.join(rootDir, 'dist'), quiet: true });
-  assert.ok(games.includes('test-game'));
-  const html = await readFile(path.join(rootDir, 'dist/test-game.html'), 'utf8');
+  const first = await build({ rootDir, outDir, quiet: true });
+  assert.ok(first.games.includes('test-game'));
+  const html = await readFile(path.join(outDir, 'test-game.html'), 'utf8');
   assert.match(html, /<title>테스트 &quot;게임&quot; &lt;1&gt;<\/title>/);
-  assert.match(html, /url\(["']?data:image\/svg\+xml/);
+  assert.match((await gameCss(first)).text, /url\(["']?data:image\/svg\+xml/);
+  assert.deepEqual(await checkSite(outDir), []);
 
   await assert.rejects(createGame({ rootDir, id: 'test-game' }), /이미 있는/);
   await assert.rejects(createGame({ rootDir, id: 'Bad_Id' }), /소문자/);
 
-  // 16 KB 미만의 래스터 그림은 지금처럼 data: 주소로 들어간다
+  // 16 KB 미만의 래스터 그림은 data: 주소로 들어간다
   const small = Buffer.alloc(ASSET_FILE_MIN - 1, 3);
   await writeFile(path.join(gameDir, 'img/small.png'), small);
   await appendFile(path.join(gameDir, 'style.css'), "\n.small { background: url('./img/small.png'); }\n");
-  const withSmall = await build({ rootDir, outDir: path.join(rootDir, 'dist'), quiet: true });
-  const smallHtml = await readFile(path.join(rootDir, 'dist/test-game.html'), 'utf8');
-  const smallRule = smallHtml.match(/\.small\{background:url\(["']?data:image\/png;base64,([A-Za-z0-9+/=]+)["']?\)\}/);
+  const withSmall = await build({ rootDir, outDir, quiet: true });
+  const smallCss = await gameCss(withSmall);
+  const smallRule = smallCss.text.match(/\.small\{background:url\(["']?data:image\/png;base64,([A-Za-z0-9+/=]+)["']?\)\}/);
   assert.ok(smallRule && Buffer.from(smallRule[1], 'base64').equals(small), '작은 그림이 data: 주소로 원본 그대로');
-  assert.deepEqual(withSmall.files.find((file) => file.name === 'test-game.html').assets, []);
+  assert.deepEqual(smallCss.info.assets, []);
 
-  // 큰 래스터 그림(16 KB 이상)은 dist/assets/<이름>-<해시>.png로 바이트 그대로 나가고 HTML은 ./assets/ 상대 주소로 가리킨다(B0c2).
-  // 크기 상한은 여전히 없다(2026-10-09 사용자 결정) — 큰 그림이 따로 나가서 HTML은 작다
+  // 큰 래스터 그림(16 KB 이상)은 dist/assets/<이름>-<해시>.png로 바이트 그대로 나가고 게임 CSS(assets/ 안)는 ./ 상대 주소로 가리킨다(B0c2 · B0b).
+  // 크기 상한은 여전히 없다(2026-10-09 사용자 결정)
   const big = Buffer.alloc(320 * 1024, 7);
   await writeFile(path.join(gameDir, 'img/big.png'), big);
   await appendFile(path.join(gameDir, 'style.css'), "\n.big { background: url('./img/big.png'); }\n");
-  const large = await build({ rootDir, outDir: path.join(rootDir, 'dist'), quiet: true });
-  assert.deepEqual(large.games, games);
-  const info = large.files.find((file) => file.name === 'test-game.html');
-  const largeHtml = await readFile(path.join(rootDir, 'dist/test-game.html'), 'utf8');
-  assert.equal(info.bytes, Buffer.byteLength(largeHtml));
-  assert.ok(info.bytes < 300 * 1024, `${info.bytes} bytes`);
-  assert.deepEqual(findExternalRefs(largeHtml), []);
-  const rule = largeHtml.match(/\.big\{background:url\(["']?\.\/(assets\/big-[A-Z0-9]+\.png)["']?\)\}/);
-  assert.ok(rule, '.big 규칙이 ./assets/의 그림을 가리키지 않음');
-  assert.deepEqual(info.assets, [{ name: rule[1], bytes: big.length }]);
-  assert.ok((await readFile(path.join(rootDir, 'dist', rule[1]))).equals(big), '내보낸 그림이 원본과 다름');
-  // 그 규칙 하나 말고는 큰 그림을 넣기 전과 한 글자도 다르지 않다
-  assert.ok(largeHtml.replace(rule[0], () => '') === smallHtml, '큰 그림 규칙 말고 다른 곳이 달라짐');
+  const large = await build({ rootDir, outDir, quiet: true });
+  assert.deepEqual(large.games, first.games);
+  const largeCss = await gameCss(large);
+  const rule = largeCss.text.match(/\.big\{background:url\(["']?\.\/(big-[A-Z0-9]+\.png)["']?\)\}/);
+  assert.ok(rule, '.big 규칙이 같은 폴더(assets/)의 그림을 가리키지 않음');
+  assert.deepEqual(largeCss.info.assets, [{ name: `assets/${rule[1]}`, bytes: big.length }]);
+  assert.ok((await readFile(path.join(outDir, 'assets', rule[1]))).equals(big), '내보낸 그림이 원본과 다름');
+  // 그 규칙 하나 말고는 큰 그림을 넣기 전의 CSS와 한 글자도 다르지 않다
+  assert.ok(largeCss.text.replace(rule[0], () => '') === smallCss.text, '큰 그림 규칙 말고 다른 곳이 달라짐');
+  assert.deepEqual(await checkSite(outDir), []);
+
+  // ④ 처음 받는 크기가 300 KB(gzip)를 넘으면 빌드 로그에 알림 — 막지는 않는다
+  const noise = createHash('sha512');
+  let blob = '';
+  for (let i = 0; blob.length < 720 * 1024; i += 1) blob += noise.update(String(i)).copy().digest('hex'); // 16진수(‘/’ 없음 — 검사 ①에 걸리지 않게)
+  await appendFile(path.join(gameDir, 'main.js'), `\nexport const NOISE = ${JSON.stringify(blob)};\nconsole.log(NOISE.length);\n`);
+  const lines = [];
+  const heavy = await build({ rootDir, outDir, log: (line) => lines.push(line) });
+  const info = heavy.files.find((f) => f.name === 'test-game.html');
+  assert.ok(info.firstLoad.gzip > FIRST_LOAD_NOTICE, `${info.firstLoad.gzip}`);
+  assert.ok(lines.some((l) => l.includes('dist/test-game.html') && l.includes('처음 받는 크기')), lines.join('\n'));
+  assert.ok(lines.some((l) => l.includes('알림: 처음 화면이 받는 크기가 300.0 KB를 넘어요')), lines.join('\n'));
 });

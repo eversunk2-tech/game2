@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helpers.js';
+import { DIST, SERVER_ORIGIN, SITE_BASE, SITE_URL, collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helpers.js';
 
 // 모든 게임에 공통으로 적용되는 기본 검사. 새 게임을 만들면 자동으로 포함된다.
 
@@ -96,3 +98,69 @@ for (const file of gameFiles()) {
     }
   });
 }
+
+/**
+ * 이 페이지가 받을 수 있는 dist의 파일: HTML의 src·href, CSS의 url(), JS의 import … from·import()를 상대 주소로 따라간다(이 검사가 따로 계산 —
+ * 빌드 코드를 쓰지 않는다). 게임 모음의 게임 링크(<a href="<id>.html">)는 따라가지 않는다
+ */
+function pageFiles(name) {
+  const seen = new Set();
+  const visit = (rel) => {
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    if (!/\.(html|css|js)$/.test(rel)) return;
+    const text = readFileSync(path.join(DIST, rel), 'utf8');
+    const refs = rel.endsWith('.html') ? [...text.matchAll(/\s(?:src|href)="(\.\/[^"]+)"/g)]
+      : rel.endsWith('.css') ? [...text.matchAll(/url\(\s*"?(\.\/[^")]+)"?\s*\)/g)]
+        : [...text.matchAll(/(?:from|import)\s*\(?\s*"(\.\/[^"]+)"/g)];
+    for (const m of refs) visit(path.posix.normalize(path.posix.join(path.posix.dirname(rel), m[1])));
+  };
+  visit(name);
+  return [...seen].filter((rel) => rel !== name);
+}
+
+// 사이트와 같은 조건(B0b — 하위 경로 /game2/, 여러 파일): 테스트 서버(scripts/serve.mjs)가 GitHub Pages처럼 /game2/ 아래로 준다
+for (const file of ['index.html', ...gameFiles()]) {
+  test(`${file}: 하위 경로(/game2/)에서 열리고, 모든 요청이 같은 출처·하위 경로 안이며 응답 400 이상이 없고, 이 페이지의 해시 파일(늦게 받는 묶음 포함)이 모두 받아진다`, async ({ page }) => {
+    test.setTimeout(60_000);
+    const errors = collectErrors(page);
+    const requested = new Map(); // 주소 → 응답 상태
+    const bad = [];
+    page.on('response', (r) => {
+      requested.set(r.url(), r.status());
+      if (r.status() >= 400) bad.push(`${r.status()} ${r.url()}`);
+    });
+    page.on('requestfailed', (r) => bad.push(`받지 못함 ${r.url()} ${r.failure()?.errorText ?? ''}`));
+    const others = [];
+    page.on('request', (r) => {
+      const url = r.url();
+      if (url.startsWith('data:') || url.startsWith('blob:')) return;
+      const u = new URL(url);
+      if (u.origin !== SERVER_ORIGIN || !u.pathname.startsWith(SITE_BASE)) others.push(url);
+    });
+    await page.goto(fileUrl(file, '?sound=off'));
+    expect(page.url().startsWith(SITE_URL)).toBe(true);
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    const want = pageFiles(file);
+    expect(want.length).toBeGreaterThan(file === 'index.html' ? 2 : 4);
+    for (const rel of want) expect(rel, rel).toMatch(/^assets\/[a-z0-9-]+-[A-Z0-9]{8}\.[a-z0-9]+$/);
+    // 늦게 받는 묶음은 처음 화면이 그려진 뒤 한가할 때 미리 받는다 — 모두 받아질 때까지(받아지지 않으면 시간 예산 안에 실패)
+    await expect.poll(() => want.filter((rel) => requested.get(`${SITE_URL}${rel}`) !== 200), { timeout: 30_000 }).toEqual([]);
+    expect(others).toEqual([]);
+    expect(bad).toEqual([]);
+    expect(errors).toEqual([]);
+  });
+}
+
+test('테스트 서버는 사이트와 같은 조건: 하위 경로 밖은 404, /game2 는 /game2/ 로, 글 파일은 gzip', async ({ request }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '서버 확인은 한 번만');
+  for (const p of ['/net-workshop.html', '/index.html', '/assets/', '/game22/net-workshop.html']) expect((await request.get(`${SERVER_ORIGIN}${p}`)).status(), p).toBe(404);
+  const moved = await request.get(`${SERVER_ORIGIN}/game2`, { maxRedirects: 0 });
+  expect(moved.status()).toBe(301);
+  expect(moved.headers().location).toBe('/game2/');
+  for (const file of ['index.html', ...gameFiles()]) {
+    const r = await request.get(fileUrl(file), { headers: { 'Accept-Encoding': 'gzip' } });
+    expect(r.status(), file).toBe(200);
+    expect(r.headers()['content-encoding'], file).toBe('gzip');
+  }
+});

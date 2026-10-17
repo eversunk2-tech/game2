@@ -375,13 +375,16 @@ test('그림은 따로 파일(./assets/)로 받아진다 — 받기 전에는 �
     return [img.naturalWidth, img.naturalHeight];
   })), [urls.bg, urls.logo]);
   expect(sizes).toEqual([[2880, 1620], [2880, 1620]]);
-  // 이 테스트가 연 파일 옆의 assets/: 원본과 md5가 같고, HTML 안에는 큰 그림이 data:로 다시 들어가 있지 않다
+  // 이 테스트가 연 파일 옆의 assets/: 원본과 md5가 같고, HTML·CSS 안에는 큰 그림이 data:로 다시 들어가 있지 않다
+  // (B0b: 그림을 가리키는 url()은 HTML 안이 아니라 HTML이 링크한 게임 CSS(assets/ 안 — 같은 폴더의 ./이름)에 있다. 가리키는 곳만 바뀌었다)
   const html = readFileSync(path.join(DIST, FILE), 'utf8');
+  const sheets = [...html.matchAll(/<link rel="stylesheet" href="\.\/(assets\/[^"]+\.css)">/g)].map((m) => m[1]);
+  const css = sheets.map((rel) => [rel, readFileSync(path.join(DIST, rel), 'utf8')]);
   const md5 = (file) => createHash('md5').update(readFileSync(path.join(DIST, file))).digest('hex');
-  const refs = [...html.matchAll(/url\("?\.\/(assets\/[^")]+)"?\)/g)].map((m) => m[1]).sort();
+  const refs = [...new Set(css.flatMap(([rel, text]) => [...text.matchAll(/url\("?\.\/([^")]+\.(?:jpg|png))"?\)/g)].map((m) => path.posix.join(path.posix.dirname(rel), m[1]))))].sort();
   expect(refs.map((r) => r.replace(/-[A-Z0-9]+\./, '.'))).toEqual(['assets/intro-bg.jpg', 'assets/intro-title.png']);
   expect(refs.map(md5)).toEqual(['a0ca1de662f43b43b63964d18f635e0c', 'aa28acc246cf72c99d8a9a5a1367777f']);
-  expect(html).not.toMatch(/data:image\/(jpeg|png)/);
+  for (const text of [html, ...css.map(([, t]) => t)]) expect(text).not.toMatch(/data:image\/(jpeg|png)/);
 });
 
 test('소리: [입장하기]를 누르면 짧은 효과음(종 두 번), 소리 끔이면 없다', async ({ page }, testInfo) => {
