@@ -268,6 +268,9 @@ test('게임 모음: 표지(cover.svg)·게임 색을 넣고, 거르기 칩은 �
     assert.match(card, new RegExp(`data-progress="${game.meta.id}"`));
   }
   assert.match(hub, /<h1>초등 5~6학년 <span class="mark">학습게임<\/span><\/h1>/);
+  // 안내글: 학생은 사이트 주소로 연다(사용자 결정 spec-grade6 15-12 — 파일을 내려받아 여는 쓰임은 지원하지 않는다)
+  assert.match(hub, /<p class="lead">게임 링크를 학생에게 나눠 주세요\. 학생은 이 사이트 주소로 열어요\.<\/p>/);
+  assert.doesNotMatch(hub, /HTML 파일 하나|내려받으면|인터넷 없이/);
   assert.equal(games.length < FILTER_MIN_GAMES, !hub.includes('class="hub-filter"'));
 
   // 게임이 4개 이상이면 교과·학년 거르기 칩

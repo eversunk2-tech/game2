@@ -128,7 +128,7 @@ export function renderHub({ games, hrefFor, styles, title = '초등 5~6학년 �
   <header class="hub-header">
     <p class="eyebrow"><span class="dot" aria-hidden="true"></span>2022 개정 교육과정 · 초등 5~6학년</p>
     <h1>${escapeHtml(before)}<span class="mark">${escapeHtml(mark)}</span>${escapeHtml(after)}</h1>
-    <p class="lead">게임 링크를 학생에게 나눠 주세요. 게임 하나가 HTML 파일 하나라서 내려받으면 인터넷 없이도 열 수 있어요.</p>
+    <p class="lead">게임 링크를 학생에게 나눠 주세요. 학생은 이 사이트 주소로 열어요.</p>
     <ul class="hub-promises" aria-label="약속">
       <li class="chip chip-ink">${iconSvg('shield')}기록은 이 기기에만 남아요</li>
       <li class="chip chip-ink">${iconSvg('clock')}${escapeHtml(playChip)}</li>
