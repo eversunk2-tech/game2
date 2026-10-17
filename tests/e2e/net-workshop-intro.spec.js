@@ -254,9 +254,9 @@ test('배치(결과표의 12가지 화면·DPR, 움직임 줄이기): 모드가 
     expect(m.ribbonViewBox).toEqual([CROP[0], CROP[1], CROP[2] - CROP[0], CROP[3] - CROP[1]]);
     expect(Math.abs(m.logoRatio - (CROP[2] - CROP[0]) / (CROP[3] - CROP[1])), `${at} 제목 그림 비율`).toBeLessThan(0.01);
     expect(m.logo.w, `${at} 제목 폭`).toBeGreaterThan(Math.min(w, h) * 0.3);
-    // 큰 버튼: 높이 56px 이상, 폭 200px 이상(48px 규칙보다 크게)
-    expect(m.button.h, `${at} 버튼 높이`).toBeGreaterThanOrEqual(56);
-    expect(m.button.w, `${at} 버튼 폭`).toBeGreaterThanOrEqual(200);
+    // 큰 버튼: 높이 52px 이상(48px 규칙보다 크게), 폭은 높이 × 3.2 이상(2026-10-17 사용자 요청으로 전의 56px·200px보다 작게 — spec-grade6 15-11 끝)
+    expect(m.button.h, `${at} 버튼 높이`).toBeGreaterThanOrEqual(52);
+    expect(m.button.w, `${at} 버튼 폭`).toBeGreaterThanOrEqual(m.button.h * 3.2 - 0.05);
     expect(errors, at).toEqual([]);
     await context.close();
   }
@@ -496,11 +496,12 @@ test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입
 
 /**
  * 큰 화면에서 [입장하기]도 커진다(spec-grade6 15-11 — selectio game과 같게). 기대값은 기획서 문장만으로 짠 독립 계산:
- * 배율 s = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶은 값, 면 높이 = (화면 높이의 10.5%·폭의 16% 가운데 작은 값을 56~84로 묶어 반올림) × s,
- * 글자 = 면 높이 × 0.42, 테 6·바깥 여백 8·반짝임 18·잉크 테두리 3·아래 그림자 7·흐린 그림자 14/26·올리기 −2·누르기 +5·초점 후광 9/12(px) × s
+ * 배율 s = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶은 값, 면 높이 = (화면 높이의 9.7%·폭의 14.7% 가운데 작은 값을 52~77로 묶어 반올림) × s,
+ * 면 폭 = 높이 × 3.2, 글자 = 면 높이 × 0.51(2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아" — 높이 약 8%·폭 약 18% 작게, 글자 약 12% 크게),
+ * 테 6·바깥 여백 8·반짝임 18·잉크 테두리 3·아래 그림자 7·흐린 그림자 14/26·올리기 −2·누르기 +5·초점 후광 9/12(px) × s
  */
 const growScale = (w, h) => Math.min(1.35, Math.max(1, Math.min(w / 1280, h / 800)));
-const baseButtonHeight = (w, h) => Math.round(Math.min(84, Math.max(56, Math.min(0.105 * h, 0.16 * w))));
+const baseButtonHeight = (w, h) => Math.round(Math.min(77, Math.max(52, Math.min(0.097 * h, 0.147 * w))));
 /** 계산된 box-shadow의 길이(px)만 차례로 (색은 뺀다) */
 const shadowLengths = (shadow) => shadow.replace(/rgba?\([^)]*\)/g, '').match(/-?[\d.]+px/g).map(parseFloat);
 const near = (got, want, tol) => got.length === want.length && got.every((v, i) => Math.abs(v - want[i]) <= tol);
@@ -508,11 +509,11 @@ const near = (got, want, tol) => got.length === want.length && got.every((v, i) 
 const HAND = [1675, 1378, 1795, 1442];
 const area = (a, b) => Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y));
 
-test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 높이 113.4px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안 — 더 보이지 않으면 그대로)', async ({ browser }, testInfo) => {
+test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 332.6×103.95px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안 — 더 보이지 않으면 그대로)', async ({ browser }, testInfo) => {
   test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
-  test.setTimeout(120_000); // 9개 화면 × (열기 + 그림 풀기 + 잼) — 이 맥에서 약 3초, CPU 12배에서 약 15초
+  test.setTimeout(120_000); // 10개 화면 × (열기 + 그림 풀기 + 잼) — 이 맥에서 약 3초, CPU 12배에서 약 15초
   let shape1 = null; // 배율 1(1280×800)의 면 폭 ÷ 높이: 큰 화면에서도 같은 모양(폭도 s배)
-  for (const [w, h, dpr] of [[1280, 800, 1], [1366, 768, 1], [1366, 1024, 2], [1440, 900, 2], [1920, 1080, 1], [1920, 1080, 2], [2560, 1440, 2], [1024, 768, 2], [820, 1180, 2]]) {
+  for (const [w, h, dpr] of [[1280, 800, 1], [1366, 768, 1], [1366, 1024, 2], [1440, 900, 2], [1920, 1080, 1], [1920, 1080, 2], [2560, 1440, 2], [1024, 768, 2], [820, 1180, 2], [768, 1024, 2]]) {
     const at = `${w}×${h}@${dpr}`;
     const s = growScale(w, h);
     const faceH = baseButtonHeight(w, h) * s;
@@ -544,10 +545,10 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
     });
     // 크기: 면 높이·폭·글자, 테·바깥 여백·반짝임(크롬은 테 두께를 정수 px로 내린다 — 1px 안), 초점 후광
     expect(Math.abs(m.button.h - faceH), `${at} 면 높이 ${m.button.h} / ${faceH}`).toBeLessThan(0.05);
-    expect(m.button.w, `${at} 면 폭(최소 폭 = 높이 × 3.6)`).toBeGreaterThanOrEqual(faceH * 3.6 - 0.05);
+    expect(Math.abs(m.button.w - faceH * 3.2), `${at} 면 폭 = 높이 × 3.2 (${m.button.w})`).toBeLessThan(0.05);
     if (s === 1 && h === 800) shape1 = m.button.w / m.button.h;
     expect(Math.abs(m.button.w - shape1 * faceH), `${at} 면 폭 ${m.button.w} = 높이 ${faceH} × 배율 1의 모양 ${shape1}`).toBeLessThan(1.5);
-    expect(Math.abs(look.font - faceH * 0.42), `${at} 글자 ${look.font}`).toBeLessThan(0.05);
+    expect(Math.abs(look.font - faceH * 0.51), `${at} 글자 ${look.font}`).toBeLessThan(0.05);
     expect(look.border, `${at} 테`).toBeGreaterThan(6 * s - 1);
     expect(look.border, `${at} 테`).toBeLessThanOrEqual(6 * s + 0.01);
     expect(Math.abs(look.pad - 8 * s), `${at} 바깥 여백 ${look.pad}`).toBeLessThan(0.02);
@@ -584,7 +585,7 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
       const most = Math.min(centered.r - hand.x, limit);
       if (area(centered, hand) > 0) expect(area({ ...centered, x: centered.x - most, r: centered.r - most }, hand), `${at} 옮겨도 손이 더 보이지 않아 그대로`).toBeGreaterThanOrEqual(area(centered, hand) - 0.5);
     }
-    if (w === 820) expect([Math.abs(dx) < 0.5, area(centered, hand) > 0], `${at} 세로 카드: 손은 버튼 아래, 버튼은 가운데 그대로`).toEqual([true, true]);
+    if (w === 768) expect([Math.abs(dx) < 0.5, area(centered, hand) > 0], `${at} 세로 카드: 손은 버튼 아래, 버튼은 가운데 그대로`).toEqual([true, true]);
     if (w === 1920) {
       expect(area(centered, hand), `${at} 가운데 자리는 손을 가린다(옮겨야 하는 화면)`).toBeGreaterThan(0);
       expect(area(shown, hand), `${at} 옮긴 뒤 손이 다 보인다`).toBeLessThan(1);

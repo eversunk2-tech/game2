@@ -1024,7 +1024,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-block:nth-child(6) { left: 91%; width: 24px; animation-duration: 24s; animation-delay: 13s; --spin: -55deg; --top: var(--face-3); --left: var(--face-7); --right: var(--correct); }
 /* [입장하기]: 두껍고 반짝이는 금빛 버튼 + 파란 테 + 짙은 남색 테두리와 아래 그림자. 숨 쉬는 움직임은 안쪽 층에만(버튼 자리는 그대로).
    자리: 면의 가운데가 --btn-x·--btn-y (꽉 채우기 = 화면 아래 가운데, 카드 = 카드 아래 가장자리에 걸침).
-   크기: 면 높이 --btn-h(최소 폭·글자가 따른다)와 큰 화면 배율 --btn-s(= 1px × 배율 1~1.35, core/intro-fit.js introButtonScale — spec-grade6 15-11).
+   크기: 면 높이 --btn-h(글자 = 높이 × 0.51)·최소 폭 --btn-w(= 높이 × INTRO_BUTTON_WIDTH 3.2)와 큰 화면 배율 --btn-s(= 1px × 배율 1~1.35, core/intro-fit.js introButtonScale — spec-grade6 15-11).
+   글자 양옆 안쪽 여백은 최소 0.6em — 폭은 늘 최소 폭이 정한다(2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아": 글자는 크게, 버튼은 작게).
    테·바깥 여백·반짝임·잉크 테두리·아래 그림자·흐린 그림자·누르기/올리기 거리·초점 후광의 px는 모두 --bs(= --btn-s)를 곱한 크기 자체다
    (transform: scale이 아니다 — 글자가 흐려지지 않게). 배율 1이면 지금까지와 같은 px */
 .intro-foot { position: absolute; left: var(--btn-x, 50%); top: var(--btn-y, 90%); transform: translate(-50%, -50%); pointer-events: none; }
@@ -1038,14 +1039,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-enter-pulse { display: grid; }
 .intro-enter-face {
   position: relative; display: grid; place-items: center;
-  min-width: calc(var(--btn-h, 80px) * 3.6); min-height: var(--btn-h, 80px); padding: calc(2 * var(--bs)) 1.2em 0;
+  min-width: var(--btn-w, calc(var(--btn-h, 80px) * 3.2)); min-height: var(--btn-h, 80px); padding: calc(2 * var(--bs)) 0.6em 0;
   border: calc(6 * var(--bs)) solid transparent; border-radius: 999px;
   background:
     linear-gradient(180deg, rgb(255 255 255 / 72%) 0%, rgb(255 255 255 / 18%) 46%, rgb(255 255 255 / 0%) 47%) padding-box,
     linear-gradient(180deg, var(--butter-soft) 0%, var(--butter) 50%, var(--star) 100%) padding-box,
     linear-gradient(180deg, var(--face-2) 0%, var(--primary) 55%, var(--primary-edge) 100%) border-box;
   box-shadow: 0 0 0 calc(3 * var(--bs)) var(--ink), 0 calc(7 * var(--bs)) 0 calc(3 * var(--bs)) var(--ink), 0 calc(14 * var(--bs)) calc(26 * var(--bs)) rgb(30 33 64 / 40%);
-  color: var(--ink); font-size: calc(var(--btn-h, 80px) * 0.42); line-height: 1; letter-spacing: 0.08em; white-space: nowrap;
+  color: var(--ink); font-size: calc(var(--btn-h, 80px) * 0.51); line-height: 1; letter-spacing: 0.08em; white-space: nowrap;
   text-shadow: 0 calc(2 * var(--bs)) 0 rgb(255 255 255 / 70%);
   transition: transform var(--dur-1) var(--ease-out);
 }

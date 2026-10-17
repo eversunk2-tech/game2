@@ -31,10 +31,16 @@ export function sanitizeDpr(dpr) {
   return typeof dpr === 'number' && Number.isFinite(dpr) && dpr > 0 ? Math.min(dpr, 8) : 1;
 }
 
-/** [입장하기] 면의 높이(px, 배율 1): 화면 높이의 10.5%·폭의 16% 가운데 작은 값, 56~84. 큰 화면에서는 여기에 introButtonScale을 곱한다 */
+/**
+ * [입장하기] 면의 높이(px, 배율 1): 화면 높이의 9.7%·폭의 14.7% 가운데 작은 값, 52~77. 큰 화면에서는 여기에 introButtonScale을 곱한다.
+ * (2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아" — 전의 10.5%·16%·56~84보다 약 8% 낮게, spec-grade6 15-11 끝)
+ */
 export function introButtonHeight(w, h) {
-  return Math.round(clamp(Math.min(0.105 * h, 0.16 * w), 56, 84));
+  return Math.round(clamp(Math.min(0.097 * h, 0.147 * w), 52, 77));
 }
+
+/** [입장하기] 면의 폭 ÷ 높이(최소 폭 — base.css가 --btn-w로 받는다). 전의 3.6보다 좁게(폭 약 18% 작게), 글자는 면 높이 × 0.51(base.css — 약 12% 크게) */
+export const INTRO_BUTTON_WIDTH = 3.2;
 
 /** 큰 화면에서 [입장하기]를 키우는 배율의 상한(spec-grade6 15-11 — selectio game과 같다). 이 값 하나로 바꾼다 */
 export const INTRO_BUTTON_GROW_MAX = 1.35;
@@ -58,11 +64,11 @@ export const INTRO_BUTTON_NUDGE_STAGE = 0.05;
  * [입장하기]가 그림 속 가리면 안 되는 칸(art.buttonAvoid — 소녀가 전개도를 든 손, 그림 px)을 가리면 **왼쪽으로만** 옮긴다:
  * 겹치지 않을 만큼까지, 다만 한도 min(면 폭 × INTRO_BUTTON_NUDGE_MAX, 무대 폭 × INTRO_BUTTON_NUDGE_STAGE)까지(못 피하면 한도만큼 — 손이 조금 가려져도 된다).
  * 그렇게 옮겨도 손 칸이 가려지는 넓이가 줄지 않으면(세로 화면 카드처럼 손이 버튼 한가운데 아래) 옮기지 않고 가운데 그대로(2026-10-17 사용자 결정 "안 보이면 옮기지 않기").
- * 버튼 = 화면에 보이는 버튼 전체: 면(폭 = 높이 × 3.6 — base.css의 최소 폭, 높이 h) + 바깥 여백 8 × s(위·양옆) + 아래 그림자 10 × s(7 + 테두리 3).
+ * 버튼 = 화면에 보이는 버튼 전체: 면(폭 = 높이 × INTRO_BUTTON_WIDTH — base.css의 최소 폭, 높이 h) + 바깥 여백 8 × s(위·양옆) + 아래 그림자 10 × s(7 + 테두리 3).
  * 위아래 자리·크기는 그대로. 꽉 채우기·카드 모두(카드에서는 그림 = 카드). 돌려주는 nudge = 옮긴 거리(px, 0 이상)
  */
 export function placeIntroButton(button, image, stage, art) {
-  const half = (button.h * 3.6) / 2;
+  const half = (button.h * INTRO_BUTTON_WIDTH) / 2;
   const box = { x0: button.x - half - 8 * button.s, y0: button.y - button.h / 2 - 8 * button.s, x1: button.x + half + 8 * button.s, y1: button.y + button.h / 2 + 10 * button.s };
   const k = image.w / art.width;
   let need = 0;
@@ -144,7 +150,7 @@ export function planIntroLayout(o) {
     image = { x: fx, y: fy, w: fw, h: fh };
     stage = { x: 0, y: 0, w: sw, h: sh };
     // [입장하기]: 화면 아래 가운데(밑에서 화면 높이의 3.5%, 적어도 14px)
-    button = placeIntroButton({ x: sw / 2, y: sh - Math.max(14, 0.035 * sh) - btnH / 2, h: btnH, s: btnS }, image, stage, art); // 손 칸을 가리면 왼쪽으로 조금
+    button = placeIntroButton({ x: sw / 2, y: sh - Math.max(14, 0.035 * sh) - btnH / 2, h: btnH, w: btnH * INTRO_BUTTON_WIDTH, s: btnS }, image, stage, art); // 손 칸을 가리면 왼쪽으로 조금
   } else {
     // ② 얇은 여백 카드(늘리지 않는다)
     mode = 'card';
@@ -155,7 +161,7 @@ export function planIntroLayout(o) {
     const cy = snap(INTRO_CARD_GAP + Math.max(0, (sh - bottom - INTRO_CARD_GAP - ch) / 2));
     image = { x: cx, y: cy, w: cw, h: ch };
     stage = { ...image };
-    button = placeIntroButton({ x: sw / 2, y: cy + ch - INTRO_CARD_BUTTON_UP, h: btnH, s: btnS }, image, stage, art); // 손 칸을 가리면 왼쪽으로 조금
+    button = placeIntroButton({ x: sw / 2, y: cy + ch - INTRO_CARD_BUTTON_UP, h: btnH, w: btnH * INTRO_BUTTON_WIDTH, s: btnS }, image, stage, art); // 손 칸을 가리면 왼쪽으로 조금
   }
 
   // ③ 제목 그림: 무대의 보이는 곳 가운데 위. 폭 = 무대 폭의 47%, 무대 높이의 52%(× 비율)까지, 그리고 두 아이의 머리를 가리지 않는 만큼까지

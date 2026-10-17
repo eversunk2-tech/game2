@@ -41,9 +41,11 @@ test('상수: 늘림 한도 1.35, 띠 5%, 카드 여백 12px, 버튼이 카드 �
   assert.equal(sanitizeDpr(undefined), 1);
   assert.equal(sanitizeDpr(-2), 1);
   assert.equal(sanitizeDpr(2), 2);
-  assert.equal(introButtonHeight(390, 844), 62);
-  assert.equal(introButtonHeight(1920, 1080), 84);
-  assert.equal(introButtonHeight(300, 300), 56);
+  // 면 높이: 화면 높이의 9.7%·폭의 14.7% 가운데 작은 값, 52~77(2026-10-17 사용자 요청으로 전의 10.5%·16%·56~84보다 약 8% 낮게 — 15-11 끝)
+  assert.equal(introButtonHeight(390, 844), 57);
+  assert.equal(introButtonHeight(1920, 1080), 77);
+  assert.equal(introButtonHeight(300, 300), 52);
+  assert.ok(introButtonHeight(300, 300) >= 48, '가장 작아도 48px 규칙보다 크게');
 });
 
 test('기기별: 모드가 독립 계산과 같고, 꽉 채우기는 1.35배 이하로 화면을 덮으며(띠 5% 이하) 인물 칸을 자르지 않고, 카드는 늘리지 않고 화면 안에 다 보인다', () => {
@@ -115,7 +117,9 @@ test('그림 정보가 없으면 화면 가득(꽉 채우기)', () => {
 // 기대값은 엔진 코드를 쓰지 않고 기획서 문장만으로 짠 독립 계산:
 //   배율 = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶는다 · 면 높이 = (화면 높이의 10.5%·폭의 16% 가운데 작은 값을 56~84로 묶어 반올림) × 배율
 const expectScale = (w, h) => Math.min(1.35, Math.max(1, Math.min(w / 1280, h / 800)));
-const expectBaseHeight = (w, h) => Math.round(Math.min(84, Math.max(56, Math.min(0.105 * h, 0.16 * w))));
+// 면 높이(배율 1)·폭: 2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아"(15-11 끝)로 높이 약 8% 낮게(9.7%·14.7%, 52~77), 폭 = 높이 × 3.2(전의 3.6보다 약 18% 좁게)
+const expectBaseHeight = (w, h) => Math.round(Math.min(77, Math.max(52, Math.min(0.097 * h, 0.147 * w))));
+const WIDTH_RATIO = 3.2;
 
 test('[입장하기] 배율: 상한 1.35 하나, 기획서의 어림값(1280×800 → 1 · 1366×768 → 1 · 1366×1024 → 1.0672 · 1440×900 → 1.125 · 1920×1080 → 1.35 · 2560×1440 → 1.35)', () => {
   assert.equal(INTRO_BUTTON_GROW_MAX, 1.35);
@@ -135,7 +139,7 @@ test('[입장하기] 배율: 상한 1.35 하나, 기획서의 어림값(1280×80
   for (const [w, h] of [[NaN, 800], [1920, NaN], [Infinity, Infinity], [undefined, undefined]]) assert.equal(introButtonScale(w, h), 1, `${w}×${h}`);
 });
 
-test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율(1920×1080에서 113.4px), 꽉 채우기에서 화면 밑과의 틈은 그대로(3.5%, 적어도 14px), 카드에서는 틈도 배율만큼 — 커진 버튼(초점 후광 포함)이 화면 안이고 두 아이의 머리·제목과 겹치지 않는다', () => {
+test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율(1920×1080에서 77 × 1.35 = 103.95px), 폭 = 높이 × 3.2, 꽉 채우기에서 화면 밑과의 틈은 그대로(3.5%, 적어도 14px), 카드에서는 틈도 배율만큼 — 커진 버튼(초점 후광 포함)이 화면 안이고 두 아이의 머리·제목과 겹치지 않는다', () => {
   const sizes = [
     [1280, 800, 1], [1280, 800, 1.5], [1280, 800, 2], [1366, 768, 1], [1366, 1024, 2], [1440, 900, 1], [1440, 900, 2], [1536, 864, 1.25], [1680, 1050, 1],
     [1920, 1080, 1], [1920, 1080, 2], [1920, 1200, 1], [2560, 1440, 1], [2560, 1440, 2], [3840, 2160, 1], [3840, 2160, 2], [5120, 2880, 1], [5120, 1440, 1], [2560, 1080, 2],
@@ -153,7 +157,8 @@ test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율
     else assert.ok(h - faceBottom >= INTRO_CARD_FOOT * s - 1e-9, `${at} 카드의 틈 ${h - faceBottom}`);
     // 커진 버튼의 바깥(면 + 초점 후광 12px × 배율): 최소 폭 = 면 높이 × 3.6(base.css)
     const halo = 12 * s;
-    const half = (p.button.h * 3.6) / 2 + halo;
+    assert.ok(Math.abs(p.button.w - p.button.h * WIDTH_RATIO) < 1e-9, `${at} 면 폭 = 높이 × 3.2`);
+    const half = (p.button.h * WIDTH_RATIO) / 2 + halo;
     const outer = { x0: p.button.x - half, y0: p.button.y - p.button.h / 2 - halo, x1: p.button.x + half, y1: p.button.y + p.button.h / 2 + halo };
     assert.ok(outer.x0 >= 0 && outer.x1 <= w, `${at} 버튼이 화면 안(가로)`);
     if (p.mode === 'fill') assert.ok(outer.y1 <= h + 1e-9, `${at} 초점 후광까지 화면 안 ${outer.y1} / ${h}`);
@@ -167,7 +172,8 @@ test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율
     }
   }
   const at1920 = planIntroLayout({ w: 1920, h: 1080, dpr: 1, art: ART, logoRatio: LOGO_RATIO });
-  assert.ok(Math.abs(at1920.button.h - 113.4) < 1e-9, `1920×1080 면 높이 ${at1920.button.h}`);
+  assert.ok(Math.abs(at1920.button.h - 103.95) < 1e-9, `1920×1080 면 높이 ${at1920.button.h}`);
+  assert.ok(Math.abs(at1920.button.w - 332.64) < 1e-9, `1920×1080 면 폭 ${at1920.button.w}`);
 });
 
 // 소녀의 손을 가리면 왼쪽으로 조금(spec-grade6 15-11 끝 — 2026-10-17 사용자 결정 "손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록").
@@ -175,7 +181,7 @@ test('[입장하기] 크기와 자리: 면 높이 = 배율 1의 높이 × 배율
 // 다만 한도 min(면 폭 × 0.2, 무대 폭 × 0.05). 그렇게 옮겨도 손 칸이 가려지는 넓이가 줄지 않으면 옮기지 않는다(사용자 결정 "안 보이면 옮기지 않기"). 위아래·크기는 그대로
 const HAND = [1675, 1378, 1795, 1442]; // 배경 그림에서 직접 잰 손 칸(손가락 끝~소매 앞, 엄지 위~손바닥 아래)
 const ART_HAND = { ...ART, buttonAvoid: [HAND] };
-const buttonBox = (b) => ({ x0: b.x - 1.8 * b.h - 8 * b.s, y0: b.y - b.h / 2 - 8 * b.s, x1: b.x + 1.8 * b.h + 8 * b.s, y1: b.y + b.h / 2 + 10 * b.s });
+const buttonBox = (b) => ({ x0: b.x - (WIDTH_RATIO / 2) * b.h - 8 * b.s, y0: b.y - b.h / 2 - 8 * b.s, x1: b.x + (WIDTH_RATIO / 2) * b.h + 8 * b.s, y1: b.y + b.h / 2 + 10 * b.s });
 const handOn = (p) => {
   const k = p.image.w / ART.width;
   return { x0: p.image.x + HAND[0] * k, y0: p.image.y + HAND[1] * k, x1: p.image.x + HAND[2] * k, y1: p.image.y + HAND[3] * k };
@@ -203,7 +209,7 @@ test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도
     // 독립 계산: 가운데 자리에서 손 칸과 겹치면 겹치지 않을 만큼(손 칸 왼쪽 끝까지), 한도까지
     const centered = buttonBox(plain.button);
     const hand = handOn(p);
-    const limit = Math.min(0.2 * 3.6 * plain.button.h, 0.05 * p.stage.w);
+    const limit = Math.min(0.2 * WIDTH_RATIO * plain.button.h, 0.05 * p.stage.w);
     let want = area(centered, hand) > 0 ? Math.min(centered.x1 - hand.x0, limit) : 0;
     const shifted = { ...centered, x0: centered.x0 - want, x1: centered.x1 - want };
     if (area(shifted, hand) >= area(centered, hand)) want = 0; // 옮겨도 손이 더 보이지 않으면 옮기지 않는다
@@ -226,13 +232,14 @@ test('[입장하기]가 소녀의 손을 가리면 왼쪽으로만 조금(한도
   }
   // 배율 1.35 화면: 1920×1080은 손을 다 비킨다(약 58px — 한도 82px 안), 겹침이 줄어든다
   const big = planIntroLayout({ w: 1920, h: 1080, dpr: 1, art: ART_HAND, logoRatio: LOGO_RATIO });
-  assert.ok(big.button.nudge > 50 && big.button.nudge < 0.2 * 3.6 * 113.4, `1920×1080 옮긴 거리 ${big.button.nudge}`);
+  assert.ok(big.button.nudge > 10 && big.button.nudge < 0.2 * WIDTH_RATIO * 103.95, `1920×1080 옮긴 거리 ${big.button.nudge}`);
   assert.ok(area(buttonBox(big.button), handOn(big)) < 1e-6);
   assert.ok(area(buttonBox(planIntroLayout({ w: 1920, h: 1080, dpr: 1, art: ART, logoRatio: LOGO_RATIO }).button), handOn(big)) > 0, '가운데 자리는 손을 가린다');
   assert.ok(moved.includes('1920×1080@1') && moved.includes('1440×900@2') && moved.includes('1366×768@1') && !moved.includes('1024×768@2'), moved.join(' '));
   // 세로 화면 카드: 손이 버튼 한가운데 아래라 한도만큼 옮겨도 더 보이지 않는다 → 옮기지 않는다(사용자 결정)
-  for (const at of ['820×1180@2', '768×1024@2', '390×844@3']) assert.equal(moved.includes(at), false, `${at}는 옮기지 않는다`);
-  for (const [w, h, dpr] of [[820, 1180, 2], [768, 1024, 2], [390, 844, 3]]) {
+  // (820×1180은 버튼이 좁아져 손 칸 겹침이 작아졌고, 한도만큼 옮기면 조금 줄어 규칙대로 옮겨진다 — 위의 독립 계산이 확인)
+  for (const at of ['768×1024@2', '390×844@3']) assert.equal(moved.includes(at), false, `${at}는 옮기지 않는다`);
+  for (const [w, h, dpr] of [[768, 1024, 2], [390, 844, 3]]) {
     const p = planIntroLayout({ w, h, dpr, art: ART_HAND, logoRatio: LOGO_RATIO });
     assert.equal(p.mode, 'card');
     assert.ok(area(buttonBox(p.button), handOn(p)) > 0, `${w}×${h} 손은 버튼 아래(가려진 채로 둔다)`);
