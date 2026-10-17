@@ -50,15 +50,16 @@ export function nextRankText(rank) {
 
 /**
  * 처음 화면 "내 공방" 카드: 칭호 도장, 다음 칭호까지 점수 막대, 별·도감·도장 수
- * info: { rank, stars: { total, max }, collection: { count, total } | null, badges: { count, total } }
+ * info: { rank, stars: { total, max }, collection: { count, total } | null, badges: { count, total }, compact? }
+ * compact: 낮은 한 줄(학년 고르기 — spec-grade6 15-15 시안 A): 도장 60px, 점수 쌓는 방법 글은 빼고 다음 칭호까지만, 칩은 오른쪽(.is-compact)
  */
-export function workshopCard({ rank, stars, collection, badges }) {
+export function workshopCard({ rank, stars, collection, badges, compact = false }) {
   const chip = (iconEl, text) => h('span', { class: 'chip chip-ink' }, iconEl, text);
-  return h('section', { class: 'sheet tape workshop-card', 'aria-label': '내 공방' },
-    rankStamp(rank),
+  return h('section', { class: `sheet tape workshop-card${compact ? ' is-compact' : ''}`, 'aria-label': '내 공방' },
+    compact ? rankStamp(rank, { size: 60 }) : rankStamp(rank),
     h('div', { class: 'workshop-main' },
       h('h3', { class: 'workshop-title' }, rank.name, h('small', null, `칭호 ${rank.index + 1} / ${rank.count}`)),
-      h('p', { class: 'workshop-next' }, nextRankText(rank), ' · 맞히고, 다시 도전하고, 새로 찾을 때 점수가 쌓여요'),
+      h('p', { class: 'workshop-next' }, nextRankText(rank), compact ? null : ' · 맞히고, 다시 도전하고, 새로 찾을 때 점수가 쌓여요'),
       xpBar(rank.progress, { label: rank.next ? `다음 칭호 ${rank.next.name}까지` : '가장 높은 칭호' }),
     ),
     h('div', { class: 'workshop-meta' },

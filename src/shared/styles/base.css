@@ -681,24 +681,89 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .hero-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; width: 100%; }
 .hero-foot .workshop-card { flex: 1 1 300px; margin-top: 0; }
 .hero.has-areas .hero-more { flex-direction: column; align-items: stretch; gap: 12px; }
-/* 처음 화면·학년 화면의 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만 — spec-grade6 15-13·15-14): 오른쪽 아래 구석에 저작권 글 · 작은 [선생님용 안내].
-   자리는 엔진(fitScreenFoot)이 정한다: 화면 맨 아래(--foot-drop만큼 앱 아래 여백으로 내려감), 내용과 겹치면 내용 바로 아래(.is-below, --foot-top).
-   position: absolute라 카드·버튼의 자리는 그대로다. 빈 곳은 누름을 받지 않는다(밑의 것을 가리지 않게) */
-.screen.has-foot { position: relative; }
-.screen-foot {
-  position: absolute; left: 0; right: 0; bottom: calc(-1 * var(--foot-drop, 0px));
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 16px;
-  pointer-events: none;
-}
-.screen-foot > * { pointer-events: auto; }
-.screen-foot.is-below { bottom: auto; top: var(--foot-top, 100%); padding-bottom: 12px; }
-/* 아래에 버튼이 들어갈 틈이 없는 낮은 화면: [선생님용 안내]만 화면 맨 위 오른쪽(소리 버튼 아래). 저작권 글은 아래에 남는다 */
-.screen-foot .btn-teacher.is-top { position: absolute; right: 0; top: var(--teacher-top, 0px); }
+/* 처음 화면·학년 화면의 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만 — spec-grade6 15-13·15-14·15-15): 가운데 저작권 글 · 오른쪽 작은 [선생님용 안내].
+   화면의 맨 끝(margin-top: auto): 남는 높이가 있으면 화면 맨 아래, 내용이 화면보다 길면 내용 바로 아래. 가운데 칸은 양옆이 같은 폭일 때 가운데(좁으면 버튼 자리를 먼저) */
+.screen-foot { margin-top: auto; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px 12px; }
+.screen-foot > .screen-copyright { grid-column: 2; }
+.screen-foot > .btn-teacher { grid-column: 3; justify-self: end; }
+.hero > .screen-foot { grid-column: 1 / -1; }
 /* 저작권 글: 본문보다 작고 차분하게(옅은 잉크 — 바탕과 대비 4.5:1 넘음) */
-.screen-copyright { margin: 0; font-size: 0.8125rem; line-height: 1.25; color: var(--ink-2); }
-/* [선생님용 안내]: 학생이 먼저 누를 곳이 아니라 작고 덜 띄게(옅은 종이 · 옅은 잉크 글자 · 얕은 그림자). 누르는 높이는 48px 그대로 */
-.btn-teacher { padding: 6px 14px; gap: 6px; font-size: 0.95rem; background: var(--paper-2); color: var(--ink-2); box-shadow: 0 2px 0 var(--ink); }
-.btn-teacher .icon { width: 1em; height: 1em; }
+.screen-copyright { margin: 0; font-size: var(--fs-xs); font-weight: 600; line-height: 1.4; color: var(--ink-2); text-align: center; }
+/* [선생님용 안내]: 학생이 먼저 누를 곳이 아니라 작고 덜 띄게(옅은 종이 · 옅은 잉크 테두리·글자 · 얕은 그림자). 누르는 높이는 48px 그대로 */
+.btn-teacher { padding: 4px 14px; font-size: 0.95rem; background: var(--paper-2); color: var(--ink-2); border-color: var(--ink-2); box-shadow: 0 2px 0 var(--ink-2); }
+.btn-teacher:hover:not([disabled]) { box-shadow: 0 3px 0 var(--ink-2); }
+.btn-teacher:focus-visible { box-shadow: 0 2px 0 var(--ink-2), 0 0 0 7px var(--butter); }
+
+/* ── 학년 고르기(학년이 있는 게임의 처음 화면 — spec-grade6 15-15 시안 A "큰 두 칸") ──
+   맨 위 띠 한 줄(← 처음으로 · 게임 이름 · 윗줄 글) → "공부할 학년을 골라요" → 큰 학년 카드(남는 높이를 채운다 — 크롬북 380px까지) → 내 공방 한 줄 · [놀이 방법]·[학습 기록] → 맨 아래 줄.
+   학년 카드 = 왼쪽(태블릿 세로는 위) 색 칸에 큰 학년 숫자(첫 학년 노랑 · 둘째 파랑) · 학년 이름 · 설명 · 모은 별 · 작은 그림(오른쪽 아래) */
+.screen-title.grade-pick { gap: 14px; padding: 0 4px; }
+.title-band { gap: 10px 16px; }
+.title-band .title-main { font-size: 1.9rem; line-height: 1.1; }
+.grade-ask { font-size: 1.9rem; line-height: 1.2; text-align: center; margin-top: 4px; }
+.grade-pick .grade-cards { flex: 1 1 auto; min-height: 200px; max-height: 380px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin: 0; }
+.grade-pick .grade-card { grid-template-columns: 168px minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto 1fr auto; gap: 0; padding: 0; overflow: hidden; border-radius: 24px; align-items: start; }
+.grade-num {
+  grid-column: 1; grid-row: 1 / -1; align-self: stretch; display: grid; place-items: center;
+  border-right: 2px solid var(--ink); background: var(--face-1); color: var(--ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 8.5rem; line-height: 1;
+}
+.grade-cards > li:nth-child(2) .grade-num { background: var(--face-2); }
+.grade-cards > li:nth-child(3) .grade-num { background: var(--face-3); }
+.grade-pick .grade-card .area-title { grid-column: 2 / -1; grid-row: 2; align-self: auto; font-size: 2.6rem; line-height: 1.15; padding: 0 28px; }
+.grade-pick .grade-card .area-line { grid-column: 2 / -1; grid-row: 3; align-self: auto; font-size: 1.2rem; line-height: 1.45; padding: 8px 28px 0; }
+.grade-pick .grade-card .area-meta { grid-column: 2; grid-row: 5; align-self: end; padding: 12px 0 22px 28px; }
+.grade-pick .grade-card .area-meta .chip { font-size: 1rem; padding: 4px 14px; }
+.grade-pick .grade-card .area-art { grid-column: 3; grid-row: 5; align-self: end; width: 84px; height: 84px; margin: 12px 22px 16px 12px; }
+.grade-pick .grade-cards .flag { top: -18px; right: 26px; font-size: 1.25rem; padding: 2px 14px; }
+/* 내 공방은 낮은 한 줄(도장 · 이름 · 다음 칭호까지 · 막대 | 별·도감·도장 칩), 그 옆에 [놀이 방법]·[학습 기록] */
+.grade-pick .hero-foot { flex-wrap: nowrap; gap: 16px; align-items: stretch; }
+.grade-pick .workshop-card.is-compact { flex: 1 1 auto; grid-template-columns: auto minmax(220px, 1fr) auto; gap: 4px 20px; padding: 10px 20px 10px 14px; width: auto; margin: 0; }
+.grade-pick .workshop-card.is-compact .workshop-title { font-size: 1.2rem; }
+/* 칩은 오른쪽 한 줄 — 좁은 가로 화면(1180px 아래)에서는 다음 칭호 글이 한 줄에 남도록 칩이 두 줄로 */
+.grade-pick .workshop-card.is-compact .workshop-meta { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+.grade-pick .hero-more { flex-wrap: nowrap; }
+.grade-pick .hero-more .btn { white-space: nowrap; }
+@media (min-width: 901px) and (max-width: 1180px) {
+  /* 좁은 가로 화면(작은 노트북·가로 태블릿): 카드가 좁아 색 칸·그림을 조금 줄여 글 칸을 넓힌다 */
+  .grade-pick .grade-card { grid-template-columns: 132px minmax(0, 1fr) auto; }
+  .grade-num { font-size: 7rem; }
+  .grade-pick .grade-card .area-title { padding: 0 22px; }
+  .grade-pick .grade-card .area-line { padding: 8px 22px 0; }
+  .grade-pick .grade-card .area-meta { padding: 12px 0 18px 22px; }
+  .grade-pick .grade-card .area-art { width: 72px; height: 72px; margin: 12px 18px 14px 10px; }
+}
+@media (max-width: 900px) {
+  /* 태블릿 세로: 학년 카드 둘을 나란히, 큰 숫자는 카드 위 색 띠 */
+  .grade-pick .grade-cards { min-height: 420px; max-height: 660px; }
+  .grade-pick .grade-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto 1fr auto; }
+  .grade-num { grid-column: 1 / -1; grid-row: 1; min-height: clamp(200px, 22vh, 270px); border-right: 0; border-bottom: 2px solid var(--ink); font-size: 10.5rem; }
+  .grade-pick .grade-card .area-title { grid-column: 1 / -1; padding: 22px 24px 0; }
+  .grade-pick .grade-card .area-line { grid-column: 1 / -1; padding: 8px 24px 0; }
+  .grade-pick .grade-card .area-meta { grid-column: 1; padding: 12px 0 22px 24px; }
+  .grade-pick .grade-card .area-art { grid-column: 2; grid-row: 5; width: 110px; height: 110px; margin: 12px 24px 20px 12px; }
+  .grade-pick .hero-foot { flex-wrap: wrap; }
+  .grade-pick .workshop-card.is-compact { flex: 1 1 100%; }
+  .grade-pick .hero-more { flex: 1 1 100%; }
+  .grade-pick .hero-more .btn { flex: 1; }
+}
+@media (max-width: 560px) {
+  /* 휴대폰: 학년 카드를 위아래로(왼쪽 색 칸의 큰 숫자), 작은 그림은 뺀다. 맨 아래 줄은 [선생님용 안내] 위 · 저작권 글 아래, 가운데 */
+  .title-band .title-main { font-size: 1.55rem; }
+  .grade-ask { font-size: 1.5rem; text-align: left; }
+  .grade-pick .grade-cards { flex: none; min-height: 0; max-height: none; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+  .grade-pick .grade-card { grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: 1fr auto auto 1fr auto; min-height: 168px; }
+  .grade-num { grid-column: 1; grid-row: 1 / -1; min-height: 0; border-bottom: 0; border-right: 2px solid var(--ink); font-size: 5.2rem; }
+  .grade-pick .grade-card .area-title { grid-column: 2; font-size: 2rem; padding: 0 16px; }
+  .grade-pick .grade-card .area-line { grid-column: 2; font-size: 1rem; padding: 4px 16px 0; }
+  .grade-pick .grade-card .area-meta { grid-column: 2; padding: 10px 16px 14px; }
+  .grade-pick .grade-card .area-art { display: none; }
+  .grade-pick .workshop-card.is-compact { grid-template-columns: auto minmax(0, 1fr); }
+  .grade-pick .workshop-card.is-compact .workshop-meta { grid-column: 1 / -1; grid-row: auto; flex-wrap: wrap; }
+  .screen-foot { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 10px; padding-top: 6px; }
+  .screen-foot > .screen-copyright { grid-column: 1; grid-row: 2; }
+  .screen-foot > .btn-teacher { grid-column: 1; grid-row: 1; justify-self: center; }
+}
 /* 단계 지도: 영역 탭(role="tablist"). 지금 보는 영역은 눌린 키 모양(내려앉고 그림자 없음) + 잉크 바탕 흰 글자 — 색만으로 구분하지 않는다 */
 .area-tabs { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .area-tab {

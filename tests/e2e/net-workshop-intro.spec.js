@@ -424,7 +424,8 @@ test('인트로가 없는 게임(예시 게임)은 그대로: 인트로·[← �
   expect(errors).toEqual([]);
 });
 
-test('학년 고르기 화면: [← 처음으로]가 더해져도 크롬북·태블릿과 작은 가로 화면(960×680 · 1024×600 · 1024×768 · 1180×820 · 1280×720)·태블릿 세로 768×1024에 세로·가로 스크롤 0, 버튼은 맨 위 왼쪽에 48px', async ({ page }, testInfo) => {
+// B0d(spec-grade6 15-15 시안 A "큰 두 칸"): 제목이 맨 위 띠 한 줄로 올라가 [← 처음으로]는 제목 "위"가 아니라 같은 줄의 "왼쪽"이다 — 마지막 줄의 뜻만 바뀜(크기·스크롤 기준은 그대로)
+test('학년 고르기 화면: [← 처음으로]가 더해져도 크롬북·태블릿과 작은 가로 화면(960×680 · 1024×600 · 1024×768 · 1180×820 · 1280×720)·태블릿 세로 768×1024에 세로·가로 스크롤 0, 버튼은 맨 위 왼쪽(제목 왼쪽)에 48px', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
   test.setTimeout(60_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -437,12 +438,14 @@ test('학년 고르기 화면: [← 처음으로]가 더해져도 크롬북·태
       const doc = document.documentElement;
       const back = document.querySelector('.btn-intro').getBoundingClientRect();
       const title = document.querySelector('.title-main').getBoundingClientRect();
-      return { h: doc.scrollWidth - doc.clientWidth, v: doc.scrollHeight - innerHeight, back: [back.width, back.height, back.left, back.bottom <= title.top + 0.5] };
+      const first = Math.min(...[...document.querySelectorAll('.screen-title button, .screen-title a')].map((el) => el.getBoundingClientRect().top));
+      return { h: doc.scrollWidth - doc.clientWidth, v: doc.scrollHeight - innerHeight, back: [back.width, back.height, back.left, back.right <= title.left + 0.5 && back.top < title.bottom && back.bottom > title.top, back.top <= first + 0.5] };
     });
     expect([m.h, m.v], `${w}×${h}`).toEqual([0, 0]);
     expect(m.back[0], `${w}×${h} 폭`).toBeGreaterThanOrEqual(48);
     expect(m.back[1], `${w}×${h} 높이`).toBeGreaterThanOrEqual(48);
-    expect(m.back[3], `${w}×${h} 제목 위`).toBe(true);
+    expect(m.back[3], `${w}×${h} 제목 왼쪽(같은 줄)`).toBe(true);
+    expect(m.back[4], `${w}×${h} 화면의 맨 위 버튼`).toBe(true);
   }
 });
 

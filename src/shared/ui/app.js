@@ -542,30 +542,6 @@ export function planFooter(value) {
   return value.trim();
 }
 
-/**
- * 맨 아래 줄과 내용 사이의 가장 작은 틈(px). 둘 가운데 작은 쪽을 쓴다:
- *   줄의 것 — [선생님용 안내](버튼)는 FOOT_GAP, 저작권 글(누르지 않는 작은 글)은 FOOT_GAP_TEXT
- *   내용 — 카드·버튼·글은 FOOT_GAP(그림자·들뜸까지), 꾸밈 그림(처음 화면 오른쪽 매트·자·색종이 — 화면 읽기에서 숨김)은 FOOT_GAP_ART(기울어진 자의 상자는 그림보다 크다)
- * 맨 아래 줄과 화면 아래 끝 사이의 가장 작은 틈: 버튼이 있는 줄은 FOOT_EDGE, 저작권 글만 있는 줄은 FOOT_EDGE_TEXT
- */
-export const FOOT_GAP = 8;
-export const FOOT_GAP_TEXT = 4;
-export const FOOT_GAP_ART = 2;
-export const FOOT_EDGE = 4;
-export const FOOT_EDGE_TEXT = 2;
-
-/**
- * 맨 아래 줄을 어디에 놓을까(순수 함수 — 엔진이 화면 크기가 바뀔 때마다 부른다, tests/unit에서 검사).
- *   parts: 줄 안의 것들(저작권 글·[선생님용 안내])을 그 자리에 놓았을 때의 상자들 { left, top, right, bottom, gap? }
- *   content: 화면의 내용 상자들 { left, top, right, bottom, gap? }
- *   둘의 gap(없으면 FOOT_GAP) 가운데 작은 쪽보다 가까우면 겹친 것으로 본다
- * → 'bottom'(그 자리 그대로 — 내용과 겹치지 않는다) 또는 'below'(겹친다 — 엔진은 다른 자리를 찾는다)
- */
-export function footPlacement(parts, content) {
-  const hits = (a, b, gap) => a.left < b.right && a.right > b.left && a.top < b.bottom + gap && a.bottom > b.top - gap;
-  return parts.some((p) => content.some((c) => hits(p, c, Math.min(p.gap ?? FOOT_GAP, c.gap ?? FOOT_GAP)))) ? 'below' : 'bottom';
-}
-
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
 function defaultHeroArt(game) {
   return h('div', { class: 'hero-papers' },
@@ -741,65 +717,6 @@ export function createGameApp({
       heading.focus({ preventScroll: true });
     }
     globalThis.scrollTo?.(0, 0);
-    const foot = screen.querySelector(':scope > .screen-foot');
-    if (foot) screenCleanups.push(fitScreenFoot(screen, foot)); // 맨 아래 줄이 있는 화면(처음 화면·학년 화면)만
-  }
-
-  /**
-   * 맨 아래 줄의 자리(footPlacement로 겹침을 본다). 차례대로 처음으로 맞는 것:
-   *   1. 둘 다 화면 맨 아래 오른쪽(앱 아래 여백 안으로 내려가 화면 아래 끝에서 FOOT_EDGE px 위까지): 저작권 글 · [선생님용 안내]
-   *   2. 아래에 버튼(48px)이 들어갈 틈이 없는 낮은 화면: [선생님용 안내]만 화면 맨 위 오른쪽(소리 버튼 아래 — .is-top), 저작권 글은 맨 아래 오른쪽
-   *   3. 그래도 겹치면(휴대폰처럼 내용이 화면보다 길 때): 내용 바로 아래(.is-below — 페이지가 그만큼 길어진다)
-   * 어느 쪽이든 position: absolute라 카드·버튼의 자리를 바꾸지 않는다(카드를 밀어 올리지 않는다). 화면·내용의 크기가 바뀔 때(창 크기,
-   * 글꼴을 받은 뒤)마다 다시 정한다. → 정리 함수
-   */
-  function fitScreenFoot(screen, foot) {
-    const content = [...screen.children].filter((el) => el !== foot)
-      .flatMap((el) => (el.matches('.hero-copy, .hero-art') ? [...el.children] : [el])); // 처음 화면은 글 칸·그림 칸의 조각마다(그림 칸의 빈 곳은 쓴다)
-    const note = foot.querySelector('.screen-copyright');
-    const guide = foot.querySelector('.btn-teacher');
-    const rect = (el) => el.getBoundingClientRect();
-    const boxOf = (el) => {
-      const b = rect(el);
-      return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, width: b.width, height: b.height, gap: el.closest('.hero-art') ? FOOT_GAP_ART : FOOT_GAP };
-    };
-    const partOf = (el) => {
-      const b = rect(el);
-      return { left: b.left, top: b.top, right: b.right, bottom: b.bottom, gap: el === note ? FOOT_GAP_TEXT : FOOT_GAP };
-    };
-    const fits = (parts, boxes) => footPlacement(parts.filter(Boolean).map(partOf), boxes) === 'bottom';
-    // 줄의 아래 끝: 앱 아래 여백 안으로 내려가 화면 아래 끝에서 FOOT_EDGE(버튼이 줄에 있을 때)·FOOT_EDGE_TEXT(저작권 글만) 위까지
-    const drop = (edge) => foot.style.setProperty('--foot-drop', `${Math.max(0, (parseFloat(getComputedStyle(root).paddingBottom) || 0) - edge)}px`);
-    // 맨 위 오른쪽의 [선생님용 안내]: 줄(foot) 안의 절대 자리라 화면 맨 위까지의 거리를 준다(줄이 움직이면 다시)
-    const pinTop = () => guide.style.setProperty('--teacher-top', `${Math.round(rect(screen).top - rect(foot).top)}px`);
-    const fit = () => {
-      if (!screen.isConnected) return;
-      drop(guide ? FOOT_EDGE : FOOT_EDGE_TEXT);
-      foot.classList.remove('is-below');
-      guide?.classList.remove('is-top');
-      const boxes = content.map(boxOf).filter((b) => b.width > 0 && b.height > 0);
-      if (fits([note, guide], boxes)) return; // 1
-      let top = false;
-      if (guide) {
-        guide.classList.add('is-top');
-        drop(FOOT_EDGE_TEXT);
-        pinTop();
-        top = fits([guide], boxes);
-        if (!top) {
-          guide.classList.remove('is-top');
-          drop(FOOT_EDGE);
-        } else if (fits([note], boxes)) return; // 2
-      }
-      const bottom = Math.max(...boxes.map((b) => b.bottom)); // 3
-      foot.style.setProperty('--foot-top', `${Math.ceil(bottom - rect(screen).top + FOOT_GAP)}px`);
-      foot.classList.add('is-below');
-      if (top) pinTop();
-    };
-    fit();
-    if (typeof globalThis.ResizeObserver !== 'function') return () => {};
-    const watch = new ResizeObserver(() => fit());
-    for (const el of [screen, ...content]) watch.observe(el);
-    return () => watch.disconnect();
   }
 
   /** 버튼: label은 글자(접근 이름), iconName은 글자 앞(또는 after면 뒤)에 붙는 그림 */
@@ -836,25 +753,49 @@ export function createGameApp({
     const eyebrow = plan.current ? plan.current.title : game.subtitle ?? defaultSubtitle(game);
     const grade = gradeLabel(game);
     const { before, mark, after } = splitTitleMark(game.title);
+    const lines = howToLines(lessonArea);
+    // 학년 고르기(학년이 있는 게임의 처음 화면): 시안 A "큰 두 칸"(spec-grade6 15-15) — 내 공방 카드는 낮은 한 줄, 오른쪽 그림 없음
+    const gradePick = Boolean(areaMode && gradePlan);
     let art = null;
-    if (heroArt) {
+    if (heroArt && !gradePick) {
       try {
         art = heroArt(h);
       } catch (error) {
         console.error(error);
       }
     }
-    const lines = howToLines(lessonArea);
     const card = rewardsOn && workshopCard({
       rank: rewardStore.rank(),
       stars: { total: progress.totalStars(), max: progress.maxStars },
       collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
       badges: { count: earnedCount(), total: badgeDefs.length },
+      compact: gradePick,
     });
     // 인트로가 있는 게임: 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽에 [← 처음으로] → 인트로
     const toIntro = introPlan && !plan.current && button('← 처음으로', () => openIntro(), 'btn btn-small btn-back btn-intro');
     // 맨 아래 줄(게임이 footer·teacherGuide를 줄 때만, 한 차시 주소 화면은 빼고): 저작권 글 · [선생님용 안내]
     const foot = !plan.current && screenFoot({ teacher: true });
+    const titleMain = h('h1', { class: 'title-main' }, before, h('span', { class: 'mark' }, mark), after);
+    const more = areaMode && h('div', { class: 'actions hero-more' },
+      lines.length > 0 && button('놀이 방법', () => show(howToScreen()), 'btn', 'info'),
+      button('학습 기록', () => show(reportScreen()), 'btn', 'book'),
+    );
+    if (gradePick) {
+      // 맨 위 띠 한 줄(← 처음으로 · 게임 이름 · 윗줄 글) → "공부할 학년을 골라요" → 큰 학년 카드 둘(화면에 남는 높이를 채운다) → 내 공방 한 줄 · 놀이 방법 · 학습 기록 → 맨 아래 줄.
+      // 오른쪽 그림(heroArt)과 소개 글(summary)은 이 화면에 없다
+      return h('section', { class: `screen screen-title grade-pick${foot ? ' has-foot' : ''}` },
+        h('div', { class: 'title-chips title-band' },
+          toIntro,
+          titleMain,
+          eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
+          grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
+        ),
+        h('h2', { class: 'grade-ask' }, '공부할 학년을 골라요'),
+        gradeCards(),
+        h('div', { class: 'hero-foot' }, card, more),
+        foot,
+      );
+    }
     return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}${foot ? ' has-foot' : ''}` },
       h('div', { class: 'hero-copy' },
         (eyebrow || grade || toIntro) && h('div', { class: 'title-chips' },
@@ -862,20 +803,14 @@ export function createGameApp({
           eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
           grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
         ),
-        h('h1', { class: 'title-main' }, before, h('span', { class: 'mark' }, mark), after),
+        titleMain,
         game.summary && h('p', { class: 'lead' }, game.summary),
         // 영역이 있으면 [시작하기] 자리에 영역 카드(누르면 그 영역의 단계 지도). 놀이 방법·학습 기록은 내 공방 카드 옆에 세로로
-        // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다)
+        // (크롬북 1366×680에서 처음 화면이 한 화면에 들어오게 — 버튼 줄 하나만큼 낮아진다). 학년이 있으면 위의 학년 고르기 화면
         areaMode
           ? [
-            gradePlan ? gradeCards() : areaCards(areaPlan, startAreaId(areaPlan, storage.get(AREA_KEY, null))),
-            h('div', { class: 'hero-foot' },
-              card,
-              h('div', { class: 'actions hero-more' },
-                lines.length > 0 && button('놀이 방법', () => show(howToScreen()), 'btn', 'info'),
-                button('학습 기록', () => show(reportScreen()), 'btn', 'book'),
-              ),
-            ),
+            areaCards(areaPlan, startAreaId(areaPlan, storage.get(AREA_KEY, null))),
+            h('div', { class: 'hero-foot' }, card, more),
           ]
           : [
             h('div', { class: 'actions' },
@@ -898,13 +833,13 @@ export function createGameApp({
   }
 
   /**
-   * 처음 화면·학년 화면의 맨 아래 줄(spec-grade6 15-13·15-14): 저작권 글(footer) · [선생님용 안내](teacherGuide — 처음 화면에만, 같은 탭으로 여는 링크).
-   * 둘 다 없으면 null(화면이 지금과 같다). 자리는 엔진이 화면을 보인 뒤 정한다(fitScreenFoot — 화면 맨 아래, 내용과 겹치면 내용 바로 아래).
-   * DOM은 화면의 끝이라 키보드 차례는 학년 카드·놀이 방법·학습 기록 다음이다
+   * 처음 화면·학년 화면의 맨 아래 줄(spec-grade6 15-13·15-14·15-15): 가운데 저작권 글(footer) · 오른쪽 작은 [선생님용 안내](teacherGuide — 처음 화면에만,
+   * 같은 탭으로 여는 링크). 둘 다 없으면 null(화면이 지금과 같다). 화면의 맨 끝(margin-top: auto — 남는 높이가 있으면 화면 맨 아래, 내용이 화면보다 길면
+   * 내용 바로 아래)이라 키보드 차례는 학년 카드·놀이 방법·학습 기록 다음이다
    */
   function screenFoot({ teacher = false } = {}) {
     const note = footerText && h('p', { class: 'screen-copyright' }, footerText);
-    const guide = teacher && teacherHref && h('a', { class: 'btn btn-small btn-teacher', href: teacherHref }, icon('user'), '선생님용 안내');
+    const guide = teacher && teacherHref && h('a', { class: 'btn btn-small btn-teacher', href: teacherHref }, '선생님용 안내');
     return note || guide ? h('footer', { class: 'screen-foot' }, note, guide) : null;
   }
 
@@ -1155,7 +1090,10 @@ export function createGameApp({
     }));
   }
 
-  /** 처음 화면의 학년 카드: 작은 그림 · "5학년" · 학년 설명 · 그 학년의 모은 별. 지난번에 하던 학년(처음이면 첫 학년)에 "여기부터!" */
+  /**
+   * 학년 고르기의 큰 학년 카드(시안 A): 왼쪽(태블릿 세로는 위) 색 칸의 큰 학년 숫자 · "5학년" · 학년 설명 · 그 학년의 모은 별 · 작은 그림.
+   * 지난번에 하던 학년(처음이면 첫 학년)에 "여기부터!"
+   */
   function gradeCards() {
     const here = startGrade(gradePlan, savedArea());
     return h('ul', { class: 'area-cards grade-cards', 'aria-label': '학년' }, gradePlan.map((g) => {
@@ -1175,6 +1113,7 @@ export function createGameApp({
             openGrade(g.grade);
           },
         },
+          h('span', { class: 'grade-num', 'aria-hidden': 'true' }, String(g.grade)), // 큰 학년 숫자(시안 A — 화면 읽기는 카드 이름으로)
           art && h('span', { class: 'area-art', 'aria-hidden': 'true' }, art),
           h('span', { class: 'area-title' }, g.title),
           g.note && h('span', { class: 'area-line' }, g.note),

@@ -13,7 +13,7 @@
 | 공통 엔진 | 화면 흐름, 단계·별점·잠금, 학습 기록(오개념 집계, 결과 복사), 끌어다 놓기, 효과음 ([사용법](docs/engine.md)) |
 | 공통 게임 요소 | 솜씨 점수·칭호·연속·다시 일어서기·도장판·도감·도전 주문서·축하 연출. 학습 행동에만 점수를 주고 빠르기 점수·순위표가 없음 ([engine.md 10절](docs/engine.md)) |
 | 공통 디자인 | "종이 공방": 종이 바탕·잉크 테두리·색종이 ([기획](docs/design/spec.md)). 엔진에 들어 있어 모든 게임이 같은 모습 |
-| 예시 게임 | 약수·배수 분류 (5-1 약수와 배수): 엔진이 실제로 돌아가는 모습 |
+| 예시 게임 | 약수·배수 분류 (5-1 약수와 배수): 엔진이 실제로 돌아가는 모습 (선생님용 안내의 목록에는 없고 주소 `sample-divisor-sort.html`로만 열린다) |
 | 템플릿 | 새 게임 폴더 + 기획서 템플릿([docs/game-design-template.md](docs/game-design-template.md)) |
 | 검사 | 단위 테스트(Node), 브라우저 테스트(Playwright: 크롬북·태블릿 화면) |
 | 배포 | GitHub Actions: 검사(CI), GitHub Pages 배포 |
@@ -64,11 +64,19 @@ tests/e2e/                  브라우저 테스트 (Playwright)
 
 ## 학생에게 나눠 주기
 
-사이트 주소(GitHub Pages)를 나눠 줍니다.
+**사이트 주소를 나눠 줍니다. 사이트 주소로 열면 입체도형 공방의 인트로가 바로 나옵니다.**
 
-1. 저장소 Settings → Pages → Source를 **GitHub Actions**로 바꿉니다.
-2. `main` 브랜치에 올리면 자동으로 배포됩니다.
-3. 게임 모음: `https://<계정>.github.io/<저장소>/`, 게임: `…/<게임-id>.html` (이 저장소: `https://eversunk2-tech.github.io/game2/`)
+| | 주소 |
+| --- | --- |
+| 사이트(학생에게) | GitHub Pages `https://eversunk2-tech.github.io/game2/` · Cloudflare Pages `https://solid-figure.pages.dev/` |
+| 선생님용 안내 | 사이트 주소 뒤에 `teacher.html` (예: `https://eversunk2-tech.github.io/game2/teacher.html`). 학년 고르기 화면 오른쪽 아래의 [선생님용 안내]로도 열립니다 |
+| 게임 하나(옛 주소) | 사이트 주소 뒤에 `<게임-id>.html` (예: `…/net-workshop.html?lesson=cube`) — 그대로 열립니다 |
+
+- 빌드가 사이트 맨 위 `index.html`을 입체도형 공방의 게임 HTML과 같은 내용으로 만듭니다(`scripts/build.mjs`의 `FRONT_GAME` — 넘겨 주기 없음). 그래서 `net-workshop.html`로 열든 맨 위 주소로 열든 같은 게임이고 기록도 같습니다. 맨 위 주소에도 아래 옵션을 붙일 수 있습니다(예: `https://eversunk2-tech.github.io/game2/?lesson=cube`).
+- **학생 기록은 사이트 주소마다 따로 남습니다.** 같은 게임이 두 주소(GitHub Pages·Cloudflare Pages)에 올라가 있으니 한 반에는 한 주소만 나눠 줍니다.
+- 선생님용 안내(`teacher.html`)는 전의 게임 모음을 고친 페이지입니다: 게임 카드(누르면 인트로 없이 학년 고르기), 선생님용 주소 옵션, 기록 안내. 예시 게임은 목록에 없습니다(`game.json`의 `"listed": false`).
+
+GitHub Pages 설정(처음 한 번): 저장소 Settings → Pages → Source를 **GitHub Actions**로 바꾸고, `main` 브랜치에 올리면 자동으로 배포됩니다. Cloudflare Pages는 같은 `main`을 받아 `npm run build`의 `dist/`를 올립니다(맨 위 경로, `.html`을 뺀 주소로 넘겨 줌 — 상대 주소라 두 곳에서 같게 열립니다).
 
 - **수업 시간에는 새 버전을 올리지 않습니다.** 올린 직후 몇 분 동안은 학생 브라우저가 옛 화면이 찾는 파일을 못 받을 수 있습니다(게임이 한 번 저절로 새로 고치거나 "새 버전이 올라왔어요" 화면에서 [새로 고침]을 누르면 됩니다 — 모은 별과 기록은 그대로).
 - `dist/`의 파일을 더블클릭해 열면 게임이 열리지 않습니다(브라우저가 파일 주소에서 모듈 스크립트를 막습니다). 빌드 결과는 `npm run preview`로 봅니다.
@@ -88,6 +96,7 @@ tests/e2e/                  브라우저 테스트 (Playwright)
 | `?lesson=<차시 id>` | 그 차시의 단계만 보이기 (차시 묶음이 있는 게임. 예: `net-workshop.html?lesson=cube`) |
 | `?grade=<학년>` | 그 학년 화면으로 바로 (학년이 있는 게임. 예: 입체도형 공방 `net-workshop.html?grade=6`) |
 | `?area=<영역 id>` | 그 영역의 단계 지도로 바로 (영역이 있는 게임. 예: 입체도형 공방 `net-workshop.html?area=blocks` — 영역 `cube` 정육면체의 전개도 · `cuboid` 직육면체의 전개도 · `blocks` 쌓기나무). 차례는 `?lesson=` > `?area=` > `?grade=` |
+| `?intro=0` | 인트로 없이 학년 고르기부터 (인트로가 있는 게임. `?stage=`·`?lesson=`·`?area=`·`?grade=`가 없을 때만 뜻이 있다. 선생님용 안내의 게임 카드가 이 주소) |
 | `?fx=low` | 효과 줄이기 (느린 기기: 색종이·화면 움직임 끔. CPU 코어 2개 이하 기기는 저절로) |
 
 ## 설계 원칙
