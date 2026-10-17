@@ -24,7 +24,11 @@ const FILE = 'net-workshop.html';
 const stageOf = (id) => BLOCK_STAGES.find((s) => s.id === id);
 /** 게임과 같은 시드 문자열(<seed>:<단계 id>)로 같은 문항을 만든다 */
 const questionsFor = (id, seed = 1) => makeBlockQuestions(stageOf(id), createRng(`${seed}:${id}`));
-const open = (page, stageId, { seed = 1, extra = '' } = {}) => page.goto(fileUrl(FILE, `?unlock=all&seed=${seed}&sound=off&stage=${stageId}${extra}`));
+// 쌓기나무의 플레이는 그 단계에 들어갈 때 받는 묶음이다(B0b) — 연 뒤 무대가 그려질 때까지 기다린다(들어가는 길만. 전에는 열리는 순간 그려져 있었다)
+const open = async (page, stageId, { seed = 1, extra = '' } = {}) => {
+  await page.goto(fileUrl(FILE, `?unlock=all&seed=${seed}&sound=off&stage=${stageId}${extra}`));
+  await page.locator('.play-area > *').first().waitFor({ state: 'attached' });
+};
 const isTouch = (testInfo) => testInfo.project.name === 'tablet';
 /** 그 기기의 누르기: 태블릿은 손가락, 크롬북은 마우스 */
 const press = (testInfo, locator) => (isTouch(testInfo) ? locator.tap() : locator.click());

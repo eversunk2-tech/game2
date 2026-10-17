@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { opensWithIntro, planIntro, readUrlOptions } from '../../src/shared/ui/app.js';
+import { introLayoutOf, opensWithIntro, planIntro, readUrlOptions } from '../../src/shared/ui/app.js';
+import { INTRO_UPSCALE_MAX, planIntroLayout } from '../../src/shared/core/intro-fit.js';
 
 // 게임 인트로(선택 기능, B0c · docs/engine.md 2절 "게임 인트로"): intro가 없는 게임은 지금과 같다
 
@@ -73,7 +74,8 @@ test('입체도형 공방의 인트로 값이 그림 파일과 맞다: 사용자
   const md5 = (b) => createHash('md5').update(b).digest('hex');
   assert.equal(md5(bgBuf), 'a0ca1de662f43b43b63964d18f635e0c');
   assert.equal(md5(titleBuf), 'aa28acc246cf72c99d8a9a5a1367777f');
-  assert.deepEqual((await readdir(new URL('img/', dir))).sort(), ['intro-bg.jpg', 'intro-title.png']);
+  // 숨김 파일(.DS_Store 등 — Finder로 폴더를 열면 생기고 저장소에는 들어가지 않는다)은 빼고 본다
+  assert.deepEqual((await readdir(new URL('img/', dir))).filter((name) => !name.startsWith('.')).sort(), ['intro-bg.jpg', 'intro-title.png']);
   const title = pngSize(titleBuf);
   const bg = jpegSize(bgBuf);
   assert.deepEqual(title, { width: 2880, height: 1620 });
@@ -98,4 +100,22 @@ test('입체도형 공방의 인트로 값이 그림 파일과 맞다: 사용자
   const css = await readFile(new URL('style.css', dir), 'utf8');
   assert.match(css, /url\('\.\/img\/intro-bg\.jpg'\)/);
   assert.match(css, /url\('\.\/img\/intro-title\.png'\)/);
+});
+
+test('B0c-1: 배경 그림 정보(art)가 없으면 화면 가득(cover) — 기기 화소 배율과 상관없이 늘 꽉 채우기, 그림 상자 = 화면 (docs/engine.md 2절). art가 있으면 규칙 그대로', () => {
+  for (const [w, h, dpr] of [[1366, 768, 1], [1366, 768, 2], [390, 844, 3], [1920, 1080, 1.5], [820, 1180, 2], [844, 390, 3], [1024, 768, 2.625]]) {
+    const plan = introLayoutOf({ w, h, dpr, art: null, logoRatio: 1.6 });
+    assert.equal(plan.mode, 'fill', `${w}×${h}@${dpr}`);
+    assert.deepEqual(plan.image, { x: 0, y: 0, w, h }, `${w}×${h}@${dpr}`);
+    assert.deepEqual(plan.stage, { x: 0, y: 0, w, h });
+    assert.equal(plan.band, 0);
+  }
+  // 고치기 전의 길(화면 크기를 그림 크기로 + 기기 배율 그대로)은 DPR이 1.35를 넘으면 카드였다(review-b0c B0c-1의 재현)
+  assert.equal(planIntroLayout({ w: 1366, h: 768, dpr: 2, art: { width: 1366, height: 768 } }).mode, 'card');
+  // art가 있으면 planIntroLayout과 같은 값
+  const art = { width: 2880, height: 1620, keep: [160, 630, 2250, 1620], avoid: [[425, 625, 765, 970]] };
+  for (const [w, h, dpr] of [[1366, 768, 1], [820, 1180, 2], [1920, 1080, 2]]) {
+    assert.deepEqual(introLayoutOf({ w, h, dpr, art, logoRatio: 1.55 }), planIntroLayout({ w, h, dpr, art, logoRatio: 1.55 }));
+    assert.ok(introLayoutOf({ w, h, dpr, art }).ratio <= INTRO_UPSCALE_MAX + 1e-9);
+  }
 });

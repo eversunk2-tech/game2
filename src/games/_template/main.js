@@ -3,6 +3,9 @@
  * 1) docs/games/<게임-id>.md 기획서를 먼저 채운다.
  * 2) STAGES와 playStage를 기획서대로 바꾼다. (지금은 버튼 두 개짜리 예시 문제)
  * 3) 규칙은 logic.js 같은 순수 함수 파일로 빼고 tests/unit에 테스트를 쓴다.
+ * 빌드하면 index.html은 dist/<게임-id>.html 한 장이 되고, 이 파일·엔진·CSS·글꼴은 dist/assets/의 해시 이름 파일로 따로 나간다(여러 파일 —
+ * 엔진 CSS·JS는 게임끼리 같은 파일을 함께 쓴다). 학생은 사이트 주소로 연다. 빌드 결과 확인은 npm run preview(docs/engine.md 7절).
+ * 단계가 많은 큰 게임은 영역의 플레이를 늦게 받을 수 있다(lazyModule — docs/engine.md 2절 "늦게 불러오기").
  * 엔진 사용법: docs/engine.md · 완성 예시: src/games/sample-divisor-sort
  */
 import meta from './game.json' with { type: 'json' };

@@ -19,6 +19,8 @@ src/shared/
 │   ├── rewards.js        솜씨 점수 표·칭호·연속·다시 일어서기·도장 판정 (10절)
 │   ├── collection.js     도감 틀 (10절)
 │   ├── areas.js          영역·학년: 영역의 차시·준비 중, 학년마다의 영역, "여기부터!" 학년·영역 (2절 "영역")
+│   ├── intro-fit.js      게임 인트로 그림의 꽉 채우기/카드 배치 (2절 "게임 인트로")
+│   ├── reload.js         새 버전을 올린 직후: 처음 스크립트를 못 받으면 한 번만 새로 고침 (2절 "늦게 불러오기")
 │   └── canvas.js         Canvas 게임 루프, 고해상도 캔버스, 포인터 좌표
 ├── ui/                   브라우저 화면
 │   ├── app.js            createGameApp: 화면 흐름 전체
@@ -88,6 +90,7 @@ createGameApp({
   // intro: { subtitle, enterLabel, logo },        // 선택: 앱을 열면 맨 처음 보이는 게임 인트로 (아래 "게임 인트로")
   // rewards: { ranks, thresholds, badges, off },  // 선택: 칭호 이름·게임 도장 (10절)
   // collections: [{ id, title, items }],          // 선택: 도감 (10절)
+  // preload: [blocks.preload],                    // 선택: 처음 화면이 그려진 뒤 한가할 때 미리 받을 묶음 (아래 "늦게 불러오기")
   stages: [
     { id: 'stage-1', title: '1단계', goal: '학생이 할 일 한 문장' /* 게임이 쓰는 값은 자유롭게 추가 */ },
   ],
@@ -95,6 +98,7 @@ createGameApp({
     // ctx.el 안에 화면을 만든다.
     // 끝나면 ctx.finish()
     return () => { /* 정리: 타이머·루프·window 이벤트 해제 */ };
+    // 플레이 코드를 늦게 받는 단계는 Promise를 돌려줘도 된다(받은 뒤의 정리 함수를 주는 것) — 아래 "늦게 불러오기"
   },
 }).start();
 ```
@@ -105,6 +109,7 @@ createGameApp({
 | --- | --- |
 | `ctx.el` | 플레이 영역 요소. 여기에만 그린다 |
 | `ctx.stage`, `ctx.game` | 지금 단계, 게임 정보 |
+| `ctx.signal` | 이 단계가 아직 열려 있는가(`AbortSignal`): 단계에서 나가면(다른 화면이 보이면) `aborted`가 `true`. 늦게 받는 묶음이 "받은 뒤 그릴지"를 정할 때(`lazyModule().play`가 본다) |
 | `ctx.rng` | 이 판의 난수. `?seed=`가 있으면 모두 같은 문제 |
 | `ctx.log.answer({ itemId, correct, tag, given, expected, scored })` | 학생이 답할 때마다 부른다. 틀렸으면 `tag`에 오개념 이름. `scored`(선택, 10절): `false`는 "이미 점수를 받은 것을 다시 답함"(예: 지난 판에 이미 찾은 모양) — 기록·정답률·별에는 넣고 솜씨 점수는 주지 않는다. `'once'`는 "이 기기에서 한 번만 점수를 받는 답"(예: 이 기기에서 처음 접는 모양) — 별 3개 단계를 다시 하는 판에서도 점수를 받고, 그 점수는 그 자리에서 바로 저장된다. 없으면 보통 답 |
 | `ctx.log.stats()` | 지금까지 `{ attempts, correct, accuracy }` |
@@ -172,7 +177,8 @@ createGameApp({
   4. 화면 크기·방향·`devicePixelRatio`(브라우저 확대·다른 화면으로 옮김)가 바뀌면 다시 정한다. 두 모드 모두 그림의 왼쪽·위·폭을 기기 화소에 맞춘다
   - 엔진이 CSS 변수로 자리를 준다: 무대 `--st-*`(꽉 채우기 = 화면, 카드 = 카드), 그림 `--im-*`, 제목 `--logo-x·y·w`, [입장하기] `--btn-x·y·h`. 모드는 `.is-fill`/`.is-card`, `data-mode`·`data-ratio`·`data-band`
   - 제목 그림: 그림이 보이는 곳의 가운데 위(위 2.5%), 폭 = 보이는 곳 폭의 47%·높이의 52%(× 비율)까지, 그리고 `avoid`(머리)를 가리지 않는 만큼까지. [입장하기] 면 높이 = 화면 높이의 10.5%·폭의 16% 가운데 작은 값(56~84px), 꽉 채우기에서는 화면 아래 가운데(밑에서 3.5%)
-  - `art`가 없으면 그림을 화면 가득(cover). 머리의 게임 이름·칭호 칩은 숨고 [소리] 버튼만 오른쪽 위(`.edu-app.is-intro`)
+  - `art`가 없으면 그림을 화면 가득(cover) — 그림 크기를 모르므로 늘림 한도·띠를 보지 않고 늘 꽉 채우기(기기 화소 배율과 상관없이, `introLayoutOf` — B0c-1에서 코드를 이 문장에 맞췄다). 머리의 게임 이름·칭호 칩은 숨고 [소리] 버튼만 오른쪽 위(`.edu-app.is-intro`)
+  - 제목 그림을 끝내 받지 못하면(`logo`가 있는데 그림 요청이 실패) 그 자리에 게임 이름을 글자로(`.logo-failed .intro-title-text` — 화면에 게임 이름이 없지 않게, B0c-2). 빛줄기 틀(`.intro-shine`)은 제목 그림이 풀린 뒤에만 그려 받지 못할 때 같은 그림을 한 번 더 요청하지 않는다(B0c-12)
 - 움직임(엔진, `transform`·`opacity`만): 그림은 받아 풀리는 대로 나타난다(`Image.decode` — 그 전에는 하늘색 바탕과 반짝임, 배경은 부드럽게). 제목 그림이 풀리면(`.is-titled`) 제목이 떨어져 살짝 튀고(0.65초) → 부제가 톡 → [입장하기]가 올라온다. [입장하기]는 제목 그림이 늦어도 1.5초 뒤에는 나온다(`.is-ready` — 느린 망에서도 들어갈 수 있게). 그 뒤로 제목이 천천히 떠오르내리고(4.8초), 5.5초마다 빛 한 줄기가 스치고, 하늘·제목 둘레의 별이 반짝이고, 버튼이 숨 쉬듯 커졌다 작아지며(1.8초, 버튼 자리는 그대로 — 안쪽 층만), 작은 정육면체·직육면체가 아래에서 떠오른다. **움직임 줄이기·`?fx=low`면 움직이지 않는 한 장면**(`.is-still`)
 - 접근성: h1(제목 그림의 대체 글) · 부제(글자 — 리본 위 SVG 글은 화면 읽기에서 숨기고 같은 글을 화면 읽기용으로) · 진짜 버튼 [입장하기](처음 초점, Enter·Space). 배경·반짝임·떠오르는 입체는 `aria-hidden`. 누르면 효과음 `unlock`(소리 끔이면 없음)
 - **언제 보이나**: 주소에 `?stage=`·`?lesson=`·`?area=`·`?grade=`가 하나도 없을 때만(값이 비었거나 틀려도 있으면 인트로 없이 지금처럼 — 선생님이 준 수업 주소). `?unlock=all`·`?sound=off`·`?seed=`·`?fx=low`만 있으면 인트로부터. 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽의 **[← 처음으로]**가 인트로로 돌아간다. 다른 화면의 [처음 화면]은 지금처럼 처음 화면으로 (`planIntro`·`opensWithIntro`)
@@ -260,6 +266,36 @@ createGameApp({
 - **놀이 방법**: 처음 화면(학년·영역을 고르기 전)은 게임의 `howTo`(공통 줄)이고 [시작하기] 대신 [처음 화면]만. 영역의 단계 지도에서 연 놀이 방법과 `?lesson=`으로 연 처음 화면의 놀이 방법은 그 차시가 든 영역의 `howTo`(없으면 게임의 `howTo`)
 - **한 차시 주소(`?lesson=`)**: 지금처럼 그 차시만 보이고 학년·영역 카드·탭이 없다(처음 화면에 [시작하기]). 차시 칩도 영역이 없을 때와 같다(`chip`, 없으면 차시 순서 "n차시")
 - 주소 `?grade=<학년>`: 그 학년 화면으로 바로. `?area=<영역 id>`: 그 영역의 단계 지도로 바로. 차례는 `?lesson=` > `?area=` > `?grade=`(없는·준비 중인 것이면 다음 차례, 끝내 없으면 처음 화면), `?stage=`가 있으면 그 단계가 먼저다(8절)
+
+### 늦게 불러오기 (영역의 플레이, 선택 — B0b)
+
+영역이 많은 게임은 영역마다의 플레이 코드(문제 만들기·판정·화면)를 **그 영역의 단계에 들어갈 때** 받는다. 처음 화면(인트로·학년·영역·단계 지도)은 단계 목록(제목·목표·그림)만 있으면 되므로 영역이 늘어도 처음 받는 크기가 그대로다(spec-grade6 7-4절). 쓰지 않는 게임(예시 게임·템플릿)은 지금과 같다 — `playStage`가 정리 함수를 돌려주면 그대로다.
+
+```js
+import { createGameApp, lazyModule } from '../../shared/ui/app.js';
+import { BLOCK_LESSONS, BLOCK_STAGES } from './blocks/index.js';               // 바탕 묶음: 차시·단계 목록(단계 카드 그림 포함)만
+const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));      // 늦게 받는 묶음: 그 영역의 플레이
+
+createGameApp({
+  // …
+  preload: [BLOCKS_PLAY.preload],                                               // 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다
+  playStage(stage, ctx) {
+    if (stage.area === 'blocks') return BLOCKS_PLAY.play(ctx, (m) => m.playBlockStage(stage, ctx));
+    // …
+  },
+});
+```
+
+- **영역의 파일을 둘로 나눈다**: 단계 목록(`id`·`title`·`goal`·`thumb`·`lesson` — 단계 지도·학년·영역 화면이 쓴다)과 그 그림에 필요한 것은 바탕 쪽 파일(쌓기나무: `blocks/blocks-stages.js`·`blocks/index.js`), 문제 만들기·판정·화면은 늦게 받는 쪽 파일(`blocks/blocks-play.js`가 들머리). 바탕 쪽 파일이 늦게 받는 쪽 파일을 `import`하면 그 코드가 다시 바탕 묶음에 들어간다 — 바탕 쪽은 `import()`로만 닿게 한다. 빌드 로그의 "늦게 받는 묶음"과 처음 받는 크기로 확인한다. 바탕과 늦은 쪽이 함께 쓰는 파일(쌓기나무의 `block-view.js` — 단계 카드 그림이 쓴다)은 바탕 묶음(같이 쓰는 `chunk-…`)에 들어간다
+- **각기둥·원기둥(G1~)도 같은 방법**: `prism/` 같은 폴더에 `prism-stages.js`(차시·단계 목록, 순수 데이터) · `index.js`(단계 카드 그림을 붙인 목록) · `prism-play.js`(들머리 — `playPrismStage(stage, ctx)`)를 두고, `main.js`에 `const PRISM_PLAY = lazyModule(() => import('./prism/prism-play.js'))`, `preload`에 `PRISM_PLAY.preload`, `playStage`에 `stage.area === 'prism'` 갈래를 더한다. 단위 검사는 지금처럼 `*-logic.js`를 바로 가져온다(Node에서는 나눔과 상관없다)
+- **`lazyModule(load)`** → `{ play(ctx, run), preload() }`. `load`는 `() => import('./…')`. 같은 묶음은 한 번만 받는다(받지 못했으면 다음에 다시 받아 본다). `play`는 받은 뒤(이미 받았으면 곧바로) **그 단계가 아직 열려 있을 때만**(`ctx.signal`) `run(모듈)`을 불러 그 값(정리 함수)을 주는 Promise다. `preload`는 실패해도 조용하다
+- **엔진이 하는 것**(`playStage`가 Promise를 돌려줄 때):
+  - 받는 동안 0.4초(`PLAY_LOADING_MS`)가 넘으면 화면 가운데에 떠 있는 쪽지 **"불러오는 중이에요"**(`.play-loading`, `role="status"`, `position: fixed` — 머리·무대의 자리를 바꾸지 않는다). 그보다 빨리 받으면 아무것도 보이지 않는다. 플레이 머리([← 단계 선택]·제목·목표)는 처음부터 보인다
+  - 기다리는 사이에 나가면(← 단계 선택 등) 받은 뒤 **아무것도 그리지 않는다**(`run`을 부르지 않는다). 받은 Promise가 정리 함수를 주면 바로 부른다
+  - **받지 못하면 불러오기 실패 화면**(`.screen-reload`): "새 버전이 올라왔어요" · "이 단계를 열려면 게임을 새로 고쳐야 해요. [새로 고침]을 누르면 새 버전으로 다시 열려요." · "모은 별과 학습 기록은 그대로 남아 있어요. 인터넷이 끊겼다면 다시 연결된 뒤에 눌러요." · [새로 고침](주소 그대로 다시 열기) · [단계 선택]. 그 판은 시작하지 않은 것이 된다(학습 기록에 남지 않는다). 새 버전을 올린 직후 옛 HTML이 지워진 옛 파일(해시 이름)을 찾을 때 생긴다(spec-grade6 7-5절). `run` 안의 오류(프로그램 실수)는 지금처럼 "게임을 준비하다가 문제가 생겼어요" 쪽지
+  - 처음 화면을 보인 뒤 `preload`의 함수들을 한가할 때(`requestIdleCallback`, 없으면 1.2초 뒤) 부른다
+- **처음 스크립트를 받지 못하면**(옛 HTML이 지워진 들머리·묶음을 찾음): 빌드한 HTML의 `<script type="module" … onerror>`가 **한 번만** 새로 고친다. 되풀이를 막는 표시는 `sessionStorage`의 `edu:reload-once`(값 = 페이지 경로). 이미 한 번 새로 고쳤거나 `sessionStorage`를 못 쓰면 새로 고치지 않고 `#app`에 안내 "게임 파일을 받지 못했어요. 새 버전이 올라오는 중일 수 있어요. 잠시 뒤에 [새로 고침]을 눌러 주세요." + [새로 고침](`.boot-error`)만. 앱이 열리면(`start()`) 엔진이 표시를 지운다(`core/reload.js`). 모든 게임에 같다(빌드가 넣는다)
+- 운영 약속: 수업 시간에는 새 버전을 올리지 않는다(README)
 
 ## 3. 화면 만들기: h()
 
@@ -358,21 +394,21 @@ josa('서울', '으로/로'); // '서울로'
 ctx.rng.shuffle(list);  ctx.rng.sample(list, 3);  ctx.rng.int(1, 6);  ctx.rng.pick(list);
 ```
 
-## 7. 이미지·소리 넣기
+## 7. 이미지·소리·글꼴 넣기
 
-빌드하면 게임이 HTML 파일 하나(+ 큰 그림은 `dist/assets/`의 파일)가 된다. 바깥 주소는 쓰지 않는다.
+빌드하면 게임이 HTML 한 장 + `dist/assets/`의 해시 이름 파일들(JS·CSS·글꼴·큰 그림)이 된다(여러 파일 — B0b, [dev-guide.md](dev-guide.md) "지켜야 할 것"). 주소는 모두 상대 주소이고 바깥 주소는 쓰지 않는다. 빌드 결과는 `npm run preview`(사이트와 같은 하위 경로 `/game2/`)로 본다.
 
 - 그림 파일: 게임 폴더의 `style.css`에서 `url()`로 쓰고, 요소에는 클래스를 붙인다.
   ```css
   .apple { background: url('./img/apple.png') center / contain no-repeat; }
   ```
   개발 서버에서도, 빌드한 파일에서도 똑같이 보인다. 그림이 뜻을 가지면 요소에 `role="img"`와 `aria-label`을 붙인다.
-- **작은 그림은 `data:` 주소로, 큰 그림은 따로 파일로**(B0c2, `scripts/build.mjs`): SVG와 16 KB 미만의 래스터 그림(png·jpg·gif·webp)은 HTML 안에 `data:` 주소로 들어가고, **16 KB 이상의 래스터 그림은 `dist/assets/<이름>-<해시>.<확장자>`로 바이트 그대로 복사되어** HTML 안에서 상대 주소 `./assets/…`로 가리킨다(다시 인코딩하지 않는다 — 캔바 AI 그림의 출처 정보(C2PA)가 그대로 남는다, spec-grade6 15-9). 사이트가 하위 경로(`/game2/`)에 있으므로 `/`로 시작하는 주소는 빌드가 막는다. 빌드는 HTML이 가리키는 그림이 모두 같이 나갔는지 확인하고, 로그에 "HTML 크기 + 따로 나간 그림 크기"를 찍는다. 게임 모음과 따로 나갈 그림이 없는 게임은 전과 한 글자도 같다
+- **작은 그림은 `data:` 주소로, 큰 그림은 따로 파일로**(B0c2, `scripts/build.mjs`): SVG와 16 KB 미만의 래스터 그림(png·jpg·gif·webp)은 게임 CSS 파일 안에 `data:` 주소로 들어가고, **16 KB 이상의 래스터 그림은 `file` 로더로 `dist/assets/<이름>-<해시>.<확장자>`에 바이트 그대로 복사되어** 게임 CSS(`assets/` 안)에서 같은 폴더의 상대 주소 `./<이름>-<해시>.<확장자>`로 가리킨다(다시 인코딩하지 않는다 — 캔바 AI 그림의 출처 정보(C2PA)가 그대로 남는다, spec-grade6 15-9. `tests/unit/build.test.js`가 md5로 확인). 사이트가 하위 경로(`/game2/`)에 있으므로 `/`로 시작하는 주소는 빌드가 막는다. 빌드는 가리키는 파일이 모두 있는지 확인하고, 로그에 따로 나간 그림의 크기를 찍는다
 - 도형·그래프·띠 모델처럼 값에 따라 바뀌는 그림은 JS에서 SVG(`document.createElementNS`)나 Canvas로 그린다.
 - 소리는 `ctx.sfx` 효과음을 쓴다. 소리 파일이 꼭 필요하면 엔진에 기능을 먼저 추가한다.
 - `index.html`에 `<img src="…">`를 쓰거나, JS에서 그림 파일을 `import`하지 않는다(개발 서버에서 열리지 않음).
 - 외부 CDN·웹 글꼴 주소는 쓰지 않는다(학교망 차단·오프라인). 빌드가 막는다.
-- 제목 글꼴(Do Hyeon, SIL OFL 1.1)은 빌드가 게임 파일에 **쓰인 글자만 잘라** `@font-face`(data: 주소)로 넣는다(게임마다 약 40 KB).
+- 제목 글꼴(Do Hyeon, SIL OFL 1.1)은 빌드가 **사이트 전체(게임 모음 + 모든 게임의 JS·CSS·HTML)에 쓰인 글자만 잘라** `dist/assets/display-<해시>.woff2` 하나로 내보내고, HTML마다 `<link rel="preload" as="font" crossorigin>`와 `@font-face`(상대 주소)를 넣는다(약 43 KB — 게임을 오가도 한 번만 받는다).
   제목·버튼처럼 굵은 글자는 `font-family: var(--font-display); font-weight: 700`으로 쓴다. 글꼴에 없는 글자는 기기 글꼴 굵게로 보인다.
   Do Hyeon에 없는 기호(가운뎃점 `·`, `…`, `✓`, 이모지 등)는 제목·버튼 자리에 쓰지 않는다(그 글자만 다른 글꼴로 섞여 보임). 가운뎃점은 `ㆍ`(U+318D)나 쉼표로.
   빌드가 "알림: 제목 글꼴에 없는 기호"로 알려 준다(본문 글자에 쓰는 것은 괜찮다).
@@ -393,6 +429,8 @@ ctx.rng.shuffle(list);  ctx.rng.sample(list, 3);  ctx.rng.int(1, 6);  ctx.rng.pi
 | `?fx=low` | 효과 줄이기(느린 기기): 색종이·화면 들어오기 움직임을 끄고 결과 연출을 처음부터 끝 상태로(게임 인트로는 움직이지 않는 한 장면). CPU 코어가 2개 이하인 기기는 저절로 |
 
 게임 인트로(`intro`)가 있는 게임은 `?stage=`·`?lesson=`·`?area=`·`?grade=`가 없을 때만 인트로부터 연다(2절 "게임 인트로"). 수업 주소로 열면 인트로 없이 그 화면이다.
+
+게임 모음 아래의 "선생님용 주소 옵션"에도 같은 목록이 있다(`?lesson=` 다음에 `?area=`·`?grade=` — "함께 쓰면 lesson, area, grade 차례", `scripts/lib/hub.mjs`). 사이트 주소(`https://eversunk2-tech.github.io/game2/net-workshop.html?lesson=cube`)는 빌드 구조가 여러 파일로 바뀐 뒤에도 그대로다.
 
 옵션은 함께 쓸 수 있다: `fraction-factory.html?unlock=all&sound=off`
 
@@ -557,8 +595,11 @@ createGameApp({
 
 ## 11. 브라우저 테스트 도우미 (`tests/e2e/helpers.js`)
 
+- **테스트 서버**(B0b): `npm run test:e2e`는 빌드한 뒤 Playwright가 `scripts/serve.mjs`를 띄워(`playwright.config.js`의 `webServer`) 사이트와 같은 하위 경로 `/game2/`·gzip으로 연다. `fileUrl(name, query)`는 `http://127.0.0.1:<E2E_PORT>/game2/<name><query>`(이름은 전처럼 — 전에는 `file://`), `gameFiles()`·`DIST`는 그대로. **포트는 `E2E_PORT`(기본 4173)** — 여러 작업 폴더가 동시에 e2e를 돌리면 서로 다른 포트를 준다(예: `E2E_PORT=5306 npm run test:e2e -- --workers=4`). 그 포트를 이미 다른 서버가 쓰고 있으면(127.0.0.1·::1 어느 쪽이든) 그 서버를 쓰지 않고 **바로 실패**한다(`reuseExistingServer: false` — 남의 `dist/`를 검사하지 않게). 서버는 테스트가 끝나면 Playwright가 내린다. 테스트 안에서는 출처가 하나(`http://127.0.0.1:<포트>`)라 `localStorage`는 테스트마다 새 브라우저 문맥으로 나뉜다
+- 공통 검사(`smoke.spec.js`)가 페이지마다 "모든 요청이 같은 출처·하위 경로 안, 응답 400 이상 0, 그 페이지가 가리키는 해시 파일(늦게 받는 묶음 포함)이 모두 받아짐"을 본다. 늦게 불러오기·실패 화면은 `engine-lazy.spec.js`(요청을 붙잡아 두는 `page.route`로 — 시간으로 흉내 내지 않는다)
+
 - **글자 폭 넓힘 모드** (`E2E_WIDE_TEXT`): 리눅스(GitHub 자동 테스트)와 크롬북·안드로이드의 본문 글꼴은 macOS보다 넓다(한글 한 글자가 macOS 0.865em, Noto Sans CJK KR 0.92em). 그래서 로컬에서 통과한 배치 검사가 CI에서 1px·한 줄 차이로 깨지곤 했다. 이 모드는 모든 테스트 페이지의 본문 글자 폭을 넓혀 같은 일을 로컬에서 미리 보게 한다. 앱 코드에는 아무것도 넣지 않는다 — 넓힘 모드에서만 `dist/*.html`의 복사본(`test-results/wide-text-dist/`)에 스타일을 넣어 그 복사본을 연다(보통 실행·CI는 그대로)
-  - `E2E_WIDE_TEXT=font npm run test:e2e` — **글꼴 흉내**: 본문 글꼴을 한글 1em 폭 글꼴(macOS의 AppleGothic)로 바꾸고 글자 사이 0.25px. 지금까지 실제 CI의 실패 목록과 똑같이 맞은 것은 이 방법뿐이다(a137a40의 3건, 673f871의 배치 1건, 헛경보 0). **화면 배치를 바꿨으면 보통 실행과 함께 이것을 통과해야 한다.** macOS에서만 된다(글꼴이 없는 컴퓨터에서는 테스트를 시작하기 전에 까닭을 말하고 멈춘다). 실제 CI의 글꼴 그 자체는 아니므로 통과해도 CI 확인은 남는다
+  - `E2E_WIDE_TEXT=font npm run test:e2e` — **글꼴 흉내**: 본문 글꼴을 한글 1em 폭 글꼴(macOS의 AppleGothic)로 바꾸고 글자 사이 0.25px. 지금까지 실제 CI의 실패 목록과 똑같이 맞은 것은 이 방법뿐이다(a137a40의 3건, 673f871의 배치 1건, 헛경보 0). **화면 배치를 바꿨으면 보통 실행과 함께 이것을 통과해야 한다.** macOS에서만 된다(글꼴이 없는 컴퓨터에서는 테스트를 시작하기 전에 까닭을 말하고 멈춘다). 실제 CI의 글꼴 그 자체는 아니므로 통과해도 CI 확인은 남는다. 복사본(`test-results/wide-text-dist/`)은 `dist/*.html`에 스타일을 넣은 것 + `dist/assets/` 그대로이고, 테스트 서버가 그 폴더를 준다
   - `E2E_WIDE_TEXT=noto` — 크롬북·안드로이드 비슷한 폭(한글 0.92em, 라틴 Arial 폭). macOS에서만
   - `E2E_WIDE_TEXT=1`(글자 사이 0.25px, 약 +2.3%)·`E2E_WIDE_TEXT=0.5`(그 px만큼) — 어느 컴퓨터에서나 된다. 0.25px은 버튼 너비 1px 같은 것은 잡지만 글이 한 줄 넘어가는 종류는 못 잡는다(673f871에 넣으면 실패 0 — 실제 CI는 실패했다). 0.5px은 그것을 잡지만 제목 글꼴로 쓴 버튼 글자까지 넓혀, 실제 CI에서는 통과하는 "답하기 전 조작 띠…" 검사(두 기기)가 실패한다(헛경보)
   - 새 배치 검사에는 글자 폭에 묶인 픽셀 상수(버튼 너비 같은 것)를 쓰지 않는다
