@@ -32,6 +32,7 @@
 
 - 사용자의 말: "1920 화면에서 selectio game 에서와 마찬가지 크기로 입장하기 크기 키워줘" → [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-11**(selectio의 `s = min(폭÷1280, 높이÷800)`을 1~1.35로 묶어 곱함 — 1920×1080에서 높이 약 113px).
 - 작업 폴더 `.worktrees/c1` · `track/c1`(`a2af9b7`에서), 포트 5304, scratchpad `build-c4/`. 지침 [build-brief-c4.md](games/net-workshop/build-brief-c4.md) / Review [review-brief-c4.md](games/net-workshop/review-brief-c4.md)(포트 5314, 결과 `review-c4.md`).
+- 진행(10-17): Build 1차 끝(`f1c48cc` — 1920×1080에서 408×113, 배율 1 화면 픽셀 불변) → 사용자가 스크린샷을 보고 **"손 안 가리게 버튼 조금 옮겨줘. 왼쪽으로 약간만. 너무 중심이 흐트러지지는 않도록. 손이 꼭 다보이진 않아도 괜찮아"**(15-11 끝) → 돌던 Review를 멈추고(남긴 것 없음) 같은 Build가 고치는 중(지침 덧붙임). 고친 뒤 Review는 한 번에(review-brief-c4 덧붙임 포함).
 - **B0b와 같은 파일의 다른 줄**을 고친다(줄 몫은 두 지침에 적음 — B0b 지침 덧붙임). 빨리 올리려고 따로 돌린다: Review 통과 → `main`에 합쳐 바로 올림 → `main`을 `track/b0`에 합쳐 B0b에 알림.
 
 ### 2-2. 이번에 올린 것 (2026-10-17, `cd190ce`)
