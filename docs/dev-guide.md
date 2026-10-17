@@ -9,7 +9,7 @@
 npm install          # 클라우드 세션은 .claude/hooks/session-start.sh가 자동 실행
 npm run dev          # http://localhost:5173 (src/를 그대로 보여 줌, 빌드 불필요. 제목 글꼴은 전체 파일을 /__fonts/에서 줌)
 npm test             # 단위 테스트 (node --test, tests/unit/**/*.test.js)
-npm run build        # dist/<id>.html (게임마다 파일 하나, 제목 글꼴을 쓰인 글자만 잘라 넣음) + dist/index.html (게임 모음)
+npm run build        # dist/<id>.html (게임마다 파일 하나, 제목 글꼴을 쓰인 글자만 잘라 넣음) + dist/assets/ (큰 그림, 바이트 그대로) + dist/index.html (게임 모음)
 npm run test:e2e     # 빌드 후 Playwright (크롬북 1366×768, 태블릿 820×1180 터치)
 E2E_WIDE_TEXT=font npm run test:e2e   # 글꼴 흉내 모드: 본문을 한글 폭이 넓은 글꼴로 바꿔 리눅스 CI의 줄 넘김을 미리 본다(engine.md 11절). 이것도 실패 0이어야 한다
 npm run new -- <id> "<이름>"   # src/games/_template 복사 + docs/games/<id>/spec.md 기획서
@@ -35,7 +35,7 @@ tests/unit/<id>.test.js, tests/e2e/<id>.spec.js
 ## 지켜야 할 것
 
 - **결정(2026-10-09, 사용자): 아래 "게임은 빌드 후 HTML 파일 하나"와 "게임 파일 하나는 400 KB 이하" 규칙은 없앤다.** 사용자의 말: "단일 html로 하지 않아도 돼. 처음에 설정을 잘못 했던거 같아. js 환경으로 자유로운 용량으로 만들어줘". 여러 파일로 내보내기와 npm 라이브러리(묶어서 함께 내보냄)를 써도 된다. 바깥 CDN·웹 글꼴 주소를 쓰지 않는 것과 개인정보·바깥 요청 없음은 그대로 둔다. 빌드 스크립트(`scripts/build.mjs`)의 크기 검사는 걷어냈다(2026-10-12: 400 KB를 넘어도 빌드가 멈추지 않고, 크기는 로그에 찍기만 한다). 한 파일로 묶기와 아래 줄의 "게임은 빌드 후 HTML 파일 하나"는 아직 옛 규칙 그대로다 — 여러 파일로 내보내는 빌드 구조는 6학년 영역 계획([docs/games/net-workshop/spec-grade6.md](games/net-workshop/spec-grade6.md) 7절)의 "B0" Build에서 바꾸고, 그때 아래 줄도 고친다. 그때까지 새 계획·지침은 한 파일 규칙을 전제로 삼지 않는다. 학생들은 사이트 주소(GitHub Pages)로 접속해서 쓴다(같은 날 사용자 결정) — 파일을 내려받아 `file://`로 여는 쓰임은 지원하지 않아도 된다.
-- **게임은 빌드 후 HTML 파일 하나.** `index.html`에는 `<link rel="stylesheet">`와 `<script type="module" src="./main.js">`만 쓴다. 외부 CDN·웹 글꼴·`<img src>` 금지. 그림은 CSS `url()`로(빌드가 data:로 넣음). JS에서 CSS·그림 파일을 import하지 않는다. 파일 크기에는 상한이 없다(빌드는 크기를 로그에 찍기만 한다).
+- **게임은 빌드 후 HTML 파일 하나 + 큰 그림 파일.** `index.html`에는 `<link rel="stylesheet">`와 `<script type="module" src="./main.js">`만 쓴다. 외부 CDN·웹 글꼴·`<img src>` 금지. 그림은 CSS `url()`로 — 빌드가 SVG·16 KB 미만의 래스터 그림은 data:로 넣고, 16 KB 이상의 래스터 그림(png·jpg·gif·webp)은 `dist/assets/<이름>-<해시>.<확장자>`로 바이트 그대로 내보내 상대 주소 `./assets/…`로 가리킨다(B0c2 — engine.md 7절. `/`로 시작하는 주소 금지: 사이트가 `/game2/` 하위 경로). JS에서 CSS·그림 파일을 import하지 않는다. 파일 크기에는 상한이 없다(빌드는 HTML과 따로 나간 그림의 크기를 로그에 찍기만 한다).
 - **글꼴**: 외부 글꼴 주소(Google Fonts 등)·글꼴 파일 `url()` 금지. 본문은 기기 글꼴(`var(--font)`), 제목·버튼·숫자는 `var(--font-display)` + `font-weight: 700`. 제목 글꼴(Do Hyeon, SIL OFL 1.1, npm `@expo-google-fonts/do-hyeon`)은 **빌드가 게임에 쓰인 글자만 잘라 넣는다**(`scripts/lib/font.mjs`, 라이선스 `src/shared/fonts/OFL.txt`). 다른 글꼴이 필요하면 엔진에서 같은 방법으로 넣고 라이선스를 먼저 확인한다. 제목·버튼 자리에는 Do Hyeon에 없는 기호(가운뎃점 `·`, `…`, 이모지 등)를 쓰지 않는다(가운뎃점은 `ㆍ`). 빌드 로그의 "알림: 제목 글꼴에 없는 기호"를 확인한다. 화면에 쓰는 한글 음절이 Do Hyeon에 없으면 본문 글자라도 `tests/unit/build.test.js`가 실패한다(드문 글자는 다른 낱말로).
 - **디자인**: 공통 디자인 "종이 공방"([docs/design/spec.md](design/spec.md))을 따른다. 색·간격·그림자는 `base.css` 토큰을 쓰고 새 색을 만들지 않는다(대비 4.5:1). 이모지 대신 `ui/icons.js`의 아이콘. 잉크 테두리 + 단단한 그림자는 누를 수 있는 것에만. 게임 색은 `game.json`의 `color`, 게임 모음 표지는 게임 폴더 `cover.svg`.
 - **보상은 학습 행동에만.** 솜씨 점수·칭호·도장·도감은 엔진(`core/rewards.js`, `core/collection.js`)이 준다. 게임은 `ctx.log.answer`(문항마다 같은 `itemId`)·`ctx.reward.event`·`ctx.collect`로 행동을 알리기만 하고 점수를 직접 만들지 않는다. 빠르기 점수·순위표·친구 비교·목숨(틀리면 쫓겨남)·뽑기는 만들지 않는다. 일부러 틀려서 이득을 보는 규칙이 없는지 단위 테스트로 확인한다([engine.md 10절](engine.md)).
