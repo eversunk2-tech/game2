@@ -1071,6 +1071,7 @@ test('자유 배치: 되돌리기·모두 빼기, 카드 누르고 칸 누르기
   // 놓인 면 들어 올려 옮기기
   await cellOf(page, [3, 2]).click();
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveClass(/is-held/);
+  await expect(page.locator('.turn-handle')).toHaveCount(0); // 정사각형 면만 있는 판에는 돌리기 손잡이가 없다(직육면체 판의 손잡이, spec 16-16)
   await cellOf(page, [4, 3]).click();
   await expect(cellOf(page, [4, 3]).locator('.tile-face')).toHaveAttribute('data-label', '다');
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveCount(0);
@@ -2164,7 +2165,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   await expect(page.locator('[data-collection="cube-nets"] .collect-cell.is-found svg')).toHaveCount(3);
   await expect(page.locator('[data-collection="cube-non-nets"] .collect-cell.is-missing')).toHaveCount(24);
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.badge-item')).toHaveCount(12); // 엔진 6 + 게임 6
+  await expect(page.locator('.badge-item')).toHaveCount(13); // 엔진 6 + 게임 6 + 직육면체 도감 완성(spec 16-17)
   await expect(page.locator('.badge-item[data-badge="beyond-cross"]')).toHaveClass(/is-earned/);
   // 예상하기를 없애며 조건을 바꾼 두 도장(spec 16-12): 도장판의 "받는 방법"이 새 조건이다
   await expect(page.locator('.badge-item[data-badge="overlap-detective"]')).toContainText('안 되는 까닭을 5번 맞혀요');

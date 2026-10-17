@@ -406,7 +406,8 @@ test('직육면체 차시 전체(만나는 선분 5 · 알맞은 면 4 · 길이
 
 test('점수 상한(사용자 결정 2026-10-11): 이 기기에서 처음 찾는 10가지까지는 등록 +5 · 만들기 성공 +2(연속은 엔진 규칙), 11번째부터는 새로 찾을 때마다 모두 합쳐 +1', () => {
   assert.deepEqual([CUBOID_FULL_SCORE_NETS, CUBOID_LATER_XP], [10, 1]);
-  assert.deepEqual(NETS_DEF.xpAfter, { count: 10, xp: 1 }); // 엔진 모음 정의가 같은 값을 쓴다
+  // 엔진 모음 정의가 같은 값을 쓴다. 몇 번째인지는 두 길이가 같은 상자의 모음까지 합쳐 센다(사용자 결정 2026-10-16 — 처음 값 상자만 하면 지금과 같다)
+  assert.deepEqual(NETS_DEF.xpAfter, { count: 10, xp: 1, with: ['cuboid-pair-nets'] });
   assert.equal(NETS_DEF.xp, undefined); // 10가지까지는 엔진 기본 +5
   assert.deepEqual([1, 9, 10, 11, 12, 54].map((n) => discoverXp(collectionXp(NETS_DEF, n))), [5, 5, 5, 1, 1, 1]);
   assert.deepEqual([1, 10, 11, 54].map(isLaterNet), [false, false, true, true]);

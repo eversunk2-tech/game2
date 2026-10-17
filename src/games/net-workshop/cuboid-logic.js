@@ -22,10 +22,12 @@ import {
   netSize,
   oppositeFace,
   outline,
+  shapeKey,
   spanningTrees,
   transformNet,
   unfold,
 } from './fold.js';
+import { CUBE_NETS } from './nets-data.js';
 
 // ── 전개도 54가지 ─────────────────────────────
 const catalogs = new Map();
@@ -614,35 +616,39 @@ export const CUBOID_MAKERS = {
   face: makeFaceQuestions,
   cjudge: makeCJudgeQuestions,
   cfree: () => [], // 직접 만드는 단계는 문항이 없다
+  cdex: () => [], // 도전 주문서(직육면체 도감 주문)도 학생이 직접 만든다
 };
 
-// ── 4단계: 내 맘대로 직육면체 전개도 (cuboid-free, spec 16-2 · 예상 없이 접는다 16-12) ──────────
-/** 만드는 직육면체(cm)와 면 카드 여섯 장: 크기가 같은 면이 두 장씩. 1 cm 격자 판에 54가지가 모두 들어가는 크기 */
+// ── 4단계: 내 맘대로 직육면체 전개도 (cuboid-free, spec 16-2 · 예상 없이 접는다 16-12 · 상자 크기 정하기 16-16) ──────────
+/** 처음 상자의 세 모서리(cm)와 그 면 카드 여섯 장: 크기가 같은 면이 두 장씩. 1 cm 격자 판에 54가지가 모두 들어가는 크기 */
 export const FREE_BOX = Object.freeze([1, 2, 3]);
 export const FREE_CARDS = Object.freeze([
   { label: '가', w: 3, h: 2 }, { label: '나', w: 3, h: 2 },
   { label: '다', w: 3, h: 1 }, { label: '라', w: 3, h: 1 },
   { label: '마', w: 2, h: 1 }, { label: '바', w: 2, h: 1 },
 ]);
-/** 놓는 판(1 cm 칸): 보통 12칸 × 8줄(54가지가 모두 들어간다), 휴대폰(560px 이하) 10칸 × 9줄 */
+/** 놓는 판(1 cm 칸): 처음 상자는 보통 12칸 × 8줄(54가지가 모두 들어간다), 휴대폰(560px 이하) 10칸 × 9줄. 다른 상자는 boxBoard */
 export const CUBOID_BOARDS = Object.freeze({ wide: { cols: 12, rows: 8 }, phone: { cols: 10, rows: 9 } });
 /** 이번 판에서 끝낼 수 있는 가지 수 · 별 3개를 받는 가지 수 */
 export const CUBOID_FREE_GOAL = 2;
 export const CUBOID_FREE_FULL = 3;
-/** 찾은 전개도를 이 기기에 적어 두는 모음(main.js collections, 화면에는 보이지 않는 quiet 모음)의 id */
+/** 찾은 전개도를 이 기기에 적어 두는 모음(main.js collections, 화면에는 보이지 않는 quiet 모음)의 id: 세 길이가 모두 다른 상자 54가지 */
 export const CUBOID_NETS_ID = 'cuboid-nets';
+/** 두 길이가 같은 상자의 전개도 29가지 모음(조용한 모음) · 정육면체 상자는 1차시의 정육면체 전개도 도감(11칸)에 넣는다 */
+export const CUBOID_PAIR_NETS_ID = 'cuboid-pair-nets';
+export const CUBE_NETS_ID = 'cube-nets';
 /**
- * 점수 상한 (사용자 결정 2026-10-11): 이 기기에서 처음 찾는 CUBOID_FULL_SCORE_NETS가지까지는 만들기 성공(엔진 규칙: +2 · 연속) + 등록 +5,
- * 그 뒤로는 새로 찾을 때마다 모두 합쳐 CUBOID_LATER_XP점(만들기 성공 점수도 따로 없다). 54가지를 다 찾아도 10 × 7 + 44 × 1 = 114점
- * (+ 연속 · 단계 점수) — 어떤 순서로, 몇 판에 나눠 찾아도 같다. 몇 번째인지는 모음에 든 가지 수로 센다(엔진 모음의 xpAfter와 같은 값).
+ * 점수 상한 (사용자 결정 2026-10-11 · 2026-10-16): 이 기기에서 처음 찾는 직육면체 전개도(세 길이가 다른 것 + 두 길이가 같은 것을 합쳐서)
+ * CUBOID_FULL_SCORE_NETS가지까지는 만들기 성공(엔진 규칙: +2 · 연속) + 등록 +5, 그 뒤로는 새로 찾을 때마다 모두 합쳐 CUBOID_LATER_XP점
+ * (만들기 성공 점수도 따로 없다). 54 + 29 = 83가지를 다 찾아도 10 × 7 + 73 × 1 = 143점(+ 연속 · 단계 점수) — 어떤 순서로, 몇 판에 나눠 찾아도 같다.
+ * 몇 번째인지는 두 모음에 든 가지 수를 합쳐 센다(엔진 모음의 xpAfter.with와 같은 값). 정육면체 상자로 찾은 것은 정육면체 도감의 규칙(상한 없음)
  */
 export const CUBOID_FULL_SCORE_NETS = 10;
 export const CUBOID_LATER_XP = 1;
-/** 이 기기에서 count번째로 찾은 전개도가 상한 뒤의 것인가 (점수는 등록 CUBOID_LATER_XP뿐) */
+/** 이 기기에서 count번째로 찾은 직육면체 전개도가 상한 뒤의 것인가 (점수는 등록 CUBOID_LATER_XP뿐) */
 export const isLaterNet = (count) => count > CUBOID_FULL_SCORE_NETS;
 export const CUBOID_FREE_EXPECTED = '전개도';
 export const CUBOID_HINT_AFTER_INVALID = 2;
-export const CUBOID_HINT_TEXT = '길이가 3 cm인 변끼리 이어 네 장을 한 줄로 놓고, 남은 작은 면 두 장을 위와 아래에 붙여 봐요.';
 export const CUBOID_FREE_REPLAY_NOTE = '처음 찾은 전개도는 점수를 받아요. 찾아본 전개도는 다시 만들어도 점수가 없어요.';
 /** 보너스 쪽지에 덧붙이는 말: 상한 뒤(11번째부터)의 새 전개도는 1점씩이다 */
 export const CUBOID_LATER_NOTE = `${CUBOID_FULL_SCORE_NETS}가지를 넘으면 새 전개도마다 ${CUBOID_LATER_XP}점이에요.`;
@@ -654,21 +660,183 @@ export const CUBOID_FOLD_NOTES = Object.freeze({
   ready: '놓은 그대로 접혀요. 서로 다른 전개도를 찾아봐요.',
 });
 
-/** 내 맘대로 직육면체 전개도에서 찾을 수 있는 전개도 54가지 (모음의 칸) */
+// ── 상자 크기 (spec 16-16): 가로 · 세로 · 높이를 1~4 cm에서 고르면 그 상자의 면 6장이 카드로 나온다 ─────────────
+export const BOX_MIN = 1;
+export const BOX_MAX = 4;
+export const BOX_AXES = Object.freeze(['가로', '세로', '높이']);
+/** 처음 상자 [가로, 세로, 높이](cm): 면 카드가 FREE_CARDS와 같다(1 · 2 · 3 cm 직육면체 — 가 나 3×2, 다 라 3×1, 마 바 2×1) */
+export const DEFAULT_BOX = Object.freeze([3, 2, 1]);
+export const sameBox = (p, q) => p.length === 3 && q.length === 3 && p.every((v, i) => v === q[i]);
+/** 상자 종류: 세 길이가 모두 다름 · 두 길이가 같음 · 셋이 같음(정육면체) */
+export function boxKind(dims) {
+  const n = new Set(dims).size;
+  if (n === 3) return 'distinct';
+  return n === 2 ? 'pair' : 'cube';
+}
+/**
+ * 상자 종류마다: 서로 다른 전개도 수, 표준 모양(길이 순서로 맞춘 상자 — 전개도 이름은 이 상자에서 정한다), 넣는 모음.
+ * 같은 종류 안에서는 실제 길이가 달라도 짧은 · 가운데 · 긴 모서리(두 길이가 같으면 같은 길이 · 다른 길이)의 자리가 같은 전개도가 같은 전개도다
+ */
+export const BOX_KINDS = Object.freeze({
+  distinct: Object.freeze({ count: 54, canon: Object.freeze([1, 2, 3]), collection: CUBOID_NETS_ID }),
+  pair: Object.freeze({ count: 29, canon: Object.freeze([1, 1, 2]), collection: CUBOID_PAIR_NETS_ID }),
+  cube: Object.freeze({ count: 11, canon: Object.freeze([1, 1, 1]), collection: CUBE_NETS_ID }),
+});
+
+/** 표준 모양과 견주게 세 길이를 늘어놓는다: 세 길이가 다르면 짧은 것부터, 두 길이가 같으면 [같은 길이, 같은 길이, 다른 길이] */
+export function boxArrangement(dims) {
+  const kind = boxKind(dims);
+  if (kind === 'distinct') return [...dims].sort((a, b) => a - b);
+  if (kind === 'cube') return [dims[0], dims[0], dims[0]];
+  const p = dims.find((v) => dims.filter((w) => w === v).length === 2);
+  return [p, p, dims.find((v) => v !== p)];
+}
+
+/** 면 카드 여섯 장 [{ label, w, h }](w ≥ h): 가 나 = 가로×세로(윗면·아랫면), 다 라 = 가로×높이(앞면·뒷면), 마 바 = 세로×높이(옆면 둘) */
+export function boxCards(dims) {
+  const [a, b, c] = dims;
+  const card = (label, p, q) => ({ label, w: Math.max(p, q), h: Math.min(p, q) });
+  return [card('가', a, b), card('나', a, b), card('다', a, c), card('라', a, c), card('마', b, c), card('바', b, c)];
+}
+
+/** 화면에 적는 상자 크기: "가로 3 cm · 세로 2 cm · 높이 1 cm" */
+export const boxText = (dims) => dims.map((v, i) => `${BOX_AXES[i]} ${v} cm`).join(' · ');
+/** 학습 기록에 덧붙이는 상자 크기(처음 상자가 아닐 때만): " (상자 3×2×1 cm)" */
+const boxNote = (dims) => (sameBox(dims, DEFAULT_BOX) ? '' : ` (상자 ${dims.join('×')} cm)`);
+/** 면 카드 안내: "3×2 cm 두 장 · 3×1 cm 두 장 · 2×1 cm 두 장" (크기가 같은 쌍은 합친다: "2×2 cm 여섯 장") */
+export function boxCardsText(dims) {
+  const counts = new Map();
+  for (const c of boxCards(dims)) counts.set(`${c.w}×${c.h} cm`, (counts.get(`${c.w}×${c.h} cm`) ?? 0) + 1);
+  const word = { 2: '두 장', 4: '네 장', 6: '여섯 장' };
+  return [...counts].map(([size, n]) => `${size} ${word[n]}`).join(' · ');
+}
+/**
+ * 상자 크기를 고를 때의 안내: 세 길이가 같으면 정육면체(그대로 만들 수 있다). 도감 주문은 세 길이가 모두 달라야 한다 → { text, block }
+ */
+export function boxNotice(dims, { dex = false } = {}) {
+  const kind = boxKind(dims);
+  if (dex && kind !== 'distinct') return { text: '도감 주문은 세 모서리의 길이가 모두 달라야 해요.', block: true };
+  if (kind === 'cube') return { text: '세 모서리의 길이가 모두 같으면 정육면체예요. 정육면체도 직육면체라 그대로 만들 수 있어요.', block: false };
+  return null;
+}
+/**
+ * 판이 좁을 때(휴대폰 — 교실 기기가 아니다)의 안내: 그 상자의 전개도 가운데 판에 들어가는 것이 하나도 없으면 고를 수 없고(block),
+ * 일부만 들어가면 몇 가지인지 알린다 → { text, block } | null
+ */
+export function boxBoardNotice(dims, board) {
+  const list = boxCatalog(dims).list;
+  const fit = list.filter((n) => centerOnBoard(n.net, board)).length;
+  if (fit === list.length) return null;
+  if (fit === 0) return { text: '이 화면의 판에는 이 상자의 전개도가 들어가지 않아요. 더 작은 상자를 골라요.', block: true };
+  return { text: `이 화면의 판에는 이 상자의 전개도 ${list.length}가지 가운데 ${fit}가지만 들어가요.`, block: false };
+}
+
+/** 힌트 글: 가장 긴 모서리끼리 이어 네 장을 한 줄로 → 남은 두 장을 위와 아래에 (처음 상자는 지금까지의 글과 같다) */
+export function boxHintText(dims) {
+  if (boxKind(dims) === 'cube') return '면 네 장을 한 줄로 이어 놓고, 남은 두 장을 그 줄의 위와 아래에 하나씩 붙여 봐요.';
+  return `길이가 ${Math.max(...dims)} cm인 변끼리 이어 네 장을 한 줄로 놓고, 남은 작은 면 두 장을 위와 아래에 붙여 봐요.`;
+}
+export const CUBOID_HINT_TEXT = boxHintText(DEFAULT_BOX);
+
+// 펼치는 방법(신장 트리)은 상자의 길이와 상관없이 같다: 면 6개 · 모서리 12개의 짜임이 같기 때문이다 — 그래서 트리로 크기가 다른 상자의 전개도를 잇는다
+let trees = null;
+const boxTrees = () => (trees ??= spanningTrees(cuboid(1, 2, 3)));
+const unfoldCache = new Map();
+/** 세 길이를 늘어놓은 상자(arr)를 트리마다 펼친 전개도와 그 열쇠 [{ key, net }] (트리 순서) */
+function unfoldings(arr) {
+  const name = arr.join('x');
+  if (!unfoldCache.has(name)) {
+    const solid = cuboid(...arr);
+    unfoldCache.set(name, boxTrees().map((tree) => {
+      const net = unfold(solid, tree);
+      return { key: netKey(net), net };
+    }));
+  }
+  return unfoldCache.get(name);
+}
+
+/** 정육면체 도감의 이름(1-4-1a …): 한 변이 1인 정육면체 전개도의 칸 모양으로 찾는다 */
+const CUBE_NAME_BY_SHAPE = new Map(CUBE_NETS.map((n) => [shapeKey(n.cells), n.name]));
+const cubeNameOf = (net) => CUBE_NAME_BY_SHAPE.get(shapeKey(net.faces.map((f) => {
+  const r = faceRect(f);
+  return [r.x, r.y];
+}))) ?? null;
+
+const canonCache = new Map();
+/** 표준 모양에서 트리마다의 전개도 이름: 세 길이가 다르면 '123-01'…, 두 길이가 같으면 '112-01'…, 정육면체는 정육면체 도감의 이름 */
+function canonIds(kind) {
+  if (!canonCache.has(kind)) {
+    const canon = BOX_KINDS[kind].canon;
+    const byKey = kind === 'cube' ? null : new Map(cuboidNets(canon).map((n) => [n.key, n.id]));
+    canonCache.set(kind, unfoldings(canon).map(({ key, net }) => (byKey ? byKey.get(key) : cubeNameOf(net)) ?? null));
+  }
+  return canonCache.get(kind);
+}
+
+const catalogCache = new Map();
+/**
+ * 그 상자의 서로 다른 전개도 모두: { kind, byKey(그 상자에서 놓은 모양의 열쇠 → 표준 이름), list: [{ id, key, net, size }] }.
+ * list는 표준 이름 순서(이름마다 하나 — 그 상자의 크기로 펼친 모습). 크기를 바꿔도 같은 모양이면 같은 이름이다
+ */
+export function boxCatalog(dims) {
+  const arr = boxArrangement(dims);
+  const name = arr.join('x');
+  if (!catalogCache.has(name)) {
+    const kind = boxKind(arr);
+    const ids = canonIds(kind);
+    const byKey = new Map();
+    const byId = new Map();
+    unfoldings(arr).forEach(({ key, net }, i) => {
+      const id = ids[i];
+      if (byKey.has(key) && byKey.get(key) !== id) throw new Error(`${name} 상자: 같은 모양에 이름이 둘이에요 (${byKey.get(key)}, ${id}).`);
+      byKey.set(key, id);
+      if (!byId.has(id)) {
+        const [w, h] = netSize(net);
+        byId.set(id, { id, key, net, size: [Math.max(w, h), Math.min(w, h)] });
+      }
+    });
+    const list = [...byId.values()].sort((p, q) => (p.id < q.id ? -1 : p.id > q.id ? 1 : 0));
+    catalogCache.set(name, { kind, byKey, list });
+  }
+  return catalogCache.get(name);
+}
+
+/**
+ * 놓는 판의 크기(1 cm 칸): 그 상자의 전개도가 모두 들어가는 가장 작은 판(가장 긴 전개도의 길이 × 가장 넓은 폭), 7칸 × 5줄보다 작게는 하지 않는다.
+ * 처음 상자(1 · 2 · 3 cm)는 지금까지와 같은 12칸 × 8줄. 휴대폰(phone)은 처음 상자만 10칸 × 9줄, 다른 상자는 12칸을 넘지 않게(들어가지 않는 전개도가 있다)
+ */
+export function boxBoard(dims, { phone = false } = {}) {
+  const same = boxArrangement(dims).join() === boxArrangement(DEFAULT_BOX).join();
+  if (same) return phone ? CUBOID_BOARDS.phone : CUBOID_BOARDS.wide;
+  const { list } = boxCatalog(dims);
+  const long = Math.max(...list.map((n) => n.size[0]));
+  const short = Math.max(...list.map((n) => n.size[1]));
+  const wide = { cols: Math.max(long, 7), rows: Math.max(short, 5) };
+  return phone ? { cols: Math.min(wide.cols, 12), rows: Math.min(Math.max(wide.rows, 9), 12) } : wide;
+}
+
+/** 놓은 모양의 전개도 이름(그 상자의 종류에서). 전개도가 아니면 null */
+export function boxNetId(net, dims) {
+  return boxCatalog(dims).byKey.get(netKey(net)) ?? null;
+}
+
+/** 내 맘대로 직육면체 전개도에서 찾을 수 있는 전개도 54가지 (세 길이가 다른 상자의 모음 칸) */
 export const freeNets = () => cuboidNets(FREE_BOX);
 /**
- * 모음의 칸 수와 칸 id. 게임을 열 때마다 54가지를 펼쳐 보지 않고도 모음을 만들 수 있게 따로 적는다
- * (freeNets()의 id와 같은지는 단위 테스트가 본다)
+ * 모음의 칸 수와 칸 id. 게임을 열 때마다 전개도를 펼쳐 보지 않고도 모음을 만들 수 있게 따로 적는다
+ * (freeNets() · boxCatalog의 이름과 같은지는 단위 테스트가 본다)
  */
 export const FREE_NET_COUNT = 54;
 export const freeNetIdAt = (i) => `${FREE_BOX.join('')}-${String(i + 1).padStart(2, '0')}`;
-/** 놓은 모양의 전개도 번호(54가지 가운데). 전개도가 아니면 null */
+export const PAIR_NET_COUNT = 29;
+export const pairNetIdAt = (i) => `${BOX_KINDS.pair.canon.join('')}-${String(i + 1).padStart(2, '0')}`;
+/** 놓은 모양의 전개도 번호(처음 상자 54가지 가운데). 전개도가 아니면 null */
 export function freeNetId(net) {
   const key = netKey(net);
   return freeNets().find((n) => n.key === key)?.id ?? null;
 }
 
-const rectNet = (rects) => fromRects(rects, { labels: rects.map((r, i) => r.label ?? LABELS[i]), dims: FREE_BOX });
+const rectNet = (rects, dims = DEFAULT_BOX) => fromRects(rects, { labels: rects.map((r, i) => r.label ?? LABELS[i]), dims });
 
 /** 놓은 면들을 변으로 이어진 덩어리로 나눈다 → 면 번호 묶음, 큰 것부터 (fold.js의 경첩으로 — 접기 판정과 같은 계산) */
 function rectGroups(net) {
@@ -708,84 +876,113 @@ export function rectReadiness(rects, total = FREE_CARDS.length) {
   return { ready: false, reason: 'apart', detached: rectGroups(net).slice(1).flat().sort((a, b) => a - b) };
 }
 
+/** 이 기기에서 찾은 전개도: 배열·Set(세 길이가 다른 상자의 것)이나 { distinct, pair, cube } */
+function foundSets(found) {
+  if (found instanceof Set || Array.isArray(found)) return { distinct: new Set(found), pair: new Set(), cube: new Set() };
+  return { distinct: new Set(found?.distinct ?? []), pair: new Set(found?.pair ?? []), cube: new Set(found?.cube ?? []) };
+}
+
 /**
- * 놓은 대로 접은 한 번의 판정. 판정은 판별 단계와 같은 checkNet.
- * seen: 이번 판에서 접어 본 모양의 열쇠, found: 이 기기에서 찾은 전개도 번호
- * → { net, key, id(전개도 번호), valid, problems, correct, tag, kind: 'new' | 'known' | 'repeat' | 'invalid', log, title, message, given }
+ * 놓은 대로 접은 한 번의 판정. 판정은 판별 단계와 같은 checkNet. dims: 만든 상자 [가로, 세로, 높이](처음 상자가 기본)
+ * seen: 이번 판에서 접어 본 모양(shape), found: 이 기기에서 찾은 전개도 이름(foundSets)
+ * → { net, key, shape(이번 판의 같은 모양 열쇠 — 되는 전개도는 상자 종류 안의 이름, 크기만 바꿔 다시 접어도 같다), id(전개도 이름), box(상자 종류),
+ *     valid, problems, correct, tag, kind: 'new' | 'known' | 'repeat' | 'invalid', log, title, message, given }
  */
-export function judgeCuboidFree({ rects, seen = new Set(), found = new Set() }) {
-  const net = rectNet(rects);
+export function judgeCuboidFree({ rects, dims = DEFAULT_BOX, seen = new Set(), found = new Set() }) {
+  const box = boxKind(dims);
+  const known = foundSets(found)[box];
+  const net = rectNet(rects, dims);
   const { ok, problems } = checkNet(net);
   const key = netKey(net);
-  const id = ok ? freeNets().find((n) => n.key === key)?.id ?? null : null;
-  const repeat = seen.has(key);
+  const id = ok ? boxNetId(net, dims) : null;
+  const shape = id ?? `x:${boxArrangement(dims).join('x')}:${key}`;
+  const repeat = seen.has(shape);
   const problem = ok ? null : primaryCuboidProblem(problems);
   const tag = ok ? null : (CUBOID_TAG_OF_PROBLEM[problem?.type] ?? TAGS.edgeLength);
   let kind = 'invalid';
   if (repeat) kind = 'repeat';
-  else if (ok) kind = found.has(id) ? 'known' : 'new';
+  else if (ok) kind = known.has(id) ? 'known' : 'new';
   let title;
   let message;
   if (kind === 'repeat') {
     title = '이미 접어 본 모양';
-    message = '이번에 이미 접어 본 모양이에요. 돌리거나 뒤집어도 같은 모양이라 다시 세지 않아요. 다른 모양을 만들어 봐요.';
+    message = '이번에 이미 접어 본 모양이에요. 돌리거나 뒤집어도, 크기만 바꿔도 같은 모양이라 다시 세지 않아요. 다른 모양을 만들어 봐요.';
   } else if (kind === 'new') {
     title = '새 전개도 발견';
-    message = '처음 찾은 전개도예요. 접으면 맞닿는 모서리의 길이가 모두 같아요.';
+    message = box === 'cube'
+      ? '처음 찾은 정육면체 전개도예요. 1차시의 전개도 도감에 넣었어요.'
+      : '처음 찾은 전개도예요. 접으면 맞닿는 모서리의 길이가 모두 같아요.';
   } else if (kind === 'known') {
-    title = '직육면체가 돼요';
+    title = box === 'cube' ? '정육면체가 돼요' : '직육면체가 돼요';
     message = '전에 찾은 전개도와 같은 모양이에요. 돌리거나 뒤집으면 똑같아요.';
   } else {
     title = '직육면체가 안 돼요';
     message = explainCuboidProblem(net, problem);
   }
-  const given = ok ? `전개도 ${id ?? ''}`.trim() : `안 됨: ${tag}`;
-  return { net, key, id, valid: ok, problems, correct: ok, tag, kind, log: !repeat, title, message, given };
+  const given = `${ok ? `전개도 ${id ?? ''}`.trim() : `안 됨: ${tag}`}${boxNote(dims)}`;
+  return { net, key, shape, id, box, valid: ok, problems, correct: ok, tag, kind, log: !repeat, title, message, given };
 }
 
 /**
  * 한 판의 흐름 (순수 상태). 화면(cuboid-free.js)과 점수 테스트가 같은 규칙을 쓴다.
- * fold(rects) → judgeCuboidFree 결과 + { itemId(기록할 때), collect: { id, item, isNew }(되는 전개도를 처음 찾았을 때 모음에 넣을 칸),
- *   first(이 기기에서 처음 찾은 전개도 — 점수는 이때만), later(처음 찾았지만 상한 뒤의 것 — 등록 1점뿐이고 만들기 성공 점수는 없다),
- *   explainable(안 되는 모양: 까닭 고르기), fixed(안 된 뒤 바로 전개도를 만듦),
- *   found(이번 판에 찾은 가지 수), total(이 기기에서 찾은 가지 수), done(끝낼 수 있음), full(별 3개만큼 찾음) }
+ * found · foundPair · foundCube: 이 기기에서 찾은 전개도(세 길이가 다른 상자 · 두 길이가 같은 상자 · 정육면체 도감), box: 처음 상자,
+ * dex: 도감 주문(세 길이가 다른 상자의 54칸을 모두 채우면 끝)
+ * setBox(dims) → 상자를 바꾼다(이번 판에 찾은 것·접어 본 모양은 그대로 — 같은 모양을 크기만 바꿔 다시 접으면 다시 세지 않는다)
+ * fold(rects) → judgeCuboidFree 결과 + { itemId(기록할 때), collect: { id(모음), item, isNew }(되는 전개도를 처음 찾았을 때 모음에 넣을 칸),
+ *   first(이 기기에서 처음 찾은 전개도 — 점수는 이때만), later(처음 찾았지만 직육면체 상한 뒤의 것 — 등록 1점뿐이고 만들기 성공 점수는 없다),
+ *   explainable(안 되는 모양: 까닭 고르기), fixed(안 된 뒤 바로 전개도를 만듦), found(이번 판에 찾은 가지 수),
+ *   total(이 기기에서 찾은 직육면체 전개도 — 세 길이가 다른 것과 두 길이가 같은 것을 합친 수, 상한을 세는 수), kindCount(그 상자 종류의 모음에 든 수),
+ *   dexCount(세 길이가 다른 상자의 54칸에 든 수), done(끝낼 수 있음), full(별 3개만큼 찾음) }
  * 안 되는 모양은 끝없이 많아 "모양마다 한 번"을 적어 둘 수 없다 → 안 되는 모양에는 점수가 없다(기록·까닭 고르기·표시는 그대로).
  */
-export function createCuboidFreeSession({ stageId = 'cuboid-free', goal = CUBOID_FREE_GOAL, found = [] } = {}) {
-  const seen = new Set(); // 이번 판에서 접어 본 모양(열쇠)
-  const foundNow = new Set(); // 이번 판에서 찾은 전개도
-  const device = new Set(found);
+export function createCuboidFreeSession({
+  stageId = 'cuboid-free', goal = CUBOID_FREE_GOAL, found = [], foundPair = [], foundCube = [], box = DEFAULT_BOX, dex = false,
+} = {}) {
+  const seen = new Set(); // 이번 판에서 접어 본 모양
+  const foundNow = new Set(); // 이번 판에서 찾은 전개도 (이름은 상자 종류마다 겹치지 않는다: 123-… · 112-… · 1-4-1a …)
+  const device = { distinct: new Set(found), pair: new Set(foundPair), cube: new Set(foundCube) };
   const history = [];
+  let dims = [...box];
   let seq = 0;
   let invalidRun = 0;
+  const cuboidCount = () => device.distinct.size + device.pair.size;
+  const isDone = () => (dex ? device.distinct.size >= FREE_NET_COUNT : foundNow.size >= goal);
   return {
+    setBox(next) {
+      dims = [...next];
+    },
+    box: () => [...dims],
     fold(rects) {
-      const r = judgeCuboidFree({ rects, seen, found: device });
+      const r = judgeCuboidFree({ rects, dims, seen, found: device });
       const prev = history.at(-1);
       let itemId = null;
       let collect = null;
       if (r.log) {
         seq += 1;
         itemId = `${stageId}:${seq}:${r.valid ? r.id : 'x'}`;
-        seen.add(r.key);
+        seen.add(r.shape);
       }
       if (r.valid) {
         foundNow.add(r.id);
-        if (r.kind === 'new') collect = { id: CUBOID_NETS_ID, item: r.id, isNew: !device.has(r.id) };
-        device.add(r.id);
+        if (r.kind === 'new') collect = { id: BOX_KINDS[r.box].collection, item: r.id, isNew: !device[r.box].has(r.id) };
+        device[r.box].add(r.id);
         invalidRun = 0;
       } else invalidRun += 1;
+      const first = Boolean(collect?.isNew);
       const step = {
         ...r,
+        dims: [...dims],
         itemId,
         collect,
-        first: Boolean(collect?.isNew),
-        later: Boolean(collect?.isNew) && isLaterNet(device.size),
+        first,
+        later: first && r.box !== 'cube' && isLaterNet(cuboidCount()),
         explainable: r.kind === 'invalid',
         fixed: r.valid && r.kind !== 'repeat' && Boolean(prev && !prev.valid),
         found: foundNow.size,
-        total: device.size,
-        done: foundNow.size >= goal,
+        total: cuboidCount(),
+        kindCount: device[r.box].size,
+        dexCount: device.distinct.size,
+        done: isDone(),
         full: foundNow.size >= CUBOID_FREE_FULL,
         invalidRun,
       };
@@ -793,8 +990,9 @@ export function createCuboidFreeSession({ stageId = 'cuboid-free', goal = CUBOID
       return step;
     },
     found: () => new Set(foundNow),
-    device: () => new Set(device),
-    done: () => foundNow.size >= goal,
+    /** 이 기기에서 찾은 전개도: 상자 종류(kind)마다. 주지 않으면 세 길이가 다른 상자의 것 */
+    device: (kind = 'distinct') => new Set(device[kind]),
+    done: isDone,
     invalidRun: () => invalidRun,
     history: () => history.slice(),
     goal,
@@ -851,12 +1049,47 @@ export function cuboidFreeHighlights(sum, { earned, total }) {
   ];
 }
 
+// ── 도전 주문서 "직육면체 도감 주문" (cuboid-dex, spec 16-16): 세 길이가 다른 상자의 전개도 54칸을 여러 번에 나눠 채운다 ──────────
+export const CUBOID_DEX_COUNT = FREE_NET_COUNT;
+/** 도감에 찾은 가지 수 → 별: 10가지 ★1, 20가지 ★2, 30가지 ★3 (사용자 결정 2026-10-16) */
+export const CUBOID_DEX_STAR_AT = Object.freeze([10, 20, 30]);
+export const cuboidDexStars = (count) => CUBOID_DEX_STAR_AT.filter((n) => count >= n).length;
+/** 다음 별을 받는 가지 수 (별 3개면 null) */
+export const cuboidDexNextStar = (count) => CUBOID_DEX_STAR_AT.find((n) => count < n) ?? null;
+/** 결과 화면의 별 기준 안내 (별 3개가 안 될 때): 다음 별까지 몇 가지 + 기준 */
+export function cuboidDexStarNote(count) {
+  const next = cuboidDexNextStar(count);
+  if (next == null) return null;
+  return `도감 ${next}가지를 채우면 별 ${cuboidDexStars(count) + 1}개예요(10가지 별 1개 · 20가지 별 2개 · 30가지 별 3개). 찾은 전개도는 다음에도 이어져요.`;
+}
+/** 새 전개도로 별이 하나 늘었을 때 쪽지에 덧붙이는 말 (10 · 20가지. 30가지는 별 3개, 54가지는 완성 문장이 따로 있다) */
+export function cuboidDexMilestone(before, after) {
+  const stars = cuboidDexStars(after);
+  if (stars <= cuboidDexStars(before)) return '';
+  if (stars >= CUBOID_DEX_STAR_AT.length) return `도감 ${after}가지! 이제 끝내도 별 3개를 받아요.`;
+  return `도감 ${after}가지! 지금 끝내도 별 ${stars}개를 받아요.`;
+}
+/** 도감 주문 결과의 기록 칸 */
+export const cuboidDexStats = (sum) => [
+  { label: '새로 찾은 전개도', value: `${sum.newNets}가지` },
+  { label: '접어 본 모양', value: `${sum.shapes}가지` },
+];
+/** 도감 주문 결과 "오늘의 솜씨" 칸: 첫 칸은 도감 수(별의 기준) + 이번 판에 새로 찾은 전개도의 점수 */
+export function cuboidDexHighlights(sum, { earned, dexCount }) {
+  const next = cuboidDexNextStar(dexCount);
+  return [
+    { icon: 'book', label: '직육면체 전개도 도감', value: `${dexCount} / ${CUBOID_DEX_COUNT}`, xp: earned.answer + earned.nets },
+    next != null ? { icon: 'star', label: '다음 별까지', value: `${next - dexCount}가지` } : { icon: 'star', label: '도감을 다 채우기까지', value: `${CUBOID_DEX_COUNT - dexCount}가지` },
+    { icon: 'undo', label: '고쳐서 다시 도전', value: `${sum.fixes}번` },
+  ];
+}
+
 /**
- * 힌트 그림자: 이번 판에 아직 못 찾은 전개도 가운데 판에 들어가는 가장 작은 것.
+ * 힌트 그림자: 이번 판에 아직 못 찾은 전개도 가운데 판에 들어가는 가장 작은 것(그 상자의 크기로).
  * 이 기기에서 아직 찾지 않은 것(deviceIds에 없는 것 — 점수를 받는 새 전개도)을 먼저 고른다 (정육면체의 hintNet과 같은 순서)
  */
-export function cuboidHintNet(foundIds = new Set(), board = CUBOID_BOARDS.wide, deviceIds = new Set()) {
-  const left = freeNets().filter((n) => !foundIds.has(n.id) && centerOnBoard(n.net, board));
+export function cuboidHintNet(foundIds = new Set(), board = CUBOID_BOARDS.wide, deviceIds = new Set(), dims = DEFAULT_BOX) {
+  const left = boxCatalog(dims).list.filter((n) => !foundIds.has(n.id) && centerOnBoard(n.net, board));
   const fresh = left.filter((n) => !deviceIds.has(n.id));
   return (fresh.length > 0 ? fresh : left).sort((p, q) => p.size[0] * p.size[1] - q.size[0] * q.size[1] || (p.id < q.id ? -1 : 1))[0] ?? null;
 }
@@ -876,4 +1109,25 @@ export function centerOnBoard(net, { cols, rows }) {
     }
   }
   return null;
+}
+
+const solidNetCache = new Map();
+/**
+ * 상자를 접은 모습(상자 보기)에 쓰는 전개도: 그 상자를 펼친 것 가운데 가장 옹골찬 것(펼친 크기가 작을수록 접은 상자가 크게 보인다).
+ * 면 id와 이름은 입체의 면 순서다 — f0 윗면(가) · f1 아랫면(나) · f2 앞면(다) · f3 뒷면(라) · f4 왼쪽 옆면(마) · f5 오른쪽 옆면(바), 카드와 같다
+ */
+export function boxSolidNet(dims) {
+  const name = dims.join('x');
+  if (!solidNetCache.has(name)) {
+    const solid = cuboid(...dims);
+    let best = null;
+    for (const tree of boxTrees()) {
+      const net = unfold(solid, tree);
+      const [w, h] = netSize(net);
+      const spread = Math.max(Math.max(w, h) / 1.9, Math.min(w, h));
+      if (!best || spread < best.spread - 1e-9) best = { net, spread };
+    }
+    solidNetCache.set(name, { ...best.net, root: 'f1' }); // 아랫면을 바닥에: 윗면이 위, 높이가 세로로 선다
+  }
+  return solidNetCache.get(name);
 }
