@@ -52,6 +52,7 @@ import {
   stageXp,
 } from '../core/rewards.js';
 import { planIntroLayout, sanitizeDpr } from '../core/intro-fit.js';
+import { clearReloadMark } from '../core/reload.js';
 import { createStorage } from '../core/storage.js';
 import { splitTitleMark } from '../core/title-mark.js';
 import { createSfx } from './audio.js';
@@ -449,6 +450,73 @@ function drawIntroBlur(img, canvas) {
   }
 }
 
+/**
+ * 인트로 배치를 정할 값(B0c-1): 배경 그림 정보(art)가 있으면 꽉 채우기/카드 규칙(core/intro-fit.js) 그대로.
+ * art가 없으면 그림 크기를 몰라 늘림 한도(1.35배)·띠를 셀 수 없으므로 docs/engine.md 2절대로 **화면 가득(cover)** — 화면과 같은 크기의
+ * 그림을 1배(dpr 1)로 놓은 것과 같아 늘 꽉 채우기이고 그림 상자 = 화면이다(그림은 CSS background-size: cover, base.css .no-art).
+ * (전에는 화면 크기를 그림 크기로 넣고 기기의 devicePixelRatio를 그대로 넣어, DPR이 1.35를 넘는 기기에서 작은 카드가 됐다)
+ */
+export function introLayoutOf({ w, h, dpr, art, logoRatio }) {
+  return art
+    ? planIntroLayout({ w, h, dpr, art, logoRatio })
+    : planIntroLayout({ w, h, dpr: 1, art: { width: w, height: h }, logoRatio });
+}
+
+/** 늦게 받는 묶음을 받지 못했을 때의 표시(lazyModule이 붙인다 — 엔진이 불러오기 실패 화면을 보인다) */
+export const LOAD_FAILED = 'edu-load-failed';
+/** 불러오는 중 표시를 보이기 전에 기다리는 시간(ms): 이보다 빨리 받으면 아무것도 보이지 않는다 */
+export const PLAY_LOADING_MS = 400;
+
+/**
+ * 늦게 받는 묶음(spec-grade6 7-4절 "영역을 들어갈 때 불러오기" — docs/engine.md 2절 "늦게 불러오기").
+ *   const blocks = lazyModule(() => import('./blocks/blocks-play.js'));
+ *   createGameApp({ preload: [blocks.preload], playStage(stage, ctx) { return blocks.play(ctx, (m) => m.playBlockStage(stage, ctx)); } })
+ * → { play(ctx, run), preload() }
+ *   play(ctx, run): 묶음을 받은 뒤(이미 받았으면 곧바로) 그 단계가 아직 열려 있을 때만(ctx.signal) run(모듈)을 불러 그 값(정리 함수)을 주는 Promise.
+ *     기다리는 사이에 단계에서 나갔으면 run을 부르지 않는다(아무것도 그리지 않는다). 받지 못하면 LOAD_FAILED 표시가 붙은 오류 → 엔진의 실패 화면
+ *   preload(): 미리 받아 두기(createGameApp의 preload에 넣는다). 실패해도 조용하다 — 그 단계에 들어갈 때 다시 받아 본다
+ * 같은 묶음은 한 번만 받는다(받지 못했으면 다음에 다시 받아 본다).
+ */
+export function lazyModule(load) {
+  if (typeof load !== 'function') throw new Error('lazyModule: () => import(…) 함수가 필요해요.');
+  let pending = null;
+  const get = () => {
+    if (!pending) {
+      pending = Promise.resolve().then(load).catch((cause) => {
+        pending = null;
+        const error = new Error(`묶음을 받지 못했어요: ${cause?.message ?? cause}`);
+        error.code = LOAD_FAILED;
+        error.cause = cause;
+        throw error;
+      });
+    }
+    return pending;
+  };
+  return {
+    play: (ctx, run) => get().then((mod) => (ctx?.signal?.aborted ? null : run(mod))),
+    preload: () => get().then(() => true, () => false),
+  };
+}
+
+/** createGameApp의 preload(함수 또는 함수 목록)를 처음 화면이 그려진 뒤 한가할 때 부른다(requestIdleCallback, 없으면 잠시 뒤) */
+function schedulePreload(preload) {
+  const list = (Array.isArray(preload) ? preload : [preload]).filter((fn) => typeof fn === 'function');
+  if (list.length === 0) return;
+  const run = () => {
+    for (const fn of list) {
+      try {
+        Promise.resolve(fn()).catch(() => {});
+      } catch {
+        // 미리 받기는 실패해도 그만이다(그 단계에 들어갈 때 다시 받는다)
+      }
+    }
+  };
+  const whenIdle = () => (typeof globalThis.requestIdleCallback === 'function' ? globalThis.requestIdleCallback(run, { timeout: 4000 }) : setTimeout(run, 1200));
+  // 첫 그림 다음: rAF는 그리기 바로 전, 그 뒤의 setTimeout은 그린 뒤
+  if (typeof globalThis.requestAnimationFrame === 'function') globalThis.requestAnimationFrame(() => setTimeout(whenIdle, 0));
+  else setTimeout(whenIdle, 0);
+}
+
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
 function defaultHeroArt(game) {
   return h('div', { class: 'hero-papers' },
@@ -471,6 +539,7 @@ export function createGameApp({
   rewards: rewardOptions = null,
   collections: collectionDefs = null,
   intro: introDef = null,
+  preload = null,
   options = readUrlOptions(),
 }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
@@ -780,7 +849,7 @@ export function createGameApp({
     const { art, logo } = introPlan;
     const crop = logo?.crop;
     const logoRatio = crop ? (crop[2] - crop[0]) / (crop[3] - crop[1]) : 1.6;
-    const plan = planIntroLayout({ w: sw, h: sh, dpr, art: art ?? { width: sw, height: sh }, logoRatio });
+    const plan = introLayoutOf({ w: sw, h: sh, dpr, art, logoRatio }); // art가 없으면 화면 가득(cover — B0c-1)
     const px = (v) => `${Math.round(v * 1000) / 1000}px`;
     const vars = {
       '--st-x': plan.stage.x, '--st-y': plan.stage.y, '--st-w': plan.stage.w, '--st-h': plan.stage.h,
@@ -821,6 +890,12 @@ export function createGameApp({
     (logoEl ? backgroundDecoded(logoEl) : Promise.resolve(null)).then((img) => {
       if (!screen.isConnected) return;
       if (img) logoEl.classList.add('is-loaded');
+      else if (logoEl) {
+        // 제목 그림을 끝내 받지 못했다(B0c-2): 그 자리에 게임 이름을 글자로 — 화면에 게임 이름이 없지 않게. 화면 읽기 이름은 그대로
+        const heading = screen.querySelector('.intro-title');
+        heading.replaceChildren(h('span', { class: 'intro-title-text' }, introPlan.title));
+        screen.classList.add('logo-failed');
+      }
       screen.classList.add('is-titled'); // 받지 못했어도(그림 없음) 부제·움직임은 보인다
       ready();
     });
@@ -1310,6 +1385,9 @@ export function createGameApp({
       clearInterval(t);
     }));
     let finished = false;
+    // 이 단계에서 나가면(다른 화면을 보이면) 알린다: playStage가 Promise를 돌려준 단계(늦게 받는 묶음)가 받은 뒤에 그리지 않게 (ctx.signal)
+    const stageLife = new AbortController();
+    screenCleanups.push(() => stageLife.abort());
 
     // 문제 n / N 점 막대 (게임이 ctx.setProgress로 알려 줄 때만 보인다)
     const progressBox = h('span', { class: 'meta-box meta-progress', hidden: true });
@@ -1420,6 +1498,8 @@ export function createGameApp({
       el: area,
       stage,
       game,
+      /** 이 단계가 아직 열려 있는가: 나가면 signal.aborted가 true (늦게 받는 묶음 — lazyModule().play가 본다) */
+      signal: stageLife.signal,
       rng: createRng(options.seed != null ? `${options.seed}:${stage.id}` : `${Date.now()}:${stage.id}`),
       log: {
         answer: (entry) => {
@@ -1505,16 +1585,80 @@ export function createGameApp({
       },
     };
 
+    const failPanel = () => h('p', { class: 'panel panel-error' }, '게임을 준비하다가 문제가 생겼어요. 선생님께 알려 주세요.');
+    /** playStage가 돌려준 정리 함수를 맡는다. 단계에서 이미 나갔으면(늦게 받은 묶음) 바로 정리한다 */
+    const keepCleanup = (fn) => {
+      if (typeof fn !== 'function') return;
+      if (finished || stageLife.signal.aborted) {
+        try {
+          fn();
+        } catch (error) {
+          console.error(error);
+        }
+      } else cleanup = fn;
+    };
+    /**
+     * playStage가 Promise를 돌려준 단계(늦게 받는 묶음 — docs/engine.md 2절 "늦게 불러오기"): 받는 동안 "불러오는 중"(PLAY_LOADING_MS 안에 받으면 보이지 않는다),
+     * 받으면 그 정리 함수를 맡는다. 기다리는 사이에 나갔으면 아무것도 그리지 않고 정리만. 받지 못했으면(LOAD_FAILED) 불러오기 실패 화면
+     */
+    function waitForPlay(pending) {
+      const screen = area.closest('.screen-play');
+      let loading = null;
+      let settled = false; // 받았거나 받지 못했다 — 그 뒤에는 "불러오는 중"을 붙이지 않는다
+      later(() => {
+        if (settled || stageLife.signal.aborted || !screen) return;
+        // 화면 가운데에 떠 있는 표시(position: fixed) — 무대·머리의 자리를 바꾸지 않는다
+        loading = h('p', { class: 'play-loading', role: 'status' }, h('span', { class: 'play-loading-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')), '불러오는 중이에요');
+        screen.append(loading);
+      }, PLAY_LOADING_MS);
+      const stopLoading = () => {
+        settled = true;
+        loading?.remove();
+        loading = null;
+      };
+      pending.then((fn) => {
+        stopLoading();
+        keepCleanup(fn);
+      }, (error) => {
+        stopLoading();
+        if (stageLife.signal.aborted) return;
+        if (error?.code === LOAD_FAILED) {
+          console.warn(error.message);
+          log.cancelStage();
+          show(loadFailedScreen());
+          return;
+        }
+        console.error(error);
+        area.append(failPanel());
+      });
+    }
+
     try {
       const result = playStage(stage, ctx);
-      if (typeof result === 'function') {
-        if (finished) result();
-        else cleanup = result;
-      }
+      if (result && typeof result.then === 'function') waitForPlay(result);
+      else keepCleanup(result);
     } catch (error) {
       console.error(error);
-      area.append(h('p', { class: 'panel panel-error' }, '게임을 준비하다가 문제가 생겼어요. 선생님께 알려 주세요.'));
+      area.append(failPanel());
     }
+  }
+
+  /**
+   * 불러오기 실패 화면: 늦게 받는 묶음(영역의 플레이)을 받지 못했다 — 새 버전을 올린 직후 옛 HTML이 지워진 옛 파일을 찾았거나 인터넷이 끊겼다(spec-grade6 7-5절).
+   * [새로 고침]이면 새 HTML이 새 파일을 가리킨다. 저장된 별·기록은 그대로다(이 판은 시작하지 않은 것으로 — log.cancelStage)
+   */
+  function loadFailedScreen() {
+    return h('section', { class: 'screen screen-reload' },
+      h('div', { class: 'panel reload-panel' },
+        h('h2', null, '새 버전이 올라왔어요'),
+        h('p', null, '이 단계를 열려면 게임을 새로 고쳐야 해요. [새로 고침]을 누르면 새 버전으로 다시 열려요.'),
+        h('p', { class: 'muted' }, '모은 별과 학습 기록은 그대로 남아 있어요. 인터넷이 끊겼다면 다시 연결된 뒤에 눌러요.'),
+        h('div', { class: 'actions' },
+          button('새로 고침', () => globalThis.location?.reload(), 'btn btn-primary', 'rotr'),
+          button('단계 선택', () => show(stageSelectScreen()), 'btn', 'back'),
+        ),
+      ),
+    );
   }
 
   /**
@@ -1784,6 +1928,7 @@ export function createGameApp({
 
   return {
     start() {
+      clearReloadMark(); // 앱이 열렸다: 처음 스크립트 실패 때 한 번만 새로 고치는 표시를 지운다(core/reload.js)
       renderSoundButton();
       renderRankChip();
       const direct = options.stageId ? stages.find((s) => s.id === options.stageId) : null;
@@ -1792,6 +1937,7 @@ export function createGameApp({
       else if (areaMode && gradeEntry(Number(options.gradeId))?.ready) openGrade(Number(options.gradeId)); // ?grade=<n>: 그 학년 화면으로
       else if (introPlan && opensWithIntro(options)) openIntro(); // 게임 인트로: 수업 주소(?stage=·?lesson=·?area=·?grade=)가 없을 때만
       else show(titleScreen());
+      schedulePreload(preload); // 늦게 받는 묶음을 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(없으면 아무것도 하지 않는다)
     },
     progress,
     log,

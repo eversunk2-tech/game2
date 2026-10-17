@@ -1,7 +1,8 @@
 /**
- * 제목 글꼴(Do Hyeon, SIL OFL 1.1)을 게임마다 쓰인 글자만 잘라 넣는다.
+ * 제목 글꼴(Do Hyeon, SIL OFL 1.1)을 사이트에 쓰인 글자만 잘라 넣는다.
  *
- *   빌드: 묶은 HTML(JS·CSS 포함)에서 글자를 모아 → 잘라서 woff2 → data: 주소 @font-face
+ *   빌드(B0b): 사이트 전체(게임 모음 + 모든 게임의 JS·CSS·HTML)에서 글자를 모아 → 잘라서 woff2 파일 하나(dist/assets/display-해시.woff2)
+ *              → HTML마다 @font-face(displayFontRule — 상대 주소 ./assets/…) + 미리 받기(preload)
  *   개발 서버: 전체 TTF를 /__fonts/display.ttf 로 보여 준다(devFontCss)
  *
  * 글꼴 원본은 npm 패키지 @expo-google-fonts/do-hyeon(devDependency)에 있다. 저장소에는 라이선스만 둔다
@@ -119,26 +120,14 @@ export function missingSymbols(text, cmap) {
   });
 }
 
-/**
- * 이 HTML에 쓰인 글자만 담은 @font-face CSS를 만든다.
- * → { css, chars(넣은 글자 수), bytes(woff2 크기), missing(글꼴에 없는 한글 음절), symbols(글꼴에 없는 기호, 알림용) }
- */
-export async function displayFontFace(html) {
-  const { cmap } = await loadSource();
-  const text = collectFontText(html);
-  const kept = [...text].filter((ch) => cmap.has(ch.codePointAt(0)));
-  const missing = [...text].filter((ch) => isHangulSyllable(ch) && !cmap.has(ch.codePointAt(0)));
-  const symbols = missingSymbols(text, cmap);
-  const woff2 = await subsetDisplayFont(kept.join(''), 'woff2');
-  const css = `/*! ${DISPLAY_FONT.notice} */@font-face{font-family:"${DISPLAY_FONT.family}";`
-    + `src:url(data:font/woff2;base64,${Buffer.from(woff2).toString('base64')}) format("woff2");${FACE_RULES}}`;
-  return { css, chars: kept.length, bytes: woff2.length, missing, symbols };
+/** 글꼴의 글자 표(cmap): 글꼴에 없는 글자를 가려낸다 */
+export async function readCmapOfDisplay() {
+  return (await loadSource()).cmap;
 }
 
-/** 글꼴 CSS를 <head> 끝에 넣는다. */
-export function injectStyle(html, css) {
-  const tag = `<style>${css}</style>`;
-  return /<\/head>/i.test(html) ? html.replace(/<\/head>/i, () => `${tag}\n</head>`) : tag + html;
+/** 잘라 낸 글꼴 파일을 쓰는 @font-face CSS (url = HTML 기준 상대 주소, 예: ./assets/display-해시.woff2). 라이선스 알림을 앞에 둔다 */
+export function displayFontRule(url) {
+  return `/*! ${DISPLAY_FONT.notice} */@font-face{font-family:"${DISPLAY_FONT.family}";src:url(${url}) format("woff2");${FACE_RULES}}`;
 }
 
 /** 개발 서버용: 전체 글꼴 파일을 쓰는 @font-face */

@@ -1,11 +1,9 @@
 /**
- * 쌓기나무 영역의 들머리. main.js는 여기서 차시·단계 목록과 화면 함수만 가져간다
- * (나중에 영역을 들어갈 때 불러오는 묶음으로 나누기 쉽게 — spec-grade6.md 7-4절).
+ * 쌓기나무 영역의 들머리(바탕 묶음). main.js는 여기서 차시·단계 목록(단계 카드 그림 포함)만 가져간다.
+ * 플레이(문제 만들기·판정·화면)는 단계에 들어갈 때 받는 묶음 blocks-play.js에 있다(spec-grade6.md 7-4절 "영역을 들어갈 때 불러오기" — B0b).
  */
-import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST, makeBlockQuestions } from './blocks-logic.js';
+import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST } from './blocks-stages.js';
 import { createBlockPicture } from './block-view.js';
-import { playBlocks } from './play-blocks.js';
-import { VIEW_STAGE_KINDS, playViews } from './play-views.js'; // 3·4차시 화면
 
 // 단계 카드 그림: 작은 멈춘 그림 (조형물은 색·무늬)
 const SCENE_LOOK = { yellow: { token: '--face-1', mark: 'plain' }, blue: { token: '--face-2', mark: 'slash' }, pink: { token: '--face-4', mark: 'dot' } };
@@ -39,10 +37,3 @@ function thumbOf(kind) {
 
 export { BLOCK_HOW_TO, BLOCK_LESSONS };
 export const BLOCK_STAGES = STAGE_LIST.map((stage) => ({ ...stage, thumb: thumbOf(stage.kind) }));
-
-/** 쌓기나무 단계 하나를 플레이한다 → 정리 함수 */
-export function playBlockStage(stage, ctx) {
-  // 문항을 가장 먼저 만든다: 같은 ?seed=면 같은 문항 (e2e 테스트도 이것으로 정답을 안다)
-  const questions = makeBlockQuestions(stage, ctx.rng);
-  return VIEW_STAGE_KINDS.includes(stage.kind) ? playViews(stage, ctx, questions) : playBlocks(stage, ctx, questions);
-}

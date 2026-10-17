@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
+    "preview": "node scripts/serve.mjs",
     "new": "node scripts/new-game.mjs",
     "test": "node --test --test-reporter=spec \"tests/unit/**/*.test.js\"",
     "test:e2e": "npm run build && playwright test",

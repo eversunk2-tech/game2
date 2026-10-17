@@ -1,8 +1,25 @@
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 const BUILT = path.resolve('dist');
+
+/**
+ * 테스트 서버 (B0b): 빌드 결과를 사이트와 같은 하위 경로 /game2/ 아래로 주는 scripts/serve.mjs(gzip)를 playwright.config.js의 webServer가 띄운다.
+ * 포트는 환경 변수 E2E_PORT(기본 4173) — 여러 작업 폴더가 동시에 e2e를 돌릴 때 서로 다른 포트를 준다. 그 포트를 이미 다른 서버가 쓰고 있으면
+ * 그 서버를 쓰지 않고 실패한다(reuseExistingServer: false — 남의 dist/를 검사하지 않게).
+ */
+export const E2E_PORT = (() => {
+  const raw = (process.env.E2E_PORT ?? '').trim();
+  if (!raw) return 4173;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error(`E2E_PORT는 1~65535의 정수여야 해요: "${raw}"`);
+  return port;
+})();
+/** 사이트의 하위 경로(GitHub Pages: https://eversunk2-tech.github.io/game2/) */
+export const SITE_BASE = '/game2/';
+export const SERVER_ORIGIN = `http://127.0.0.1:${E2E_PORT}`;
+/** 테스트가 여는 사이트 주소(끝에 /) */
+export const SITE_URL = `${SERVER_ORIGIN}${SITE_BASE}`;
 
 /**
  * 글자 폭 넓힘 모드 (환경 변수 E2E_WIDE_TEXT).
@@ -23,9 +40,10 @@ const BUILT = path.resolve('dist');
  * 글꼴 흉내는 로컬 글꼴에 기대므로, 그 글꼴이 없는 컴퓨터(리눅스 CI 등)에서는 테스트를 시작하기 전에 까닭을 말하고 멈춘다.
  * 실제 CI의 글꼴 그 자체는 아니다 — 통과해도 "CI에서 확인 필요"는 남는다.
  *
- * 앱 코드에는 아무것도 넣지 않는다. 환경 변수가 없으면(보통 실행·CI) 이 파일은 dist/를 그대로 연다.
+ * 앱 코드에는 아무것도 넣지 않는다. 환경 변수가 없으면(보통 실행·CI) 테스트 서버가 dist/를 그대로 준다.
  * 환경 변수가 있으면 playwright.config.js가 이 파일의 기본 내보내기(prepareWideText)를 globalSetup으로 불러
- * dist/*.html의 복사본에 스타일을 넣어 test-results/wide-text-dist/에 두고, fileUrl()·gameFiles()가 그 복사본을 가리킨다.
+ * dist/*.html의 복사본에 스타일을 넣어 test-results/wide-text-dist/에 두고(dist/assets/는 그대로 복사), 테스트 서버가 그 복사본 폴더를 주며
+ * gameFiles()·DIST도 그 복사본을 가리킨다.
  * src/를 그대로 띄우는 시험 페이지(엔진 기능·차시 묶음)는 srcBody()가 base.css 끝에 같은 스타일을 붙인다.
  */
 const HANGUL = 'U+1100-11FF, U+3130-318F, U+AC00-D7AF';
@@ -105,8 +123,9 @@ export default async function prepareWideText() {
     if (at < 0) throw new Error(`${file}: </head>를 찾지 못해 글자 폭 넓힘 스타일을 넣을 수 없어요.`);
     writeFileSync(path.join(WIDE_DIST, file), `${html.slice(0, at)}<style data-e2e-wide-text>${wideTextCss()}</style>\n${html.slice(at)}`);
   }
-  // 빌드가 따로 내보낸 큰 그림(dist/assets/ — HTML이 ./assets/…로 가리킨다)도 복사본 옆에 (B0c2)
-  if (existsSync(path.join(BUILT, 'assets'))) cpSync(path.join(BUILT, 'assets'), path.join(WIDE_DIST, 'assets'), { recursive: true });
+  // 빌드가 따로 내보낸 파일(dist/assets/ — JS·CSS·글꼴·큰 그림, HTML이 ./assets/…로 가리킨다)도 복사본 옆에 그대로 (B0c2 · B0b)
+  if (!existsSync(path.join(BUILT, 'assets'))) throw new Error('dist/assets/가 없어요. 먼저 npm run build를 해요.');
+  cpSync(path.join(BUILT, 'assets'), path.join(WIDE_DIST, 'assets'), { recursive: true });
   console.log(`글자 폭 넓힘 모드: ${WIDE_TEXT.label} (${files.length}개 파일 → ${path.relative(process.cwd(), WIDE_DIST)}/)`);
 }
 
@@ -117,7 +136,8 @@ export function srcBody(file, text) {
 
 export const gameFiles = () => readdirSync(DIST).filter((f) => f.endsWith('.html') && f !== 'index.html');
 
-export const fileUrl = (name, query = '') => pathToFileURL(path.join(DIST, name)).href + query;
+/** 빌드한 페이지의 주소: 테스트 서버의 하위 경로 아래(…/game2/<name>) — 서버는 보통 실행이면 dist/, 글꼴 흉내면 그 복사본을 준다 (B0b: 전에는 file://) */
+export const fileUrl = (name, query = '') => `${SITE_URL}${name}${query}`;
 
 /** 페이지의 오류(예외·console.error)를 모은다. 테스트 끝에 빈 배열인지 확인한다. */
 export function collectErrors(page) {

@@ -435,6 +435,26 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .play-meta { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .play-meta:empty { display: none; }
 .play-area { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+/* 늦게 받는 묶음을 받는 동안(0.4초가 넘을 때만, B0b — docs/engine.md 2절 "늦게 불러오기"): 화면 가운데에 떠 있는 쪽지. 무대·머리의 자리를 바꾸지 않는다 */
+.play-loading {
+  position: fixed; left: 50%; top: 50%; z-index: 50; transform: translate(-50%, -50%);
+  display: inline-flex; align-items: center; gap: 12px; margin: 0; padding: 12px 20px;
+  border: 2px solid var(--ink); border-radius: var(--radius); background: var(--paper); color: var(--ink);
+  box-shadow: var(--lift); font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg);
+  pointer-events: none; animation: toast-in var(--dur-2) var(--ease-out);
+}
+.play-loading-dots { display: inline-flex; gap: 5px; }
+.play-loading-dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--primary); animation: loading-dot 1s ease-in-out infinite both; }
+.play-loading-dots i:nth-child(2) { animation-delay: 0.15s; }
+.play-loading-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes loading-dot { 0%, 100% { opacity: 0.25; transform: scale(0.7); } 50% { opacity: 1; transform: none; } }
+/* 불러오기 실패 화면: 새 버전이 올라왔어요 + [새로 고침] */
+.screen-reload { justify-content: center; align-items: center; }
+.reload-panel { width: min(100%, 600px); display: flex; flex-direction: column; gap: 12px; padding: 26px 28px; }
+.reload-panel h2 { font-size: var(--fs-2xl); }
+.reload-panel .actions { margin-top: 6px; }
+/* 처음 스크립트를 받지 못했을 때 HTML이 #app에 넣는 안내(core/reload.js) */
+.boot-error { max-width: 600px; margin: 40px auto; display: flex; flex-direction: column; gap: 14px; align-items: flex-start; }
 
 /* ── 결과 (증명서) ─────────────────────── */
 /* 결과 연출에서 도장이 크게 시작해(scale 1.9) 줄어드는 동안, 좁은 화면(태블릿 세로)에서 화면 밖으로 나가 가로 스크롤이 생기지 않게
@@ -976,6 +996,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
   display: block; text-align: center; color: #fff; font-size: clamp(2.6rem, 9vh, 5.5rem); line-height: 1.1;
   text-shadow: 0 3px 0 var(--ink), 3px 0 0 var(--ink), -3px 0 0 var(--ink), 0 -3px 0 var(--ink), 0 8px 0 var(--ink);
 }
+/* 제목 그림을 끝내 받지 못했을 때(B0c-2): 제목 상자 가운데에 게임 이름 글자(상자 폭에 맞춘 크기) */
+.screen-intro.logo-failed .intro-title { display: flex; align-items: center; justify-content: center; }
+.screen-intro.logo-failed .intro-title-text { font-size: min(5.5rem, calc(var(--logo-w, 50vw) / 6.5)); }
+/* 빛줄기 틀은 제목 그림이 풀린 뒤에만 그린다(B0c-12): 그림을 받지 못할 때 같은 그림을 한 번 더 요청하지 않게 — 풀리기 전에는 원래 보이지 않는다 */
+.intro-logo:not(.is-loaded) .intro-shine { display: none; }
 /* 부제: 제목 그림의 리본 위(SVG 글이 리본을 따라 휜다) 또는 제목 아래 */
 .intro-subtitle {
   margin: 0; text-align: center; font-family: var(--font-display); font-weight: 700; color: #fff;

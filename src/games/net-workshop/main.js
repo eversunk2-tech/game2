@@ -6,7 +6,7 @@
  * 단계 종류(kind)에 맞는 화면 함수로 넘긴다: judge · opposite · complete · free(내 맘대로 전개도) · dex(도감 주문) · dice(주사위 주문)
  */
 import meta from './game.json' with { type: 'json' };
-import { createGameApp } from '../../shared/ui/app.js';
+import { createGameApp, lazyModule } from '../../shared/ui/app.js';
 import { areaArt } from './thumbs.js'; // 학년·영역 카드와 탭 그림
 import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
 import { CUBOID_HOW_TO_MORE } from './cuboid-main.js'; // 직육면체 영역의 놀이 방법에 덧붙이는 줄(상자 크기 · 돌리기 손잡이, spec 16-16)
@@ -19,7 +19,9 @@ import { playJudge } from './play-judge.js';
 import { playPick } from './play-pick.js';
 import { playPlace } from './play-place.js';
 import { heroArt, miniNet, stageThumb } from './thumbs.js';
-import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, playBlockStage } from './blocks/index.js'; // 쌓기나무 영역(6학년)
+import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES } from './blocks/index.js'; // 쌓기나무 영역(6학년): 차시·단계 목록(바탕 묶음)
+// 쌓기나무의 플레이(문제 만들기·판정·화면)는 그 영역의 단계에 들어갈 때 받는다 — 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(spec-grade6 7-4절, B0b)
+const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));
 
 const SCREENS = { judge: playJudge, opposite: playPick, complete: playPlace, free: playFree, dex: playFree, dice: playDice };
 Object.assign(SCREENS, CUBOID_SCREENS); // 직육면체의 전개도 차시: edge · face · cjudge · cfree (cuboid-main.js)
@@ -189,8 +191,10 @@ createGameApp({
   },
   collections: COLLECTIONS,
   stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES],
+  preload: [BLOCKS_PLAY.preload],
   playStage(stage, ctx) {
-    if (stage.area === 'blocks') return playBlockStage(stage, ctx); // 쌓기나무 단계는 blocks/가 문항도 화면도 만든다
+    // 쌓기나무 단계는 blocks/가 문항도 화면도 만든다(받은 뒤에 — 받는 동안은 엔진의 "불러오는 중")
+    if (stage.area === 'blocks') return BLOCKS_PLAY.play(ctx, (blocks) => blocks.playBlockStage(stage, ctx));
     // 문항을 가장 먼저 만든다: 같은 ?seed=면 같은 문항 (e2e 테스트도 이것으로 정답을 안다)
     const questions = makeQuestions(stage, ctx.rng);
     return SCREENS[stage.kind](stage, ctx, questions);
