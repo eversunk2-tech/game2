@@ -39,6 +39,16 @@ async function openArea(page, id) {
   await card(page, id).click();
   await expect(tab(page, id)).toHaveAttribute('aria-selected', 'true');
 }
+/** 앱을 열고 인트로의 [입장하기]로 처음 화면(학년 고르기)에 들어간다 (B0c: 주소 없이 열면 인트로부터 — 수업 주소 ?lesson=·?area=·?grade=·?stage=는 인트로 없이). key를 주면 키보드로 */
+async function openHome(page, { query = '?seed=1&sound=off', key = null } = {}) {
+  await page.goto(fileUrl(FILE, query));
+  const enter = page.getByRole('button', { name: '입장하기' });
+  if (key) {
+    await expect(enter).toBeFocused();
+    await page.keyboard.press(key);
+  } else await enter.click();
+  await expect(page.locator('.grade-card')).toHaveCount(2);
+}
 
 /** 움직임(화면 들어오기 0.32초, 카드 들뜸 등)이 모두 끝날 때까지 — 크기·자리는 그 뒤에 잰다 (common-rules 8절) */
 const settled = (page) => page.waitForFunction(() => document.getAnimations({ subtree: true }).every((a) => a.playState !== 'running'));
@@ -48,7 +58,7 @@ const howToLines = (page) => page.locator('.howto-list li').evaluateAll((els) =>
 
 test('처음 화면: [시작하기] 자리에 학년 카드 둘(5학년 · 6학년, 사용자 문장 그대로의 설명). 카드마다 그림·그 학년의 모은 별, 첫 학년에 "여기부터!". 앱 이름은 "입체도형 공방"', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await expect(page.locator('h1')).toHaveText(NAME);
   await expect(page.locator('.topbar-title')).toHaveText(NAME);
   await expect(page.locator('.brand-mark')).toHaveText('입');
@@ -84,7 +94,7 @@ test('처음 화면: [시작하기] 자리에 학년 카드 둘(5학년 · 6학�
 
 test('학년 화면: 학년 이름·설명·그 학년의 모은 별과 영역 카드. 6학년은 각기둥·원기둥이 "준비 중"(누를 수 없음, 자물쇠 + 글자), 쌓기나무에 "여기부터!". [← 학년 고르기]로 돌아간다', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   for (const g of GRADES) {
     await gradeCard(page, g.grade).click();
     await expect(page.getByRole('heading', { level: 2, name: g.title })).toBeFocused();
@@ -121,9 +131,9 @@ test('학년 화면: 학년 이름·설명·그 학년의 모은 별과 영역 �
   expect(errors).toEqual([]);
 });
 
-test('영역 → 단계 지도: 영역 탭은 같은 학년의 열린 영역만, 그 영역의 차시만, 차시 칩은 영역 안의 차례 "1차시"…, 모은 별·도감 칩은 그 영역의 것. [← 영역 고르기]·[처음 화면]', async ({ page }) => {
+test('영역 → 단계 지도: 영역 탭은 같은 학년의 열린 영역만, 그 영역의 차시만, 차시 칩은 영역 안의 차례 "1차시"…(차시가 하나뿐인 영역은 칩 없음), 모은 별·도감 칩은 그 영역의 것. [← 영역 고르기]·[처음 화면]', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await openArea(page, 'blocks');
   await expect(page.getByRole('heading', { name: '단계를 골라요' })).toBeVisible();
   // 6학년: 열린 영역은 쌓기나무 하나(각기둥·원기둥은 준비 중이라 탭이 없다)
@@ -153,7 +163,7 @@ test('영역 → 단계 지도: 영역 탭은 같은 학년의 열린 영역만,
   await openArea(page, 'cube');
   await expect(page.getByRole('tab')).toHaveText(['정육면체의 전개도', '직육면체의 전개도']);
   expect(await page.locator('.lesson-group').evaluateAll((els) => els.map((el) => el.dataset.lesson))).toEqual(['cube']);
-  await expect(page.locator('.lesson-no')).toHaveText(['1차시']);
+  await expect(page.locator('.lesson-no')).toHaveCount(0); // 차시가 하나뿐인 영역은 칩 없이 차시 제목만 (B0c 덧붙임 — B0a-2)
   await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);
   await expect(page.locator('.lesson-group[data-lesson="cube"] .challenge-card')).toHaveCount(2);
   await expect(page.locator('.head-chips .collection-chip')).toHaveCount(0);
@@ -162,7 +172,7 @@ test('영역 → 단계 지도: 영역 탭은 같은 학년의 열린 영역만,
   await expect(page.getByRole('tab', { name: '직육면체의 전개도' })).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tab', { name: '정육면체의 전개도' })).toHaveAttribute('aria-selected', 'false');
   expect(await page.locator('.lesson-group').evaluateAll((els) => els.map((el) => el.dataset.lesson))).toEqual(['cuboid']);
-  await expect(page.locator('.lesson-no')).toHaveText(['1차시']); // 영역 안의 차례 (차시 묶음 전체의 "2차시"가 아니라)
+  await expect(page.locator('.lesson-no')).toHaveCount(0); // 차시가 하나뿐: 칩 없음 (수업 주소 ?lesson=cuboid의 "2차시"와 어긋나는 "1차시"가 없다)
   await expect(page.locator('.collection-chip')).toHaveCount(0);
   await expect(page.locator('.star-total')).toHaveText(`모은 별 0 / ${area('cuboid').max}`);
   await expect(panel).toHaveAccessibleName('직육면체의 전개도');
@@ -205,7 +215,7 @@ test('키보드만으로 한 바퀴: 학년 고르기 → 영역 고르기 → �
   test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서 확인');
   test.setTimeout(60_000);
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page, { key: 'Enter' }); // 인트로의 [입장하기]도 키보드로
   /** Tab을 눌러 조건에 맞는 요소에 초점이 갈 때까지 (최대 n번) */
   async function tabTo(selector, n = 12) {
     for (let i = 0; i < n; i += 1) {
@@ -261,7 +271,7 @@ test('키보드만으로 한 바퀴: 학년 고르기 → 영역 고르기 → �
 
 test('지난번에 하던 학년·영역: 단계를 시작한 영역(과 그 학년)에 "여기부터!", 새로 열어도 그대로(저장 값 area 하나만 더함). 엉뚱한 값·기록 모두 지우기 뒤에는 첫 학년·첫 영역', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   const keys = async () => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('edu:net-workshop:')).sort());
   const before = await keys();
   await openArea(page, 'blocks');
@@ -270,7 +280,7 @@ test('지난번에 하던 학년·영역: 단계를 시작한 영역(과 그 학
   await expect(page.locator('.play-area')).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('edu:net-workshop:area'))).toBe('"blocks"');
   expect((await keys()).filter((k) => !before.includes(k))).toEqual(['edu:net-workshop:area']);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await expect(gradeCard(page, 6)).toHaveClass(/is-now/);
   await expect(gradeCard(page, 5)).not.toHaveClass(/is-now/);
   await expect(page.locator('.grade-cards > li').nth(1).locator('.flag')).toHaveText('여기부터!');
@@ -281,7 +291,7 @@ test('지난번에 하던 학년·영역: 단계를 시작한 영역(과 그 학
   await page.getByRole('button', { name: '시작하기' }).click();
   await page.locator('.stage-card').first().click();
   await expect(page.locator('.play-area')).toBeVisible();
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await expect(gradeCard(page, 5)).toHaveClass(/is-now/);
   await gradeCard(page, 5).click();
   await expect(card(page, 'cuboid')).toHaveClass(/is-now/);
@@ -289,14 +299,14 @@ test('지난번에 하던 학년·영역: 단계를 시작한 영역(과 그 학
   // 저장 값이 엉뚱하면(준비 중·없는 영역·깨진 값) 첫 학년·첫 영역
   for (const raw of ['"prism"', '"zzz"', '{bad', '3', '"net5"']) {
     await page.evaluate((v) => localStorage.setItem('edu:net-workshop:area', v), raw);
-    await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+    await openHome(page);
     await expect(gradeCard(page, 5)).toHaveClass(/is-now/);
     await gradeCard(page, 5).click();
     await expect(card(page, 'cube')).toHaveClass(/is-now/);
   }
   // 기록 모두 지우기: 다음 학생은 첫 학년부터
   await page.evaluate(() => localStorage.setItem('edu:net-workshop:area', '"blocks"'));
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await page.getByRole('button', { name: '학습 기록' }).click();
   await page.getByRole('button', { name: '기록 모두 지우기' }).click();
   await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
@@ -320,11 +330,11 @@ test('옛 저장 값(학년·영역이 없던 때의 기록)으로 열어도 별
     set('log', [{ stageId: 'cube-judge', stageTitle: '접힐까, 안 접힐까?', startedAt: 1760000000000, durationMs: 61000, attempts: 5, correct: 5, accuracy: 1, stars: 3, cleared: true, answers: [] },
       { stageId: 'blocks-play', stageTitle: '쌓기 놀이터', startedAt: 1760000100000, durationMs: 90000, attempts: 0, correct: 0, accuracy: null, stars: 3, cleared: true, answers: [] }]);
   }, STARS);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   // 내 공방 카드: 게임 하나에 하나 — 일반 단계의 별 합(도전 주문서 별은 빼는 엔진 규칙 그대로), 칭호, 도감, 도장
   await expect(page.locator('.rank-chip')).toContainText('접기 장인'); // 112점: 셋째 칭호(100점부터)
   await expect(page.locator('.rank-chip small')).toHaveText('112점');
-  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 12']);
+  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 13']); // 도장판 13칸: 직육면체 도감 완성(spec 16-17)
   // 학년 카드의 별: 5학년 3 + 2 + 1, 6학년 3 + 2. "지난번 영역" 값이 없으니 첫 학년에 "여기부터!"
   await expect(gradeCard(page, 5)).toHaveAccessibleName(gradeName(grade(5), 6, true));
   await expect(gradeCard(page, 6)).toHaveAccessibleName(gradeName(grade(6), 5, false));
@@ -408,7 +418,7 @@ test('한 차시 주소(?lesson=)는 지금처럼 그 차시만: 학년·영역 
       expect(lines[0]).toBe(CUBE_HOW_TO_FIRST);
       expect(lines.join(' '), c.lesson).not.toContain('쌓기나무'); // S1b-5: 전개도 차시 주소에 쌓기나무 줄이 없다
       if (c.howTo === 'cube') expect(lines).toHaveLength(6);
-      else expect(lines.join(' ')).not.toMatch(/도감|도전 주문서/); // 직육면체 차시에는 도감·도전 주문서가 없다
+      else expect(lines.join(' ')).toContain('도전 주문서에서 직육면체 전개도 54가지 도감을 채워 봐요'); // 직육면체 차시의 도전 주문서(도감 주문, spec 16-17)
     }
     await page.getByRole('button', { name: '시작하기' }).click();
     await expect(page.getByRole('tablist')).toHaveCount(0);
@@ -420,7 +430,7 @@ test('한 차시 주소(?lesson=)는 지금처럼 그 차시만: 학년·영역 
 
 test('놀이 방법: 처음 화면(학년·영역을 고르기 전)은 공통 몇 줄, 영역의 단계 지도에서는 그 영역의 줄과 [단계 선택](그 영역의 지도로)', async ({ page }) => {
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await page.getByRole('button', { name: '놀이 방법' }).click();
   const common = await howToLines(page);
   expect(common.length).toBeGreaterThanOrEqual(3);
@@ -438,7 +448,7 @@ test('놀이 방법: 처음 화면(학년·영역을 고르기 전)은 공통 �
     else {
       expect(lines[0]).toBe(CUBE_HOW_TO_FIRST);
       expect(lines.join(' ')).not.toContain('쌓기나무');
-      if (a.id === 'cuboid') expect(lines.join(' ')).not.toMatch(/도감|도전 주문서/);
+      if (a.id === 'cuboid') expect(lines.join(' ')).toContain('도전 주문서에서 직육면체 전개도 54가지 도감을 채워 봐요'); // spec 16-17
       else expect(lines.join(' ')).toContain('도전 주문서');
     }
     await expect(page.locator('.screen-howto .actions .btn')).toHaveText(['단계 선택', '처음 화면']);
@@ -480,7 +490,7 @@ test('배치(네 크기): 처음 화면·두 학년 화면·영역의 단계 지
       expect(m.spill, `${w}×${hgt} ${what} 카드 넘침`).toBe(0);
     };
     await page.setViewportSize({ width: w, height: hgt });
-    await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+    await openHome(page);
     await expect(page.locator('.grade-card')).toHaveCount(2);
     await settled(page);
     check(await layoutOf(page), '처음 화면', { vertical: true });
@@ -549,7 +559,7 @@ test('대비 4.5:1: 학년 카드·영역 카드(준비 중 포함)의 이름·�
     expect(ratios.length, sel).toBeGreaterThanOrEqual(n);
     for (const ratio of ratios) expect(ratio, sel).toBeGreaterThanOrEqual(4.5);
   };
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await expect(page.locator('.grade-card')).toHaveCount(2);
   await settled(page);
   for (const sel of ['.grade-card .area-title', '.grade-card .area-line', '.grade-card .area-meta .chip']) await expectAll(sel, 2);
@@ -568,7 +578,7 @@ test('움직임 줄이기 · ?fx=low: 처음 화면·학년 화면·영역의 �
   // 움직임 줄이기: 0.001초보다 긴 움직임(애니메이션·전환)이 하나도 돌지 않는다
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const longRunning = () => page.evaluate(() => document.getAnimations({ subtree: true }).filter((a) => a.playState === 'running' && Number(a.effect?.getComputedTiming().duration) > 1).length);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await expect(page.locator('.grade-card')).toHaveCount(2);
   expect(await longRunning()).toBe(0);
   await gradeCard(page, 5).click();
@@ -581,7 +591,7 @@ test('움직임 줄이기 · ?fx=low: 처음 화면·학년 화면·영역의 �
   // ?fx=low (움직임 줄이기 없이): 화면 들어오기 움직임(CSS 애니메이션)이 없다 — 엔진이 다른 화면에 하는 것과 같다
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   const cssAnimations = () => page.evaluate(() => document.getAnimations({ subtree: true }).filter((a) => a.constructor.name === 'CSSAnimation' && a.playState === 'running').length);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off&fx=low'));
+  await openHome(page, { query: '?seed=1&sound=off&fx=low' });
   await expect(page.locator('#app')).toHaveClass(/fx-low/);
   await expect(page.locator('.grade-card')).toHaveCount(2);
   expect(await cssAnimations()).toBe(0);
@@ -595,7 +605,7 @@ test('움직임 줄이기 · ?fx=low: 처음 화면·학년 화면·영역의 �
 test('터치(태블릿): 학년 카드 → 영역 카드를 눌러 단계 지도로, 탭을 눌러 같은 학년의 다른 영역으로, 단계 시작', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿에서');
   const errors = collectErrors(page);
-  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await openHome(page);
   await gradeCard(page, 5).tap();
   await card(page, 'cuboid').tap();
   await expect(tab(page, 'cuboid')).toHaveAttribute('aria-selected', 'true');

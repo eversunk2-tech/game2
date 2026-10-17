@@ -1,7 +1,7 @@
 /**
  * 모든 학습게임이 함께 쓰는 화면 흐름 ("종이 공방" 모습).
  *
- *   처음 화면 → (놀이 방법) → 단계 선택(단계 지도) → 플레이 → 결과 → 학습 기록
+ *   (게임 인트로) → 처음 화면 → (놀이 방법) → 단계 선택(단계 지도) → 플레이 → 결과 → 학습 기록
  *
  * 게임은 stages(단계 목록)와 playStage(stage, ctx)만 만들면 된다.
  * 별점·잠금 해제·학습 기록 저장·소리 켜고 끄기·결과 복사는 여기서 처리한다.
@@ -35,6 +35,8 @@ import {
   collectionXp,
   normalizeCollectionState,
   normalizeCollections,
+  reportedQuiet,
+  xpAfterCount,
 } from '../core/collection.js';
 import { MAX_STARS, clampStars, createProgress, starsFromAccuracy } from '../core/progress.js';
 import { createRng } from '../core/random.js';
@@ -49,6 +51,7 @@ import {
   normalizeRanks,
   stageXp,
 } from '../core/rewards.js';
+import { planIntroLayout, sanitizeDpr } from '../core/intro-fit.js';
 import { createStorage } from '../core/storage.js';
 import { splitTitleMark } from '../core/title-mark.js';
 import { createSfx } from './audio.js';
@@ -313,6 +316,138 @@ async function copyText(text) {
   }
 }
 
+/**
+ * 게임 인트로(선택 기능, B0c · B0c2): 앱을 열면 맨 처음 보이는 화면. [입장하기]를 누르면 처음 화면(학년·영역 카드)으로 간다.
+ * intro 정의를 확인해 화면에 쓸 값으로 바꾼다. intro가 없으면 null — 인트로가 없는 게임은 화면·저장 값이 지금과 똑같다.
+ *   intro: {
+ *     subtitle?,                 부제(글자). 제목 그림의 리본 위(logo.ribbon) 또는 제목 아래
+ *     enterLabel? = '입장하기',  큰 버튼의 글자
+ *     title? = game.title,       화면 읽기용 제목(h1). 제목 그림이 있으면 그 그림의 대체 글
+ *     art?: { width, height, keep?, avoid?, glow? }
+ *       배경 그림의 크기(px)·꼭 보일 칸 keep [x0, y0, x1, y1](인물 — 꽉 채울 때 자르지 않는다)·제목이 가리면 안 되는 상자들 avoid(머리)·카드 둘레 빛 색.
+ *       주면 꽉 채우기/카드 규칙(core/intro-fit.js)으로 놓는다. 주지 않으면 그림을 화면 가득(cover)
+ *     logo?: { width, height, crop?, ribbon?: { path, fontSize, length } }
+ *       제목 그림의 크기, 쓸 상자 crop [x0, y0, x1, y1](그림 파일은 그대로 — 투명 여백을 CSS로 뺀다), 부제를 얹을 리본의 가운데 선(그림 좌표의 SVG 경로)·글자 크기·글 길이
+ *   }
+ * 그림은 게임 CSS가 준다: .intro-bg(배경)·.intro-logo(제목)의 background-image, .intro-shine(빛이 스치는 틀)의 mask-image
+ * (엔진은 그림 파일을 모른다 — docs/engine.md 2절 "게임 인트로").
+ */
+export function planIntro(intro, game) {
+  if (intro == null || intro === false) return null;
+  if (typeof intro !== 'object' || Array.isArray(intro)) throw new Error('createGameApp: intro는 { subtitle, enterLabel, logo } 객체예요.');
+  const text = (value, fallback = '') => (typeof value === 'string' && value.trim() ? value.trim() : fallback);
+  const box = (value, w, h, name) => {
+    if (value == null) return null;
+    const nums = Array.isArray(value) ? value.map(Number) : [];
+    if (nums.length !== 4 || nums.some((v) => !Number.isFinite(v)) || nums[0] < 0 || nums[1] < 0 || nums[2] > w || nums[3] > h || nums[0] >= nums[2] || nums[1] >= nums[3]) {
+      throw new Error(`createGameApp: ${name}는 그림 안의 상자 [x0, y0, x1, y1]이에요.`);
+    }
+    return nums;
+  };
+  let logo = null;
+  if (intro.logo != null) {
+    const { width, height, ribbon = null } = intro.logo;
+    if (!(Number(width) > 0 && Number(height) > 0)) throw new Error('createGameApp: intro.logo에는 제목 그림의 width·height(양수)가 필요해요.');
+    if (ribbon != null && !(typeof ribbon.path === 'string' && ribbon.path.trim() && Number(ribbon.fontSize) > 0 && Number(ribbon.length) > 0)) {
+      throw new Error('createGameApp: intro.logo.ribbon에는 path(SVG 경로)·fontSize·length가 필요해요.');
+    }
+    const w = Number(width);
+    const h = Number(height);
+    logo = { width: w, height: h, crop: box(intro.logo.crop, w, h, 'intro.logo.crop') ?? [0, 0, w, h], ribbon: ribbon && { path: ribbon.path.trim(), fontSize: Number(ribbon.fontSize), length: Number(ribbon.length) } };
+  }
+  let art = null;
+  if (intro.art != null) {
+    const w = Number(intro.art.width);
+    const h = Number(intro.art.height);
+    if (!(w > 0 && h > 0)) throw new Error('createGameApp: intro.art에는 배경 그림의 width·height(양수)가 필요해요.');
+    if (intro.art.avoid != null && !Array.isArray(intro.art.avoid)) throw new Error('createGameApp: intro.art.avoid는 상자들의 배열이에요.');
+    art = {
+      width: w,
+      height: h,
+      keep: box(intro.art.keep, w, h, 'intro.art.keep') ?? [0, 0, w, h],
+      avoid: (intro.art.avoid ?? []).map((b) => box(b, w, h, 'intro.art.avoid')),
+      glow: text(intro.art.glow) || null,
+    };
+  }
+  return { title: text(intro.title, String(game.title)), subtitle: text(intro.subtitle), enterLabel: text(intro.enterLabel, '입장하기'), logo, art };
+}
+
+/** 인트로로 시작하는가: 선생님이 준 수업 주소(?stage= · ?lesson= · ?area= · ?grade= — 값이 맞든 틀리든 주소에 있으면)로 열면 인트로 없이 그 화면으로 */
+export const opensWithIntro = (options) => !['stageId', 'lessonId', 'areaId', 'gradeId'].some((key) => options?.[key] != null);
+
+/** 인트로 그림이 풀리기를(디코딩) 기다리는 가장 긴 시간. 그 안에 안 풀리면 그냥 시작한다(그때까지는 하늘색 바탕과 반짝임이 보인다) */
+const INTRO_WAIT_MS = 1500;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const svgEl = (tag, attrs, ...children) => {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs ?? {})) if (value != null) el.setAttribute(key, String(value));
+  el.append(...children);
+  return el;
+};
+// 인트로 꾸밈(화면 읽기에서 숨김). 자리·크기·때는 base.css의 nth-child가 정한다
+const INTRO_SKY_SPARKS = 8; // 하늘의 반짝임
+const INTRO_LOGO_SPARKS = 5; // 제목 둘레의 반짝임
+const INTRO_BLOCKS = [[1, 1, 1], [2, 1, 1], [1, 1, 1], [1, 2, 1], [1, 1, 1], [1, 1, 2]]; // 아래에서 떠오르는 정육면체·직육면체 (가로·세로·높이)
+
+/** 등축 투영으로 그린 작은 입체 하나: 윗면·왼쪽 앞면·오른쪽 앞면 (색은 base.css의 .ib-top·.ib-left·.ib-right) */
+function isoBlock([a, b, c]) {
+  const u = 10;
+  const at = ([x, y, z]) => `${((x - y) * 0.866 * u).toFixed(1)},${(((x + y) * 0.5 - z) * u).toFixed(1)}`;
+  const faces = [
+    ['ib-top', [[0, 0, c], [a, 0, c], [a, b, c], [0, b, c]]],
+    ['ib-left', [[0, b, 0], [a, b, 0], [a, b, c], [0, b, c]]],
+    ['ib-right', [[a, 0, 0], [a, b, 0], [a, b, c], [a, 0, c]]],
+  ];
+  const [x0, x1, y0, y1] = [-b * 0.866 * u - 2, a * 0.866 * u + 2, -c * u - 2, (a + b) * 0.5 * u + 2];
+  return svgEl('svg', { viewBox: `${x0.toFixed(1)} ${y0.toFixed(1)} ${(x1 - x0).toFixed(1)} ${(y1 - y0).toFixed(1)}`, focusable: 'false' },
+    ...faces.map(([cls, pts]) => svgEl('polygon', { class: cls, points: pts.map(at).join(' ') })));
+}
+
+/**
+ * 제목 그림의 리본 위에 얹는 부제: 그림과 같은 좌표의 SVG에서 리본의 가운데 선을 따라 휘어진 글(흰 글자 + 남색 테두리 + 아래 그림자).
+ * 글 길이는 length로 맞춘다(글꼴이 달라도 리본 밖으로 나가지 않는다). 테두리·그림자·글자를 세 겹으로 따로 그린다 —
+ * 한 겹에 테두리와 글자를 함께 그리면 글자마다 차례로 칠해져 옆 글자의 테두리가 앞 글자의 획(ㅏ의 짧은 획)을 덮는다
+ */
+function ribbonText(text, { crop, ribbon }) {
+  const id = 'intro-ribbon-path';
+  const [x0, y0, x1, y1] = crop;
+  const edge = Math.round(ribbon.fontSize * 0.19 * 10) / 10; // 테두리 두께: 글자 크기의 19%(바깥으로 보이는 것은 그 반)
+  const layer = (cls, extra = null) => svgEl('text', { class: cls, 'font-size': ribbon.fontSize, 'text-anchor': 'middle', 'dominant-baseline': 'central', ...extra },
+    svgEl('textPath', { href: `#${id}`, startOffset: '50%', textLength: ribbon.length, lengthAdjust: 'spacingAndGlyphs' }, text));
+  // 그림에서 쓰는 상자(crop)와 같은 좌표 — 리본의 선은 그림 파일 좌표 그대로
+  return svgEl('svg', { class: 'intro-ribbon', viewBox: `${x0} ${y0} ${x1 - x0} ${y1 - y0}`, 'aria-hidden': 'true', focusable: 'false' },
+    svgEl('defs', null, svgEl('path', { id, d: ribbon.path })),
+    layer('intro-ribbon-shadow', { transform: `translate(0 ${Math.round(ribbon.fontSize * 0.077 * 10) / 10})`, 'stroke-width': edge }),
+    layer('intro-ribbon-edge', { 'stroke-width': edge }),
+    layer('intro-ribbon-text'),
+  );
+}
+
+/** 요소의 CSS 배경 그림을 받아 풀(디코딩) 때까지 → 그 그림(Image). 그림이 없거나 받지·풀지 못하면 null */
+function backgroundDecoded(el) {
+  const url = /url\((["']?)(.*?)\1\)/.exec(getComputedStyle(el).backgroundImage || '')?.[2];
+  if (!url || typeof Image !== 'function') return Promise.resolve(null);
+  const img = new Image();
+  img.src = url;
+  const done = typeof img.decode === 'function' ? img.decode() : new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; });
+  return done.then(() => img, () => null);
+}
+
+/** 카드 뒤의 흐린 바탕: 같은 그림을 작은 캔버스(96×54)에 한 번 그린다 — 화면 크기로 늘리면 저절로 흐려진다(새 그림 파일을 만들지 않는다) */
+const INTRO_BLUR_W = 96;
+const INTRO_BLUR_H = 54;
+function drawIntroBlur(img, canvas) {
+  try {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return false;
+    if ('filter' in ctx) ctx.filter = 'blur(2px)';
+    ctx.drawImage(img, -4, -4, INTRO_BLUR_W + 8, INTRO_BLUR_H + 8);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** heroArt가 없을 때 처음 화면 오른쪽 그림: 게임 색 매트 위에 색종이 몇 장과 게임 이름 첫 글자 */
 function defaultHeroArt(game) {
   return h('div', { class: 'hero-papers' },
@@ -334,6 +469,7 @@ export function createGameApp({
   heroArt = null,
   rewards: rewardOptions = null,
   collections: collectionDefs = null,
+  intro: introDef = null,
   options = readUrlOptions(),
 }) {
   if (!root) throw new Error('createGameApp: root 요소가 필요해요.');
@@ -344,6 +480,7 @@ export function createGameApp({
   const allIds = allStages.map((s) => s.id);
   if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
   if (rewardOptions != null && typeof rewardOptions !== 'object') throw new Error('createGameApp: rewards는 { ranks, thresholds, badges, off } 객체예요.');
+  const introPlan = planIntro(introDef, game); // 게임 인트로(선택). null이면 인트로가 없다 — 아래 화면이 모두 지금과 같다
 
   // 공통 게임 요소 설정 (rewards.off면 점수·칭호·도장을 모두 숨긴다)
   const rewardsOn = !rewardOptions?.off;
@@ -472,6 +609,8 @@ export function createGameApp({
     confetti.clear();
     clear(main);
     main.append(screen);
+    // 인트로가 떠 있는 동안: 머리의 게임 이름·칭호 칩은 숨고 [소리] 버튼만 화면 오른쪽 위에 (base.css .edu-app.is-intro)
+    if (introPlan) root.classList.toggle('is-intro', screen.classList.contains('screen-intro'));
     const heading = screen.querySelector('h1, h2');
     if (heading) {
       heading.setAttribute('tabindex', '-1');
@@ -529,9 +668,12 @@ export function createGameApp({
       collection: chipsOf(collections.filter((c) => !offLesson(c))).main,
       badges: { count: earnedCount(), total: badgeDefs.length },
     });
+    // 인트로가 있는 게임: 처음 화면(한 차시 주소 화면은 빼고) 맨 위 왼쪽에 [← 처음으로] → 인트로
+    const toIntro = introPlan && !plan.current && button('← 처음으로', () => openIntro(), 'btn btn-small btn-back btn-intro');
     return h('section', { class: `screen screen-title hero${areaMode ? ' has-areas' : ''}` },
       h('div', { class: 'hero-copy' },
-        (eyebrow || grade) && h('div', { class: 'title-chips' },
+        (eyebrow || grade || toIntro) && h('div', { class: 'title-chips' },
+          toIntro,
           eyebrow && h('p', { class: 'eyebrow' }, eyebrow),
           grade && !String(eyebrow).includes('학년') && h('span', { class: 'chip chip-ink' }, grade),
         ),
@@ -567,6 +709,142 @@ export function createGameApp({
         h('span', { class: 'ruler' }),
       ),
     );
+  }
+
+  /**
+   * 게임 인트로 화면(introPlan이 있을 때만): 화면 가득 배경 그림 · 가운데 위 제목 그림(+ 리본 위 부제) · 아래 가운데 큰 [입장하기].
+   * 꾸밈(반짝임·떠오르는 입체)은 화면 읽기에서 숨긴다. 움직임은 transform·opacity만(base.css). 움직임 줄이기·?fx=low면 움직이지 않는 한 장면
+   */
+  function introScreen() {
+    const { title, subtitle, enterLabel, logo, art } = introPlan;
+    const repeat = (n, make) => Array.from({ length: n }, (_, i) => make(i));
+    const enter = h('button', {
+      type: 'button',
+      class: 'intro-enter',
+      onclick: () => {
+        sfx.play('unlock'); // 문이 열리는 종소리 (소리 끔이면 없다)
+        show(titleScreen());
+      },
+    }, h('span', { class: 'intro-enter-pulse' }, h('span', { class: 'intro-enter-face' }, enterLabel)));
+    const screen = h('section', { class: `screen screen-intro${logo ? ' has-logo' : ''}${art ? '' : ' no-art'}${quietFx() ? ' is-ready is-titled is-still' : ''}` },
+      // 카드 뒤(와 꽉 채우기의 얇은 띠)의 흐린 같은 그림 · 가장자리 어둡게
+      h('canvas', { class: 'intro-blur', width: INTRO_BLUR_W, height: INTRO_BLUR_H, 'aria-hidden': 'true' }),
+      h('div', { class: 'intro-vignette', 'aria-hidden': 'true' }),
+      // 무대: 그림이 보이는 곳(꽉 채우기 = 화면, 카드 = 카드). 그림·반짝임·떠오르는 입체는 무대 안에
+      h('div', { class: 'intro-stage', 'aria-hidden': 'true' },
+        h('div', { class: 'intro-bg' }),
+        h('div', { class: 'intro-sparks' }, repeat(INTRO_SKY_SPARKS, () => h('span', { class: 'intro-spark' }))),
+        h('div', { class: 'intro-blocks' }, INTRO_BLOCKS.map((size) => h('span', { class: 'intro-block' }, isoBlock(size)))),
+      ),
+      h('div', { class: 'intro-head' },
+        h('div', { class: 'intro-drop' },
+          h('div', { class: 'intro-float' },
+            h('div', { class: 'intro-logo-box' },
+              h('h1', { class: 'intro-title' }, logo
+                ? [h('span', { class: 'sr-only' }, title), h('span', { class: 'intro-logo', 'aria-hidden': 'true' }, h('span', { class: 'intro-shine' }))]
+                : h('span', { class: 'intro-title-text' }, title)),
+              subtitle && h('p', { class: `intro-subtitle${logo?.ribbon ? ' on-ribbon' : ''}` }, logo?.ribbon
+                ? [h('span', { class: 'sr-only' }, subtitle), ribbonText(subtitle, logo)]
+                : subtitle),
+              h('span', { class: 'intro-logo-sparks', 'aria-hidden': 'true' }, repeat(INTRO_LOGO_SPARKS, () => h('span', { class: 'intro-spark' }))),
+            ),
+          ),
+        ),
+      ),
+      h('div', { class: 'intro-foot' }, enter),
+    );
+    if (logo) {
+      // 제목 그림에서 쓸 상자(crop)만 보이게: 그림 크기·자리를 상자 기준 백분율로 (그림 파일은 그대로)
+      const [x0, y0, x1, y1] = logo.crop;
+      const cw = x1 - x0;
+      const ch = y1 - y0;
+      const pos = (start, size, full) => (full > size ? `${((start / (full - size)) * 100).toFixed(4)}%` : '0%');
+      screen.style.setProperty('--intro-ratio', String(cw / ch));
+      screen.style.setProperty('--intro-logo-size', `${((logo.width / cw) * 100).toFixed(4)}% ${((logo.height / ch) * 100).toFixed(4)}%`);
+      screen.style.setProperty('--intro-logo-pos', `${pos(x0, cw, logo.width)} ${pos(y0, ch, logo.height)}`);
+    }
+    if (art?.glow) screen.style.setProperty('--intro-glow', art.glow);
+    layoutIntro(screen);
+    return screen;
+  }
+
+  /**
+   * 인트로 배치(core/intro-fit.js): 지금 화면 크기·devicePixelRatio로 꽉 채우기/카드를 정하고 무대·그림·제목·[입장하기]의 자리를 CSS 변수로 준다.
+   * 그림 정보(art)가 없으면 그림을 화면 가득(cover)
+   */
+  function layoutIntro(screen) {
+    const sw = globalThis.innerWidth || 1;
+    const sh = globalThis.innerHeight || 1;
+    const dpr = sanitizeDpr(globalThis.devicePixelRatio);
+    const { art, logo } = introPlan;
+    const crop = logo?.crop;
+    const logoRatio = crop ? (crop[2] - crop[0]) / (crop[3] - crop[1]) : 1.6;
+    const plan = planIntroLayout({ w: sw, h: sh, dpr, art: art ?? { width: sw, height: sh }, logoRatio });
+    const px = (v) => `${Math.round(v * 1000) / 1000}px`;
+    const vars = {
+      '--st-x': plan.stage.x, '--st-y': plan.stage.y, '--st-w': plan.stage.w, '--st-h': plan.stage.h,
+      '--im-x': plan.image.x - plan.stage.x, '--im-y': plan.image.y - plan.stage.y, '--im-w': plan.image.w, '--im-h': plan.image.h,
+      '--logo-x': plan.logo.x, '--logo-y': plan.logo.y, '--logo-w': plan.logo.w,
+      '--btn-x': plan.button.x, '--btn-y': plan.button.y, '--btn-h': plan.button.h,
+    };
+    for (const [name, value] of Object.entries(vars)) screen.style.setProperty(name, px(value));
+    screen.classList.toggle('is-card', plan.mode === 'card');
+    screen.classList.toggle('is-fill', plan.mode === 'fill');
+    // 꽉 채우기에서 띠가 남으면(5% 이하) 그 띠에 흐린 같은 그림
+    screen.classList.toggle('has-band', plan.mode === 'fill' && plan.band > 0.0005);
+    screen.dataset.mode = plan.mode;
+    screen.dataset.ratio = plan.ratio.toFixed(3);
+    screen.dataset.band = plan.band.toFixed(4);
+    return plan;
+  }
+
+  /**
+   * 인트로를 연다: [입장하기]에 초점. 그림은 받아 풀리는 대로 나타난다(배경은 부드럽게, 그 전에는 하늘색 바탕과 반짝임).
+   * 제목 그림이 풀리면(.is-titled) 제목이 떨어지는 움직임과 부제, [입장하기]는 그때(늦어도 INTRO_WAIT_MS 뒤 — 느린 망에서도 들어갈 수 있게, .is-ready) 올라온다
+   */
+  function openIntro() {
+    const screen = introScreen();
+    show(screen);
+    screen.querySelector('.intro-enter').focus({ preventScroll: true });
+    const bg = screen.querySelector('.intro-bg');
+    const logoEl = screen.querySelector('.intro-logo');
+    const ready = () => {
+      if (screen.isConnected) screen.classList.add('is-ready');
+    };
+    backgroundDecoded(bg).then((img) => {
+      if (!screen.isConnected) return;
+      if (img) bg.classList.add('is-loaded');
+      // 배경 그림이 오면 카드 뒤의 흐린 바탕을 한 번 그린다
+      if (img && drawIntroBlur(img, screen.querySelector('.intro-blur'))) screen.classList.add('has-blur');
+    });
+    (logoEl ? backgroundDecoded(logoEl) : Promise.resolve(null)).then((img) => {
+      if (!screen.isConnected) return;
+      if (img) logoEl.classList.add('is-loaded');
+      screen.classList.add('is-titled'); // 받지 못했어도(그림 없음) 부제·움직임은 보인다
+      ready();
+    });
+    const timer = setTimeout(ready, INTRO_WAIT_MS);
+    // 화면 크기·방향·devicePixelRatio(브라우저 확대, 다른 화면으로 옮김)가 바뀌면 모드를 다시 정한다
+    const relayout = () => {
+      if (screen.isConnected) layoutIntro(screen);
+    };
+    let dprQuery = null;
+    const watchDpr = () => {
+      dprQuery?.removeEventListener?.('change', onDpr);
+      dprQuery = typeof globalThis.matchMedia === 'function' ? globalThis.matchMedia(`(resolution: ${sanitizeDpr(globalThis.devicePixelRatio)}dppx)`) : null;
+      dprQuery?.addEventListener?.('change', onDpr);
+    };
+    function onDpr() {
+      relayout();
+      watchDpr();
+    }
+    watchDpr();
+    globalThis.addEventListener?.('resize', relayout);
+    screenCleanups.push(() => {
+      clearTimeout(timer);
+      globalThis.removeEventListener?.('resize', relayout);
+      dprQuery?.removeEventListener?.('change', onDpr);
+    });
   }
 
   /**
@@ -838,7 +1116,7 @@ export function createGameApp({
     const minutes = game.playMinutes ? h('span', { class: 'chip' }, icon('clock'), `약 ${game.playMinutes}분`) : null;
     return h('section', { class: 'sheet lesson-group', dataset: { lesson: g.lesson.id } },
       h('div', { class: 'lesson-head' },
-        h('span', { class: 'lesson-no' }, chipText),
+        chipText && h('span', { class: 'lesson-no' }, chipText),
         h('h3', { class: 'lesson-title' }, g.lesson.title),
         lessonNoteText(g.lesson) && h('span', { class: 'lesson-note' }, lessonNoteText(g.lesson)),
         h('span', { class: 'lesson-chips' }, collectionChip(g.lesson.id), g.lesson.minutes == null ? minutes : minutesChip(lessonMinutes(g.lesson, game))),
@@ -868,7 +1146,7 @@ export function createGameApp({
 
   /**
    * 영역의 단계 지도: 위에 영역 탭(지금 영역 표시, 다른 영역으로 바로 — 방향키·Home·End), 아래에 그 영역의 차시만.
-   * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다). 모은 별·도감 칩은 그 영역의 것
+   * 차시 칩은 영역 안의 차례 "n차시"(차시 정의의 chip은 쓰지 않는다 — 탭이 영역을 알려 준다. 차시가 하나뿐인 영역은 칩 없음). 모은 별·도감 칩은 그 영역의 것
    */
   function areaStageScreen() {
     if (!areaEntry(currentArea)?.ready) currentArea = startAreaId(areaPlan, savedArea());
@@ -915,7 +1193,9 @@ export function createGameApp({
       });
       panel.setAttribute('aria-labelledby', `area-tab-${currentArea}`);
       panel.dataset.area = currentArea;
-      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, lessonChipText(g.lesson, i + 1, { useChip: false }))));
+      // 차시가 하나뿐인 영역은 차시 칩을 붙이지 않는다(영역 탭과 차시 제목이 알려 준다 — 수업 주소의 "2차시"와 어긋나는 "1차시"가 생기지 않게, B0a-2)
+      const many = entry.groups.length > 1;
+      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, many ? lessonChipText(g.lesson, i + 1, { useChip: false }) : null)));
       howToButton.hidden = howToLines(entry).length === 0;
     }
     function pick(id) {
@@ -1111,7 +1391,9 @@ export function createGameApp({
           if (rewardsOn) {
             // 새로 찾음 점수(기본 +5, 도감 정의의 xp)는 칸과 함께 바로 저장한다(같은 칸으로 다시 받을 수 없다)
             // 도감 정의에 xpAfter가 있으면 그만큼 찬 뒤의 칸은 그 점수 — 몇 번째인지는 방금 등록한 뒤의 칸 수(r.count)로 센다
-            const gain = discoverXp(collectionXp(collections.find((c) => c.id === id), r.count));
+            // (xpAfter.with가 있으면 함께 세는 모음의 칸까지 합친 수 — xpAfterCount)
+            const def = collections.find((c) => c.id === id);
+            const gain = discoverXp(collectionXp(def, xpAfterCount(collectionState, collections, def)));
             const xp = finished ? gain : play.discovered(gain);
             rewardStore.addXp(xp);
             if (!finished) savedXp += xp;
@@ -1195,6 +1477,8 @@ export function createGameApp({
        * practiceNote: 별 3개 단계를 다시 한 판의 안내 문장을 게임의 말로 바꾼다(그런 판에서만 보인다).
        * stats: [{ label, value }](3개까지)로 결과의 기록 칸(정답률 · 맞힘/시도)을 게임의 말로 바꾼다 — 맞힘·틀림으로 보이지 않는 단계.
        *   그런 판은 "다시 살펴볼 점"(틀린 개념 수)도 보이지 않는다. 학습 기록에는 답이 그대로 남는다.
+       * title · stamp(선택): 결과 제목과 결과 도장의 글(한두 줄 [글, 글])을 게임의 말로 바꾼다 — 예: 여러 번에 나눠 하는 도전을 별 없이
+       *   멈춘 판("오늘은 여기까지!" · ["다음에", "또 찾아요"]). 주지 않으면 지금까지와 같다. 점수·별·기록은 바뀌지 않는다
        */
       finish(result = {}) {
         if (finished) return;
@@ -1215,6 +1499,7 @@ export function createGameApp({
         const showTime = !(stage.timer === 'optional' && !timerOn);
         showResult(stage, record, {
           fromAccuracy, reward, highlights: result.highlights, practiceNote: result.practiceNote, stats: result.stats, starNote: result.starNote, showTime, opened, time,
+          title: result.title, stamp: result.stamp,
         });
       },
     };
@@ -1263,8 +1548,8 @@ export function createGameApp({
     return { summary, sx, gained: play.xp() + sx.total, before, after, rankUp: after.index > before.index, newBadges: fresh };
   }
 
-  function resultStamp(record, label) {
-    const words = STAMP_WORDS[record.cleared ? record.stars : 0] ?? STAMP_WORDS[1];
+  function resultStamp(record, label, custom = null) {
+    const words = custom ?? STAMP_WORDS[record.cleared ? record.stars : 0] ?? STAMP_WORDS[1];
     const d = new Date(record.startedAt ?? Date.now());
     return h('div', { class: `stamp result-stamp${record.cleared ? '' : ' stamp-blue'}`, 'aria-hidden': 'true' },
       h('span', { class: 'stamp-inner' },
@@ -1287,6 +1572,7 @@ export function createGameApp({
 
   function showResult(stage, record, {
     fromAccuracy = true, reward = null, highlights = null, practiceNote = null, stats = null, starNote = null, showTime = true, opened = [], time = null,
+    title: customTitle = null, stamp: customStamp = null,
   } = {}) {
     let nextStage = null;
     if (!stage.challenge) {
@@ -1303,6 +1589,9 @@ export function createGameApp({
     if (record.cleared && stage.challenge) title = '도전 성공!';
     else if (record.cleared && isLast) title = plan.groups ? '이 차시를 마쳤어요!' : '모든 단계를 마쳤어요!';
     else if (record.cleared) title = '단계 성공!';
+    if (typeof customTitle === 'string' && customTitle.trim()) title = customTitle.trim(); // 게임이 정한 제목 (finish({ title }))
+    const stampWords = Array.isArray(customStamp) && customStamp.length > 0 && customStamp.length <= 2 && customStamp.every((w) => typeof w === 'string' && w.trim())
+      ? customStamp.map((w) => w.trim()) : null;
     const number = stageNumber(stage);
     const label = stage.challenge ? '도전' : `${number}단계`;
     const eyebrow = stage.challenge ? `도전 주문서 · ${stage.title}` : label === stage.title ? label : `${label} · ${stage.title}`;
@@ -1325,7 +1614,7 @@ export function createGameApp({
         h('section', { class: 'sheet certificate tape' },
           h('p', { class: 'cert-eyebrow' }, eyebrow),
           h('h2', { class: 'result-title' }, title),
-          resultStamp(record, label),
+          resultStamp(record, label, stampWords),
           starsEl(record.stars, 'stars-big'),
           hint && h('p', { class: 'star-hint' }, hint),
           reward && highlightTiles(highlights ?? defaultHighlights(reward.summary)),
@@ -1402,6 +1691,8 @@ export function createGameApp({
     const collectionParts = [
       chips.main && `도감 ${chips.main.count}/${chips.main.total}`,
       ...chips.side.map((c) => sideText(c, '/')),
+      // 보이지 않는 모음 가운데 report: true인 것은 찾은 칸이 있을 때만 "제목 n/m" (예: 직육면체 전개도 3/54)
+      ...reportedQuiet(collectionState, collections).map((c) => `${c.title} ${c.count}/${c.total}`),
     ].filter(Boolean);
     const copyButton = button('결과 복사', async () => {
       const extra = [];
@@ -1498,6 +1789,7 @@ export function createGameApp({
       if (direct && progress.isUnlocked(direct.id)) startStage(direct);
       else if (areaMode && areaEntry(options.areaId)?.ready) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는·준비 중 영역이면 아래로)
       else if (areaMode && gradeEntry(Number(options.gradeId))?.ready) openGrade(Number(options.gradeId)); // ?grade=<n>: 그 학년 화면으로
+      else if (introPlan && opensWithIntro(options)) openIntro(); // 게임 인트로: 수업 주소(?stage=·?lesson=·?area=·?grade=)가 없을 때만
       else show(titleScreen());
     },
     progress,

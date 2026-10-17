@@ -9,6 +9,8 @@ import {
   collectionXp,
   normalizeCollectionState,
   normalizeCollections,
+  reportedQuiet,
+  xpAfterCount,
 } from '../../src/shared/core/collection.js';
 
 const DEFS = normalizeCollections([
@@ -141,4 +143,55 @@ test('xpAfter: 칸이 count개 찬 뒤에 등록하는 칸은 xp 대신 그 점�
   for (const value of [5, 'x', {}, { count: 0, xp: 1 }, { count: 2.5, xp: 1 }, { count: 2, xp: -1 }, { count: 2, xp: 6 }, { count: 2 }]) assert.throws(bad(value), /xpAfter/, JSON.stringify(value));
   assert.throws(bad({ count: 2, xp: 3 }, { xp: 2 }), /xpAfter/); // 뒤의 점수가 앞의 점수보다 클 수 없다
   assert.doesNotThrow(bad({ count: 2, xp: 2 }, { xp: 2 }));
+});
+
+test('xpAfter.with: 몇 번째인지를 함께 적은 모음의 칸까지 합쳐 센다 — 두 모음을 어떤 순서로 섞어 등록해도 점수의 합이 같고, with가 없으면 지금과 같다', () => {
+  const items = (n, p) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, name: `칸 ${i}` }));
+  const defs = normalizeCollections([
+    { id: 'a', title: '모음 가', quiet: true, xpAfter: { count: 10, xp: 1, with: ['b'] }, items: items(54, 'a') },
+    { id: 'b', title: '모음 나', quiet: true, xpAfter: { count: 10, xp: 1, with: ['a'] }, items: items(29, 'b') },
+    { id: 'c', title: '따로', xpAfter: { count: 10, xp: 1 }, items: items(12, 'c') },
+  ]);
+  const all = [...defs[0].items.map((i) => ['a', i.id]), ...defs[1].items.map((i) => ['b', i.id])];
+  const shuffle = (list, seed) => list.map((x, i) => [((i + 1) * seed * 2654435761) % 4294967296, x]).sort((p, q) => p[0] - q[0]).map((p) => p[1]);
+  for (const seed of [1, 7, 13, 99, 12345]) {
+    let state = normalizeCollectionState(null, defs);
+    let sum = 0;
+    const gains = [];
+    for (const [id, item] of shuffle(all, seed)) {
+      const r = collectItem(state, defs, id, item);
+      state = r.state;
+      const def = defs.find((d) => d.id === id);
+      const gain = discoverXp(collectionXp(def, xpAfterCount(state, defs, def)));
+      gains.push(gain);
+      sum += gain;
+    }
+    assert.equal(sum, 10 * 5 + 73 * 1, `섞은 순서 ${seed}`);
+    assert.deepEqual(gains.slice(0, 11), [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 1]);
+  }
+  // with가 없는 모음은 그 모음의 칸만 센다
+  let state = normalizeCollectionState(null, defs);
+  for (const item of defs[0].items.slice(0, 12)) state = collectItem(state, defs, 'a', item.id).state;
+  state = collectItem(state, defs, 'c', 'c0').state;
+  assert.deepEqual([xpAfterCount(state, defs, defs[0]), xpAfterCount(state, defs, defs[1]), xpAfterCount(state, defs, defs[2]), xpAfterCount(state, defs, null)], [12, 12, 1, 0]);
+  // 정의 검사: with는 다른 모음 id의 배열(자기 자신 · 없는 모음은 안 된다)
+  const bad = (more) => () => normalizeCollections([{ id: 'x', title: 'X', items: items(2, 'x'), ...more }, { id: 'y', title: 'Y', items: items(2, 'y') }]);
+  for (const w of ['y', [1], ['x'], ['']]) assert.throws(bad({ xpAfter: { count: 1, xp: 1, with: w } }), /xpAfter\.with/, JSON.stringify(w));
+  assert.throws(bad({ xpAfter: { count: 1, xp: 1, with: ['z'] } }), /없는 모음/);
+  assert.doesNotThrow(bad({ xpAfter: { count: 1, xp: 1, with: ['y'] } }));
+});
+
+test('report: 보이지 않는 모음이라도 report가 있으면 결과 복사 문장에 "제목 n/m" — 찾은 칸이 있을 때만, 보이는 모음 · report 없는 모음은 넣지 않는다', () => {
+  const items = (n) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, name: `칸 ${i}` }));
+  const defs = normalizeCollections([
+    { id: 'seen', title: '보이는 도감', report: true, items: items(3) },
+    { id: 'quiet', title: '직육면체 전개도', quiet: true, report: true, items: items(54) },
+    { id: 'silent', title: '조용한 모음', quiet: true, items: items(29) },
+  ]);
+  let state = normalizeCollectionState(null, defs);
+  assert.deepEqual(reportedQuiet(state, defs), []);
+  for (const id of ['seen', 'quiet', 'silent']) state = collectItem(state, defs, id, 'i0').state;
+  state = collectItem(state, defs, 'quiet', 'i5').state;
+  assert.deepEqual(reportedQuiet(state, defs), [{ id: 'quiet', title: '직육면체 전개도', count: 2, total: 54 }]);
+  assert.throws(() => normalizeCollections([{ id: 'a', title: 'A', report: 'yes', items: items(1) }]), /report/);
 });

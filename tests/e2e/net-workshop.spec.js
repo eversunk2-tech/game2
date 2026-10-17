@@ -1071,6 +1071,7 @@ test('자유 배치: 되돌리기·모두 빼기, 카드 누르고 칸 누르기
   // 놓인 면 들어 올려 옮기기
   await cellOf(page, [3, 2]).click();
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveClass(/is-held/);
+  await expect(page.locator('.turn-handle')).toHaveCount(0); // 정사각형 면만 있는 판에는 돌리기 손잡이가 없다(직육면체 판의 손잡이, spec 16-16)
   await cellOf(page, [4, 3]).click();
   await expect(cellOf(page, [4, 3]).locator('.tile-face')).toHaveAttribute('data-label', '다');
   await expect(cellOf(page, [3, 2]).locator('.tile-face')).toHaveCount(0);
@@ -2140,6 +2141,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   expect(points).toBe(33); // 전개도 3 × (2 + 5) + 연속 3번 1 + 단계 완료 5 + 별 3개 6
 
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off')); // 다시 열기 (처음 화면)
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await expect(page.locator('.rank-chip small')).toHaveText(`${points}점`);
   // N1-3: 도감 칩은 전개도 도감만 "n / 11". 안 되는 모양 노트(24칸)는 합치지 않고 따로 "노트 n / 24"
   await expect(page.locator('.workshop-card')).toContainText('도감 3 / 11');
@@ -2163,7 +2165,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   await expect(page.locator('[data-collection="cube-nets"] .collect-cell.is-found svg')).toHaveCount(3);
   await expect(page.locator('[data-collection="cube-non-nets"] .collect-cell.is-missing')).toHaveCount(24);
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.badge-item')).toHaveCount(12); // 엔진 6 + 게임 6
+  await expect(page.locator('.badge-item')).toHaveCount(13); // 엔진 6 + 게임 6 + 직육면체 도감 완성(spec 16-17)
   await expect(page.locator('.badge-item[data-badge="beyond-cross"]')).toHaveClass(/is-earned/);
   // 예상하기를 없애며 조건을 바꾼 두 도장(spec 16-12): 도장판의 "받는 방법"이 새 조건이다
   await expect(page.locator('.badge-item[data-badge="overlap-detective"]')).toContainText('안 되는 까닭을 5번 맞혀요');
@@ -5780,6 +5782,8 @@ test('처음 화면 그림(정지 무대)은 변환·그늘이 지금과 같고 
   test.skip(testInfo.project.name !== 'chromebook', '처음 화면 그림의 값은 크롬북 화면에서 확인');
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?sound=off'));
+  await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
+  await page.evaluate(() => new Promise((r) => { requestAnimationFrame(() => requestAnimationFrame(r)); })); // 처음 화면 그림이 제 크기에 맞춰진 뒤(크기 관찰자 — 주소로 바로 열 때는 load 전에 끝나던 것)
   const hero = page.locator('.hero-net .fold-stage');
   const read = () => page.evaluate(() => ({
     scene: document.querySelector('.hero-net .net-scene').style.transform,

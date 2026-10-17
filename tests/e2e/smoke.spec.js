@@ -4,11 +4,22 @@ import { collectErrors, fileUrl, gameFiles, hasHorizontalScroll } from './helper
 // 모든 게임에 공통으로 적용되는 기본 검사. 새 게임을 만들면 자동으로 포함된다.
 
 /**
+ * 게임 인트로가 있는 게임(엔진 intro)은 [입장하기]로 처음 화면에 들어간다 (B0c — 인트로가 없는 게임은 아무것도 하지 않는다)
+ */
+async function passIntro(page) {
+  const intro = page.locator('.intro-enter');
+  await expect(intro.or(page.locator('.screen-title')).first()).toBeVisible();
+  if (await intro.count()) await intro.click();
+  await expect(page.locator('.screen-title')).toBeVisible();
+}
+
+/**
  * 처음 화면 → 단계 지도: [시작하기]를 누른다. 영역이 있는 게임(엔진 areas)은 [시작하기] 자리에 영역 카드가 있어 첫 영역 카드를,
  * 학년이 있는 게임은 학년 카드 → 학년 화면의 첫 열린 영역 카드를 누른다
- * (B0a: 학년·영역 카드가 생기며 바꿈 — 뜻은 그대로 "처음 화면에서 단계 지도로")
+ * (B0a: 학년·영역 카드가 생기며 바꿈 — 뜻은 그대로 "처음 화면에서 단계 지도로". B0c: 인트로가 있으면 먼저 [입장하기])
  */
 async function openStageMap(page) {
+  await passIntro(page);
   const grade = page.locator('.grade-card:not([disabled])');
   const area = page.locator('.area-card:not([disabled])');
   await expect(area.or(page.getByRole('button', { name: '시작하기' })).first()).toBeVisible();
@@ -63,6 +74,7 @@ for (const file of gameFiles()) {
       for (let i = 0; i < count; i += 1) await expect(cards.nth(i)).toBeEnabled();
     };
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await passIntro(page); // 학년 카드는 인트로 다음의 처음 화면에 있다
     // 영역이 있는 게임은 학년마다(있으면) 영역 탭마다 그 영역의 단계 카드를 본다 (모든 단계)
     const grades = await page.locator('.grade-card:not([disabled])').count();
     await openStageMap(page);

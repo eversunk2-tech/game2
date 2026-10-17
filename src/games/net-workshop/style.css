@@ -899,3 +899,15 @@
   .fold-tools .band-turn,
   .fold-tools.is-locked .band-turn { display: none; }
 }
+
+/* ── 게임 인트로 그림 (B0c · B0c2 — spec-grade6 15-6·15-9: 사용자가 캔바에서 고르고 AI 업스케일로 받은 2880×1620 그림. 파일은 바이트 그대로 쓴다) ──
+ * 배치(꽉 채우기/카드)·움직임은 엔진(base.css "게임 인트로" · core/intro-fit.js), 그림 좌표의 자리는 main.js의 INTRO.
+ * 큰 그림이라 빌드가 따로 파일(dist/assets/)로 내보낸다(scripts/build.mjs). 배경 1680×944였던 앞 판과 같은 그림이다 */
+.screen-intro {
+  --intro-logo-img: url('./img/intro-title.png'); /* 제목 그림은 두 곳(그림 · 빛줄기 틀)에 쓰인다 */
+  /* 그림을 받기 전(빈 화면 대신)의 하늘: 그림의 하늘에서 뽑은 색(그림의 일부) */
+  --intro-sky: linear-gradient(180deg, #0f66d0 0%, #1b74d9 45%, #2a83e0 100%);
+}
+.screen-intro .intro-bg { background-image: url('./img/intro-bg.jpg'); }
+.screen-intro .intro-logo { background-image: var(--intro-logo-img); }
+.screen-intro .intro-shine { mask-image: var(--intro-logo-img); }

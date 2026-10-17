@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -105,6 +105,8 @@ export default async function prepareWideText() {
     if (at < 0) throw new Error(`${file}: </head>를 찾지 못해 글자 폭 넓힘 스타일을 넣을 수 없어요.`);
     writeFileSync(path.join(WIDE_DIST, file), `${html.slice(0, at)}<style data-e2e-wide-text>${wideTextCss()}</style>\n${html.slice(at)}`);
   }
+  // 빌드가 따로 내보낸 큰 그림(dist/assets/ — HTML이 ./assets/…로 가리킨다)도 복사본 옆에 (B0c2)
+  if (existsSync(path.join(BUILT, 'assets'))) cpSync(path.join(BUILT, 'assets'), path.join(WIDE_DIST, 'assets'), { recursive: true });
   console.log(`글자 폭 넓힘 모드: ${WIDE_TEXT.label} (${files.length}개 파일 → ${path.relative(process.cwd(), WIDE_DIST)}/)`);
 }
 

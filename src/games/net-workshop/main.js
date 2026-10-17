@@ -9,6 +9,8 @@ import meta from './game.json' with { type: 'json' };
 import { createGameApp } from '../../shared/ui/app.js';
 import { areaArt } from './thumbs.js'; // 학년·영역 카드와 탭 그림
 import { CUBOID_COLLECTIONS, CUBOID_SCREENS } from './cuboid-main.js';
+import { CUBOID_HOW_TO_MORE } from './cuboid-main.js'; // 직육면체 영역의 놀이 방법에 덧붙이는 줄(상자 크기 · 돌리기 손잡이, spec 16-16)
+import { CUBOID_BADGES } from './cuboid-main.js'; // 직육면체 차시의 도장: 직육면체 도감 완성(spec 16-17 — 도장판 13칸)
 import { LESSONS, NOTE_ITEMS, NOTE_XP, STAGES, dexItemName, makeQuestions, noteItemName } from './logic.js';
 import { CUBE_NETS } from './nets-data.js';
 import { playDice } from './play-dice.js';
@@ -85,6 +87,7 @@ const BADGES = [
     test: (s) => (s.collections['cube-non-nets']?.count ?? 0) >= 12,
   },
 ];
+BADGES.push(...CUBOID_BADGES); // 직육면체 도감 완성 (cuboid-main.js, spec 16-17)
 
 // 도감 2개: 내 맘대로 전개도와 도감 주문에서 직접 만들어 접은 모양만 등록한다 (판별에서 본 것, 주사위 주문에서 접은 것은 아님)
 // "도감 n / 11" 칩에는 전개도 도감만 세고, 노트는 label로 따로 "노트 n / 24". 노트 등록 점수는 +1 (spec 16-8)
@@ -125,6 +128,7 @@ const CUBOID_HOW_TO = [
   ...CUBE_HOW_TO.slice(0, 4),
   '마지막 단계에서는 면 6장을 마음대로 놓고 접어 봐요. 서로 다른 전개도를 3가지까지 찾아봐요.',
 ];
+CUBOID_HOW_TO.push(...CUBOID_HOW_TO_MORE);
 const GRADES = [
   { grade: 5, title: '5학년', note: '정육면체, 직육면체 전개도 탐구', art: areaArt('grade5') },
   { grade: 6, title: '6학년', note: '각기둥의 전개도, 쌓기나무 탐구, 원기둥의 전개도 탐구', art: areaArt('grade6') },
@@ -145,11 +149,29 @@ const AREAS = [
   { id: 'cylinder', grade: 6, title: '원기둥의 전개도', note: '6학년 2학기 · 원기둥, 원뿔, 구', lessons: ['cylinder'], art: areaArt('cylinder') },
 ];
 
+// ── 게임 인트로 (spec-grade6 15-6 · 15-9: 캔바 그림 + 코드 움직임, 꽉 채우기/카드 규칙은 selectio game과 같게) ──
+// 그림은 style.css가 준다(img/intro-bg.jpg 배경 · img/intro-title.png 제목 — 사용자가 캔바 AI 업스케일로 받은 2880×1620 원본 바이트 그대로).
+// 여기에는 그림 좌표(px)로 잰 자리: 배경의 꼭 보일 칸(두 아이 — 얼굴·몸·소녀가 든 전개도까지, 몸은 그림 아래 끝까지)·제목이 가리면 안 되는 두 아이의 머리,
+// 제목 그림에서 쓸 상자(투명 여백을 뺀 글자 상자 — 불투명도 10 이상인 곳 + 둘레 약 7px)와 그 안의 빈 파란 리본의 가운데 선
+const INTRO = {
+  subtitle: '전개도와 쌓기나무로 떠나는 도형 모험',
+  enterLabel: '입장하기',
+  art: {
+    width: 2880,
+    height: 1620,
+    keep: [160, 630, 2250, 1620], // 왼쪽 소년(배낭·막대 포함) x 160~800 · 오른쪽 소녀(든 전개도 포함) x 1420~2250, 머리 위 끝 y 630부터 그림 아래 끝까지
+    avoid: [[425, 625, 765, 970], [1820, 860, 2115, 1150]], // 소년의 머리 · 소녀의 머리(머리카락 포함)
+    glow: 'rgb(90 165 255 / 55%)', // 카드 둘레의 빛: 그림의 하늘색
+  },
+  logo: { width: 2880, height: 1620, crop: [268, 96, 2564, 1578], ribbon: { path: 'M830 1352 Q1450 1480 2070 1352', fontSize: 96, length: 1120 } },
+};
+
 createGameApp({
   root: document.getElementById('app'),
   game: { ...meta, subtitle: '5·6학년 수학 · 전개도와 쌓기나무' },
   grades: GRADES,
   areas: AREAS,
+  intro: INTRO, // 앱을 열면 인트로부터(수업 주소 ?lesson=·?area=·?grade=·?stage=로 열면 인트로 없이)
   // 처음 화면(학년·영역을 고르기 전)의 놀이 방법: 모든 영역에 같은 몇 줄. 영역의 단계 지도·한 차시 주소에서는 그 영역의 줄(AREAS의 howTo)
   howTo: [
     '학년을 고른 다음, 공부할 영역을 골라요. 영역을 누르면 그 영역의 차시와 단계가 나와요.',
