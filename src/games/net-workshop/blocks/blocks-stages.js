@@ -144,6 +144,14 @@ export const BLOCK_STAGES = [
   },
 ];
 
+/**
+ * 자유 쌓기 (spec-grade6.md 15-18·15-19, F1): 쌓기나무 영역 단계 지도 맨 위의 넓은 카드 한 장(main.js 영역의 free).
+ * 엔진의 자유 단계(free: true) — 차시·단계 번호·별·잠금·점수·도장·학습 기록이 없다. 차시 번호는 교과서 그대로(1~5차시). ?stage=blocks-free로 바로 열린다
+ */
+export const BLOCK_FREE_STAGES = [
+  { id: 'blocks-free', area: 'blocks', kind: 'free', free: true, title: '자유 쌓기', goal: '넓은 판에 쌓기나무를 마음대로 쌓고 돌려 보며 살펴봐요.' },
+];
+
 // ── 쌓기나무 도장 셋 (spec-grade6.md 8절 — 도장판 13 → 16칸) ──────────
 // 판정은 모두 학습 기록(state.records — 방금 마친 판 포함)으로 하는 순수 함수. 숨은 도장은 없다(도장판에 받는 방법이 보인다).
 // 단계를 마칠 때 엔진이 판정하므로, 지난 기록으로 이미 조건을 채운 학생은 다음에 어느 단계든 마칠 때 한 번 받는다.

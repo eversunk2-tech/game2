@@ -44,7 +44,7 @@ import {
 } from './blocks.js';
 
 // 차시·단계 목록과 별 기준은 blocks-stages.js로 옮겼다(바탕 묶음 — 단계 지도에 필요). 여기서도 같은 이름으로 내보낸다
-export { BLOCK_BADGES, BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, BLOCK_UNIT, hiddenCountWins, layerBuildWins, starNoteByWrong, starsByWrong, threeViewWins } from './blocks-stages.js';
+export { BLOCK_BADGES, BLOCK_FREE_STAGES, BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, BLOCK_UNIT, hiddenCountWins, layerBuildWins, starNoteByWrong, starsByWrong, threeViewWins } from './blocks-stages.js';
 
 /** 오개념 tag (기획서 4절 표와 글자까지 같게) */
 export const BLOCK_TAGS = Object.freeze({

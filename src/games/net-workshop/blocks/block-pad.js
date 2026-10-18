@@ -12,16 +12,26 @@ import { COLS, MAX_H, ROWS, count, emptyMap, place, remove, sameMap, setHeight, 
 import { spotName } from './blocks-logic.js';
 
 export const FULL_TEXT = `여기는 ${MAX_H}층까지 쌓을 수 있어요.`;
+/** 판의 높이 한도 안내(자유 쌓기 10층·6층) */
+export const fullText = (maxH) => `여기는 ${maxH}층까지 쌓을 수 있어요.`;
 export const OUTSIDE_TEXT = '판 밖에는 놓을 수 없어요.';
 export const EMPTY_TEXT = '여기에는 뺄 쌓기나무가 없어요.';
 
 /**
- * → { band(매트 아래 띠), pad(위에서 본 판), getMap, load(지도 — 기록을 비우고 새로 시작), lock, setGoal, onChange, undo, destroy }
+ * → { band(매트 아래 띠), pad(위에서 본 판), buttons, getMap, load(지도 — 기록을 비우고 새로 시작), lock, setGoal, onChange, undo, destroy }
  * onChange(fn): 쌓기가 바뀔 때마다 fn({ map, kind: 'add' | 'remove' | 'set' | 'clear' | 'undo', x, y })
+ * 판 크기(cols × rows, maxH층)를 주지 않으면 차시의 3×3칸·3층(지금 그대로). 자유 쌓기(spec-grade6 15-19)는 14×14칸·10층, 휴대폰 6×6칸·6층에
+ * colorful(쌓기나무마다 색 — 지금 고른 색으로 쌓는다)과 setWindow(넓은 판의 한 쪽만 보이기 — 14×14를 7×7 네 쪽으로 나눔)를 쓴다.
  */
-export function createBlockTools({ ctx, view }) {
+export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = MAX_H, colorful = false, title = '위에서 본 판' }) {
   const { h } = ctx;
-  let map = emptyMap();
+  let map = emptyMap(cols, rows);
+  // 쌓기나무마다 색(colorful): [줄][칸] = 층마다 토큰. 높이 지도와 한 쌍으로 기록·되돌리기
+  const emptyCubes = () => Array.from({ length: rows }, () => Array.from({ length: cols }, () => []));
+  let cubes = colorful ? emptyCubes() : null;
+  let paintToken = '--face-1';
+  let windowBox = null; // 보이는 쪽 { x0, y0, w, h } (null = 판 전체)
+  let onWindowEdge = null; // 방향키로 보이는 쪽 밖으로 나가려 할 때 (x, y) → 그 칸이 든 쪽을 펼친다
   let history = [];
   let mode = 'add';
   let locked = false;
@@ -44,16 +54,17 @@ export function createBlockTools({ ctx, view }) {
   const undoButton = h('button', { type: 'button', class: 'btn blk-undo', disabled: true, 'aria-label': '되돌리기', title: '되돌리기', onclick: () => undo() }, icon('undo'), h('span', null, '되돌리기'));
   const clearButton = h('button', { type: 'button', class: 'btn blk-clear', disabled: true, 'aria-label': '모두 치우기', title: '모두 치우기', onclick: () => clearAll() }, icon('trash'), h('span', null, '모두 치우기'));
   const countText = h('b', { class: 'blk-count' }, '0');
+  const buttons = { add: addButton, remove: removeButton, undo: undoButton, clear: clearButton };
   const band = h('div', { class: 'mat-tools blk-tools' },
     h('div', { class: 'blk-modes', role: 'group', 'aria-label': '무대와 판을 누르면 할 일' }, addButton, removeButton),
     undoButton, clearButton);
 
   // 위에서 본 판: 뒷줄이 위, 앞줄이 아래 (아래에 "앞", 오른쪽에 "옆")
   const cells = [];
-  const rows = [];
-  for (let y = ROWS - 1; y >= 0; y -= 1) {
+  const rowEls = [];
+  for (let y = rows - 1; y >= 0; y -= 1) {
     const row = [];
-    for (let x = 0; x < COLS; x += 1) {
+    for (let x = 0; x < cols; x += 1) {
       const button = h('button', {
         type: 'button',
         class: 'blk-cell',
@@ -65,11 +76,13 @@ export function createBlockTools({ ctx, view }) {
       cells.push({ x, y, button });
       row.push(button);
     }
-    rows.push(h('div', { class: 'blk-pad-row', role: 'row' }, row));
+    rowEls.push(h('div', { class: 'blk-pad-row', role: 'row', dataset: { y } }, row));
   }
-  const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': '위에서 본 판. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 3은 그 높이로 맞추기예요.' }, rows);
+  const topDigit = Math.min(9, maxH); // 숫자 키 0 ~ 9 (10층은 9층에서 Enter로 하나 더)
+  const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': `${title}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${topDigit}은 그 높이로 맞추기예요.` }, rowEls);
+  const titleEl = h('p', { class: 'blk-pad-title' }, title);
   const pad = h('div', { class: 'blk-padbox' },
-    h('p', { class: 'blk-pad-title' }, '위에서 본 판'),
+    titleEl,
     grid,
     h('span', { class: 'blk-pad-side', 'aria-hidden': 'true' }, '옆'),
     h('span', { class: 'blk-pad-front', 'aria-hidden': 'true' }, '앞'),
@@ -84,11 +97,15 @@ export function createBlockTools({ ctx, view }) {
     view.setMode(mode);
   }
 
+  const inWindow = (x, y) => !windowBox || (x >= windowBox.x0 && x < windowBox.x0 + windowBox.w && y >= windowBox.y0 && y < windowBox.y0 + windowBox.h);
+
   function paint() {
     for (const c of cells) {
       const n = map[c.y][c.x];
       c.button.firstChild.textContent = n > 0 ? String(n) : '';
       c.button.classList.toggle('is-on', n > 0);
+      // 맨 위 쌓기나무의 색(자유 쌓기 — 색 이름은 화면 읽기에)
+      if (cubes) c.button.style.setProperty('--cell-face', n > 0 ? `var(${cubes[c.y][c.x][n - 1]})` : '');
       c.button.setAttribute('aria-label', `${spotName(c.x, c.y)}, 쌓기나무 ${n}개`);
       c.button.setAttribute('tabindex', c.x === focusAt[0] && c.y === focusAt[1] ? '0' : '-1');
       c.button.disabled = locked;
@@ -101,12 +118,26 @@ export function createBlockTools({ ctx, view }) {
     removeButton.disabled = locked;
   }
 
+  const cloneCubes = (c) => c.map((row) => row.map((list) => [...list]));
+  /** 높이 지도가 바뀐 만큼 색 목록을 맞춘다: 새로 놓인 쌓기나무는 지금 고른 색, 빠진 것은 지운다 */
+  function cubesFor(next) {
+    const out = cloneCubes(cubes);
+    next.forEach((row, y) => row.forEach((v, x) => {
+      const list = out[y][x];
+      while (list.length > v) list.pop();
+      while (list.length < v) list.push(paintToken);
+    }));
+    return out;
+  }
+  const showMap = () => view.setMap(map, cubes ? { cubes } : undefined);
+
   /** 새 높이 지도로 바꾼다(기록에 남긴다). 바뀐 것이 없으면 false */
   function commit(next, info) {
     if (locked || !next || sameMap(next, map)) return false;
-    history.push(map);
+    history.push(cubes ? { map, cubes } : map);
     map = next;
-    view.setMap(map);
+    if (cubes) cubes = cubesFor(next);
+    showMap();
     paint();
     for (const fn of listeners) fn({ map: getMap(), ...info });
     return true;
@@ -117,11 +148,11 @@ export function createBlockTools({ ctx, view }) {
   /** 그 자리(x, y)의 맨 위에 하나 쌓는다 */
   function addAt(x, y) {
     if (locked) return false;
-    if (map[y][x] >= MAX_H) {
-      ctx.feedback.info(FULL_TEXT);
+    if (map[y][x] >= maxH) {
+      ctx.feedback.info(fullText(maxH));
       return false;
     }
-    commit(place(map, { x, y }), { kind: 'add', x, y });
+    commit(place(map, { x, y }, maxH), { kind: 'add', x, y });
     ctx.sfx.play('click');
     ctx.feedback.announce(`${spotName(x, y)}에 쌓았어요. ${total()}`);
     return true;
@@ -151,8 +182,8 @@ export function createBlockTools({ ctx, view }) {
   /** 무대에서 면(또는 판의 자리)을 짧게 눌렀다. right: 마우스 오른쪽 누르기 = 빼기 */
   function tap(hit, { right = false } = {}) {
     if (locked) return;
-    const target = targetOf(map, hit, right ? 'remove' : mode);
-    if (target.error === 'full') ctx.feedback.info(FULL_TEXT);
+    const target = targetOf(map, hit, right ? 'remove' : mode, maxH);
+    if (target.error === 'full') ctx.feedback.info(fullText(maxH));
     else if (target.error === 'outside') ctx.feedback.info(OUTSIDE_TEXT);
     else if (target.error === 'empty') ctx.feedback.info(EMPTY_TEXT);
     else if (right || mode === 'remove') removeAt(target.x, target.y);
@@ -161,8 +192,12 @@ export function createBlockTools({ ctx, view }) {
 
   function undo() {
     if (locked || history.length === 0) return false;
-    map = history.pop();
-    view.setMap(map);
+    const last = history.pop();
+    if (cubes) {
+      map = last.map;
+      cubes = last.cubes;
+    } else map = last;
+    showMap();
     paint();
     ctx.sfx.play('click');
     ctx.feedback.announce(`되돌렸어요. ${total()}`);
@@ -171,7 +206,7 @@ export function createBlockTools({ ctx, view }) {
   }
 
   function clearAll() {
-    if (commit(emptyMap(), { kind: 'clear' })) {
+    if (commit(emptyMap(cols, rows), { kind: 'clear' })) {
       ctx.sfx.play('click');
       ctx.feedback.announce('모두 치웠어요. 모두 0개');
     }
@@ -180,9 +215,11 @@ export function createBlockTools({ ctx, view }) {
   const getMap = () => map.map((row) => [...row]);
 
   function moveFocus(dx, dy) {
-    const x = Math.max(0, Math.min(COLS - 1, focusAt[0] + dx));
-    const y = Math.max(0, Math.min(ROWS - 1, focusAt[1] + dy));
+    const x = Math.max(0, Math.min(cols - 1, focusAt[0] + dx));
+    const y = Math.max(0, Math.min(rows - 1, focusAt[1] + dy));
     focusAt = [x, y];
+    // 넓은 판의 한 쪽만 보일 때: 쪽 경계를 넘으면 그 칸이 든 쪽이 저절로 펼쳐진다(plan-rotate-free 5-2 (ㄱ))
+    if (!inWindow(x, y)) onWindowEdge?.(x, y);
     paint();
     cellAt(x, y).button.focus({ preventScroll: true });
   }
@@ -198,9 +235,9 @@ export function createBlockTools({ ctx, view }) {
     else if (key === 'ArrowDown') moveFocus(0, -1);
     else if (key === 'Enter' || key === ' ') addAt(cell.x, cell.y);
     else if (key === 'Backspace' || key === 'Delete') removeAt(cell.x, cell.y);
-    else if (/^[0-3]$/.test(key)) {
+    else if (/^[0-9]$/.test(key) && Number(key) <= topDigit) {
       const value = Number(key);
-      if (commit(setHeight(map, cell, value), { kind: 'set', x: cell.x, y: cell.y })) {
+      if (commit(setHeight(map, cell, value, maxH), { kind: 'set', x: cell.x, y: cell.y })) {
         ctx.sfx.play('click');
         ctx.feedback.announce(`${spotName(cell.x, cell.y)}을 ${value}층으로 맞췄어요. ${total()}`);
       }
@@ -230,15 +267,40 @@ export function createBlockTools({ ctx, view }) {
   return {
     band,
     pad,
+    buttons,
     getMap,
-    /** 새 문항: 그 지도로 시작하고 되돌리기 기록을 비운다 */
-    load(next = emptyMap()) {
+    /** 쌓기나무마다 색 [줄][칸][층] (colorful) */
+    getCubes: () => (cubes ? cloneCubes(cubes) : null),
+    /** 새 문항: 그 지도로 시작하고 되돌리기 기록을 비운다. 색(colorful)도 함께 줄 수 있다(없으면 지금 고른 색) */
+    load(next = emptyMap(cols, rows), nextCubes = null) {
       map = next.map((row) => [...row]);
+      if (cubes) {
+        cubes = emptyCubes();
+        cubes = nextCubes ? cloneCubes(nextCubes) : cubesFor(map);
+      }
       history = [];
       focusAt = [0, 0];
       setMode('add');
-      view.setMap(map);
+      showMap();
       paint();
+    },
+    /** 앞으로 쌓을 쌓기나무의 색 토큰(colorful) */
+    setPaint(token) {
+      paintToken = token;
+    },
+    /**
+     * 넓은 판의 한 쪽만 보인다: { x0, y0, w, h } (null = 판 전체). onEdge(x, y): 방향키로 쪽 밖의 칸으로 가려 할 때(그 쪽을 펼치게)
+     */
+    setWindow(box, { onEdge } = {}) {
+      windowBox = box;
+      if (onEdge !== undefined) onWindowEdge = onEdge;
+      for (const c of cells) c.button.hidden = !inWindow(c.x, c.y);
+      for (const row of rowEls) row.hidden = ![...row.children].some((b) => !b.hidden);
+      if (windowBox && !inWindow(focusAt[0], focusAt[1])) focusAt = [windowBox.x0, windowBox.y0];
+      paint();
+    },
+    setTitle(text) {
+      titleEl.textContent = text;
     },
     /** 잠그면 쌓기·빼기·되돌리기가 모두 꺼진다 (맞힌 뒤) */
     lock(value) {

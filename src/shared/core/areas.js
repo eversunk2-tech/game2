@@ -3,13 +3,15 @@
  * (예: 5학년 — 정육면체의 전개도 · 직육면체의 전개도 / 6학년 — 각기둥의 전개도 · 쌓기나무 · 원기둥의 전개도).
  * 화면과 상관없는 순수 로직 — 엔진(ui/app.js)이 처음 화면의 학년·영역 카드, 학년 화면, 단계 지도의 영역 탭에 쓴다. 사용법: docs/engine.md 2절 "영역".
  *
- *   areas:  [{ id, title, grade?, note?, lessons: ['cube'], art?, howTo? }, …]
+ *   areas:  [{ id, title, grade?, note?, lessons: ['cube'], free?: ['blocks-free'], art?, howTo? }, …]
  *   grades: [{ grade: 5, title?, note?, art? }, …]   (선택 — 영역에 grade가 있을 때 학년 카드의 글·그림)
  *
  * - 영역의 lessons에 적힌 차시 가운데 게임에 없는 차시(아직 만들지 않은 차시)는 조용히 건너뛴다(만들어지면 저절로 들어간다).
  * - 보이는 차시가 하나도 없는 영역은 "준비 중"(ready: false)이다 — 카드는 보이지만 누를 수 없고, 영역 탭에는 없다. 차시가 생기면 저절로 열린다.
  * - 게임의 차시(단계가 있는 것)는 꼭 한 영역에만 들어 있어야 한다(빠지거나 두 영역에 있으면 오류 — 화면에서 사라지는 차시가 없게).
  * - 영역에 grade를 하나라도 주면 모든 영역에 grade가 있어야 한다(학년 → 영역 → 단계 지도).
+ * - free(선택 — 자유 공간, spec-grade6 15-19 결정 3): 그 영역의 단계 지도 맨 위에 넓은 카드로 보일 자유 단계(free: true인 단계) id 목록.
+ *   자유 단계는 차시·진도(별·잠금·다음 단계)·별 합계·도장에 들지 않는다. 자유 단계는 꼭 한 영역에만 있어야 한다(영역을 쓰는 게임).
  */
 
 /** "지난번에 하던 영역"을 기억하는 저장 열쇠 (createStorage(game.id) 안. 학년은 그 영역의 학년. 다른 저장 값의 열쇠·모양은 그대로) */
@@ -23,15 +25,18 @@ const isGrade = (value) => Number.isInteger(value) && value > 0;
  * @param {Array|null} areas   게임이 준 영역 정의
  * @param {Array<{ lesson: { id }, stages }>} groups  단계가 있는 차시 묶음(차시 순서) — 엔진의 planLessons 결과
  * @param {Array|null} lessons 게임이 준 차시 정의(모든 차시)
- * @returns {null | Array<{ area, groups, ready }>}  영역(정의 순서)과 그 영역의 차시 묶음(영역의 lessons 순서). ready: 차시가 하나라도 있다
+ * @param {Array<{ id }>} freeStages 자유 단계(free: true) — 영역의 free에 적힌 id가 모두 여기에 있어야 하고, 여기 있는 것은 꼭 한 영역에
+ * @returns {null | Array<{ area, groups, free, ready }>}  영역(정의 순서)과 그 영역의 차시 묶음(영역의 lessons 순서)·자유 단계(영역의 free 순서).
+ *   ready: 차시가 하나라도 있다(자유 단계만 있는 영역은 열리지 않는다)
  */
-export function planAreas(areas, groups, lessons) {
+export function planAreas(areas, groups, lessons, freeStages = []) {
   if (areas == null) return null;
   if (!Array.isArray(areas)) throw new Error('createGameApp: areas는 [{ id, title, lessons }] 배열이에요.');
   if (areas.length === 0) return null;
   if (!Array.isArray(lessons) || lessons.length === 0) throw new Error('createGameApp: areas는 lessons(차시 묶음)와 함께 써요.');
   const ids = new Set();
   const owner = new Map(); // 차시 id → 영역 id
+  const freeOwner = new Map(); // 자유 단계 id → 영역 id
   for (const area of areas) {
     if (!area || !text(area.id) || !text(area.title)) throw new Error('createGameApp: 영역마다 id와 title이 필요해요.');
     if (ids.has(area.id)) throw new Error(`createGameApp: 영역 id가 겹쳐요: ${area.id}`);
@@ -43,14 +48,25 @@ export function planAreas(areas, groups, lessons) {
       if (owner.has(lessonId) && owner.get(lessonId) !== area.id) throw new Error(`createGameApp: 차시 ${lessonId}가 두 영역(${owner.get(lessonId)}, ${area.id})에 있어요.`);
       owner.set(lessonId, area.id);
     }
+    if (area.free != null) {
+      if (!Array.isArray(area.free)) throw new Error(`createGameApp: 영역 ${area.id}의 free는 자유 단계 id 목록이에요.`);
+      for (const stageId of area.free) {
+        if (!freeStages.some((st) => st.id === stageId)) throw new Error(`createGameApp: 영역 ${area.id}의 자유 단계 ${stageId}가 단계 목록(free: true)에 없어요.`);
+        if (freeOwner.has(stageId) && freeOwner.get(stageId) !== area.id) throw new Error(`createGameApp: 자유 단계 ${stageId}가 두 영역(${freeOwner.get(stageId)}, ${area.id})에 있어요.`);
+        freeOwner.set(stageId, area.id);
+      }
+    }
   }
+  const lost = freeStages.find((st) => !freeOwner.has(st.id));
+  if (lost) throw new Error(`createGameApp: 자유 단계 ${lost.id}가 어느 영역의 free에도 없어요.`);
   const graded = areas.filter((a) => a.grade != null).length;
   if (graded > 0 && graded < areas.length) throw new Error('createGameApp: 영역에 grade를 쓰면 모든 영역에 grade가 있어야 해요.');
   const stray = groups.find((g) => !owner.has(g.lesson.id));
   if (stray) throw new Error(`createGameApp: 차시 ${stray.lesson.id}가 어느 영역에도 없어요.`);
   return areas.map((area) => {
     const own = [...new Set(area.lessons)].map((id) => groups.find((g) => g.lesson.id === id)).filter(Boolean);
-    return { area, groups: own, ready: own.length > 0 };
+    const free = [...new Set(area.free ?? [])].map((id) => freeStages.find((st) => st.id === id));
+    return { area, groups: own, free, ready: own.length > 0 };
   });
 }
 
@@ -73,6 +89,12 @@ export function planGrades(areaPlan, grades = null) {
     const areas = areaPlan.filter((e) => e.area.grade === grade);
     return { grade, title: text(def.title) || `${grade}학년`, note: text(def.note), art: def.art ?? null, areas, ready: areas.some((e) => e.ready) };
   });
+}
+
+/** 그 자유 단계가 든 영역 (없으면 null) */
+export function areaOfFree(plan, stageId) {
+  if (!plan || stageId == null) return null;
+  return plan.find((entry) => entry.free.some((st) => st.id === stageId)) ?? null;
 }
 
 /** 그 차시가 든 영역 (없으면 null) */
