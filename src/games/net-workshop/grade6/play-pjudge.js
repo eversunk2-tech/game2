@@ -38,7 +38,9 @@ export function playPrismJudge(stage, ctx, questions) {
     const q = questions[index];
     answered = false;
     // show: 다 접었을 때 길이가 다른 두 선분이 놓인 면이 보이는 쪽에 오게 한다 — 펼친 모습(답하기 전 화면)은 달라지지 않는다
-    view.setNet(q.net, { fitBox: PRISM_FIT, show: prismMismatch(q)?.faces ?? [] });
+    // 직사각형이 아닌 옆면도 그 면이 보이게
+    const bent = q.problems.filter((p) => p.type === 'side-shape').flatMap((p) => p.faces);
+    view.setNet(q.net, { fitBox: PRISM_FIT, show: [...(prismMismatch(q)?.faces ?? []), ...bent] });
     bench.setQuestion(index + 1, '접으면 각기둥이 될까요?');
     pickSlot.replaceChildren();
     for (const btn of [yes, no]) {

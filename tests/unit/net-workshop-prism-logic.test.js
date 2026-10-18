@@ -11,6 +11,7 @@ import { checkNet, foldNet } from '../../src/games/net-workshop/fold.js';
 import { LESSONS, STAGES } from '../../src/games/net-workshop/logic.js';
 import { BLOCK_LESSONS, BLOCK_STAGES } from '../../src/games/net-workshop/blocks/blocks-stages.js';
 import { BASES, REGULAR_KINDS, netBox } from '../../src/games/net-workshop/solids.js';
+import { SPIN, TILT, viewDir } from '../../src/games/net-workshop/orbit.js';
 import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES, PRISM_TAGS } from '../../src/games/net-workshop/grade6/prism-stages.js';
 import { PRISM_STAGES as STAGE_CARDS } from '../../src/games/net-workshop/grade6/index.js';
 import {
@@ -184,6 +185,10 @@ test('밑면과 옆면 200판: 밑면 종류가 서로 다른 3문항, 눕힌 �
       const n0 = foldNet(q.net, 1).faces.find((f) => f.id === q.ground).normal;
       const n = q.pose.reduce((p, r) => rotate(p, [0, 0, 0], r.axis, r.angle), n0);
       assert.ok(v.len(v.sub(n, [0, 0, -1])) < 1e-6, `${q.itemId} ${n}`);
+      // 처음 보기(기울기 56° · 돌림 −28°)에서 밑면 하나는 보는 쪽을 향한다(눕힌 각기둥도 한쪽 끝이 비스듬히 보인다)
+      const facing = foldNet(q.net, 1).faces.filter((f) => q.bases.includes(f.id))
+        .map((f) => viewDir(q.pose.reduce((p, r) => rotate(p, [0, 0, 0], r.axis, r.angle), f.normal), TILT, SPIN)[2]);
+      assert.ok(Math.max(...facing) >= 0.3 - 1e-9, `${q.itemId} ${facing}`);
       q.net.faces.forEach((f, i) => { if (f.role === 'base') at.set(i, (at.get(i) ?? 0) + 1); });
     }
   }

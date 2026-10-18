@@ -4,7 +4,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { checkNet, congruentPolygons, findHinges, foldNet, fromCells, hingeAngle, isRectangle, matchingEdge, missingSlots, pickFace, solidStats, spanningTrees } from '../../src/games/net-workshop/fold.js';
+import { checkNet, congruentPolygons, findHinges, foldNet, fromCells, hingeAngle, isRectangle, matchingEdge, missingSlots, pickFace, spanningTrees } from '../../src/games/net-workshop/fold.js';
 import { cuboidNets } from '../../src/games/net-workshop/cuboid-logic.js';
 import { CUBE_NETS } from '../../src/games/net-workshop/nets-data.js';
 import {
@@ -26,11 +26,30 @@ import { createRng } from '../../src/shared/core/random.js';
 import { rotationMatrix, turnVector, uprightAngle } from '../../src/games/net-workshop/orbit.js';
 import { E, edgesOfPoly, fold3d, foldAngle, rotate, v, verdict } from './net-workshop-prism-indep.js';
 
+/** 접은 입체의 꼭짓점·모서리·면 수 (독립 — 1e-6 안의 점은 같은 꼭짓점으로 묶는다. fold.js의 solidStats는 소수 넷째 자리 반올림이라 경계에서 갈린다) */
+function statsOf(folded) {
+  const points = [];
+  const idOf = (p) => {
+    let i = points.findIndex((q) => v.len(v.sub(p, q)) < 1e-6);
+    if (i < 0) {
+      points.push(p);
+      i = points.length - 1;
+    }
+    return i;
+  };
+  const edges = new Set();
+  for (const f of folded.faces) {
+    const ids = f.points.map(idOf);
+    ids.forEach((id, i) => edges.add([id, ids[(i + 1) % ids.length]].sort((a, b) => a - b).join('|')));
+  }
+  return { V: points.length, E: edges.size, F: folded.faces.length };
+}
+
 // ── 입체 ─────────────────────────────────
 test('밑면: 정다각형 · 세 변으로 만든 삼각형 · 등변사다리꼴이 반시계 방향이고 변의 길이가 맞다', () => {
   for (const [poly, lengths] of [
     [regularPolygon(5, 2), [2, 2, 2, 2, 2]],
-    [triangleBySides([4, 2, 3]), [4, 2, 3]],
+    [triangleBySides([4, 3, 3.5]), [4, 3, 3.5]],
     [isoTrapezoid(5, 3, 2), [5, 2, 3, 2]],
   ]) {
     const area = poly.reduce((s, p, i) => s + p[0] * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * p[1], 0) / 2;
@@ -57,7 +76,7 @@ test('입체의 접는 각도: 밑면-옆면 90°, 옆면-옆면은 밑면의 �
   }
 });
 
-test('띠 꼴 전개도는 밑면 종류마다 각기둥이 되고(checkNet ok · 독립 판정 ok), 접은 입체는 면 n + 2 · 모서리 3n · 꼭짓점 2n (V − E + F = 2)', () => {
+test('띠 꼴 전개도는 밑면 종류마다 각기둥이 되고(checkNet ok · 독립 판정 ok), 접은 입체는 면 n + 2 · 모서리 3n · 꼭짓점 2n (V − E + F = 2, 독립으로 셈)', () => {
   for (const b of BASES) {
     for (const height of [3, 4]) {
       const solid = prismSolid({ base: b.poly, height });
@@ -67,7 +86,7 @@ test('띠 꼴 전개도는 밑면 종류마다 각기둥이 되고(checkNet ok �
           assert.equal(treeForm(solid, stripTree(solid, { cut, top, bottom: 0 })), 'strip');
           assert.ok(checkNet(net).ok, `${b.id} ${height} ${cut} ${top}`);
           assert.ok(verdict(net, b.poly).ok, `독립 ${b.id} ${height} ${cut} ${top}`);
-          const { V, E: edges, F } = solidStats(foldNet(net, 1));
+          const { V, E: edges, F } = statsOf(foldNet(net, 1));
           assert.deepEqual([F, edges, V], [b.n + 2, 3 * b.n, 2 * b.n], b.id);
           assert.equal(V - edges + F, 2);
           assert.deepEqual(missingSlots(net), []);
@@ -79,7 +98,7 @@ test('띠 꼴 전개도는 밑면 종류마다 각기둥이 되고(checkNet ok �
 
 test('신장 트리를 모두 펼쳐(펼친 그림에서 면이 겹치지 않는 것) 다시 접으면 모두 각기둥이 된다 — checkNet과 독립 판정이 같다 (삼각기둥 · 사각기둥 · 오각기둥)', () => {
   let checked = 0;
-  for (const id of ['tri-eq-2', 'tri-sc-234', 'trap-4222', 'rect-23', 'pent-2']) {
+  for (const id of ['tri-eq-2', 'tri-sc-3-35-4', 'trap-4222', 'rect-23', 'pent-2']) {
     const b = BASES.find((x) => x.id === id);
     const solid = prismSolid({ base: b.poly, height: 3 });
     for (const tree of spanningTrees(solid)) {
@@ -113,8 +132,8 @@ test('서로 다른 전개도의 수(돌리기·뒤집기로 같은 것은 하�
   assert.equal(keysOf(rect(3, 2), 3), 29);
   assert.equal(keysOf(rect(2, 2), 2), CUBE_NETS.length);
   // 그 밖의 밑면(회귀 기준): 각기둥의 전개도는 밑면과 옆면을 구별해 센다
-  const fixed = Object.fromEntries(['tri-sc-234', 'trap-4222', 'rect-23', 'pent-2'].map((id) => [id, count(BASES.find((x) => x.id === id).poly, 3)]));
-  assert.deepEqual(fixed, { 'tri-sc-234': 43, 'trap-4222': 104, 'rect-23': 54, 'pent-2': 99 });
+  const fixed = Object.fromEntries(['tri-sc-3-35-4', 'trap-4222', 'rect-23', 'pent-2'].map((id) => [id, count(BASES.find((x) => x.id === id).poly, 3)]));
+  assert.deepEqual(fixed, { 'tri-sc-3-35-4': 47, 'trap-4222': 104, 'rect-23': 54, 'pent-2': 99 });
 });
 
 test('낯선 꼴(옆면 하나가 밑면에만 붙은 꼴) 트리도 접으면 각기둥이 된다', () => {

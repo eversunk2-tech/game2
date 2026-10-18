@@ -54,8 +54,9 @@ export function isoTrapezoid(bottom, top, leg) {
 export const BASES = Object.freeze([
   { id: 'tri-eq-2', kind: 'tri-eq', poly: regularPolygon(3, 2) },
   { id: 'tri-eq-3', kind: 'tri-eq', poly: regularPolygon(3, 3) },
-  { id: 'tri-sc-234', kind: 'tri-sc', poly: triangleBySides([4, 2, 3]) },
-  { id: 'tri-sc-346', kind: 'tri-sc', poly: triangleBySides([6, 3, 4]) },
+  // 세 변의 길이가 모두 다른 예각삼각형(둔각이면 밑면이 납작해 접은 각기둥이 얇은 판처럼 보인다)
+  { id: 'tri-sc-3-35-4', kind: 'tri-sc', poly: triangleBySides([4, 3, 3.5]) },
+  { id: 'tri-sc-25-3-35', kind: 'tri-sc', poly: triangleBySides([3.5, 2.5, 3]) },
   { id: 'trap-4222', kind: 'trap', poly: isoTrapezoid(4, 2, 2) },
   { id: 'trap-5232', kind: 'trap', poly: isoTrapezoid(5, 3, 2) },
   { id: 'rect-23', kind: 'rect', poly: [[0, 0], [3, 0], [3, 2], [0, 2]] },

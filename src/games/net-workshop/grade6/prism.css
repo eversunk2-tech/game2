@@ -59,7 +59,7 @@
 
 /* 직사각형이 아닌 옆면(답한 뒤): 벽돌색 점선 + 글자 */
 .net-face.is-poly.is-bent .poly-line { border-top-color: var(--wrong); border-top-style: dashed; }
-.net-face.is-poly.is-bent .face-mark { color: var(--wrong); }
+.net-face.is-poly.is-bent .face-mark { color: var(--wrong); top: 100%; transform: none; } /* 면 이름(가~바) 아래에 — 포개지지 않게 */
 
 /* ── 비어요 자리(다각형) ── */
 .net-ghost.is-poly { border: none; background: none; }

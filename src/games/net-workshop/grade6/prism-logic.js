@@ -12,6 +12,7 @@ import { hasFinalSound, josa } from '../../../shared/core/korean.js';
 import { LABELS, checkNet, findHinges, foldNet, matchingEdge, outline } from '../fold.js';
 import { bounds, centroid, cross, dot, normalize, sub } from '../geometry.js';
 import { BASES, BASE_NAMES, REGULAR_KINDS, flatOk, loneTree, netBox, prismNet, prismSolid, stripOrientations, stripTree } from '../solids.js';
+import { SPIN, TILT, viewDir } from '../orbit.js';
 import { PRISM_TAGS as TAGS } from './prism-stages.js';
 
 /**
@@ -390,6 +391,15 @@ export function groundPose(net, groundId, spinDeg = 0) {
   return turns;
 }
 
+/** 벡터 v를 원점을 지나는 단위 축 둘레로 angle(라디안)만큼 (로드리게스) */
+function rotateVector(v, axis, angle) {
+  const [c, s] = [Math.cos(angle), Math.sin(angle)];
+  const k = normalize(axis);
+  const kv = cross(k, v);
+  const kd = dot(k, v) * (1 - c);
+  return [0, 1, 2].map((i) => v[i] * c + kv[i] * s + k[i] * kd);
+}
+
 /** 놓인 자세에서 면이 바라보는 쪽(바깥 법선) — 판정 문장(평행한가)에 쓴다 */
 function foldedNormals(net) {
   return new Map(foldNet(net, 1).faces.map((f) => [f.id, f.normal]));
@@ -417,6 +427,15 @@ function makePartsQuestions(stage, rng) {
       const groundSolid = lying ? `s${rng.int(0, n - 1)}` : 'b0';
       const ground = net.faces.find((f) => f.solid === groundSolid).id;
       const bases = facesOf(net, 'base').map((f) => f.id).sort();
+      // 처음 보기에서 밑면 하나는 보이게(선 각기둥은 늘 위 밑면이 보인다): 눕힌 각기둥은 세로축 둘레로 돌려 한쪽 끝의 밑면이 비스듬히 보이는 자세만
+      const spins = [-20, -10, 0, 10, 20].concat(lying ? [-60, -50, -40, -30, 30, 40, 50, 60] : []);
+      const fine = spins.filter((spin) => {
+        const pose = groundPose(net, ground, spin);
+        const facing = foldNet(net, 1).faces.filter((f) => bases.includes(f.id))
+          .map((f) => viewDir(pose.reduce((v, r) => rotateVector(v, r.axis, r.angle), f.normal), TILT, SPIN)[2]);
+        return Math.max(...facing) >= 0.3;
+      });
+      const spin = rng.pick(fine.length > 0 ? fine : spins);
       return {
         kind: 'parts',
         number: i + 1,
@@ -430,7 +449,7 @@ function makePartsQuestions(stage, rng) {
         bases,
         lying,
         ground,
-        pose: groundPose(net, ground, rng.pick([-20, -10, 0, 10, 20])),
+        pose: groundPose(net, ground, spin),
       };
     }
     throw new Error('밑면과 옆면 문항을 만들지 못했어요.');

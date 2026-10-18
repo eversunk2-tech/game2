@@ -181,6 +181,24 @@ const isTopOrBottom = (normal) => Math.abs(normal[2]) > 0.99;
  *   마주 보는 면 단계는 [★ 면, 정답 면] — 마주 보는 두 면은 한 시점에서 함께 보일 수 없으므로 ★ 면은 [↺][↻]로 돌려 본다.
  *   면 붙이기에서 맞힌 경우는 [붙인 면].
  */
+/** 접은 각기둥이 처음 시점(turn만큼 더 돌린)에서 보이는 정도: 보는 쪽을 향한 면의 넓이 × 향한 정도의 합 ÷ 겉넓이 (0~1) */
+function spread(folded, turn) {
+  let seen = 0;
+  let total = 0;
+  for (const f of folded.faces) {
+    const [a, ...rest] = f.points;
+    let area = 0;
+    for (let i = 0; i + 1 < rest.length; i += 1) {
+      const u = sub(rest[i], a);
+      const w = sub(rest[i + 1], a);
+      area += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2;
+    }
+    total += area;
+    seen += area * Math.max(0, viewDirection(turnNormal(f.normal, turn), 0)[2]);
+  }
+  return total > 0 ? seen / total : 0;
+}
+
 export function displayNet(net, { focus = [], show = [] } = {}) {
   // 돌려주는 값: { net(바닥 면을 고른 전개도), turn(더 돌릴 각도), tilt(다 접었을 때 기울기) }
   const blocked = fullVertices(net);
@@ -204,6 +222,8 @@ export function displayNet(net, { focus = [], show = [] } = {}) {
       if (focus.length > 0) s += seenScore(turnNormal(normalOf(focus[focus.length - 1]), turn));
       // show: 처음 시점에서 함께 보여야 할 면들(만나는 두 선분이 놓인 면, 길이가 다른 두 변이 놓인 면)
       for (const id of show) s += 4 * seenScore(turnNormal(normalOf(id), turn));
+      // 각기둥: 보여 줄 것이 같으면 입체가 넓게 보이는 쪽(보는 쪽을 향한 면의 넓이) · 밑면이 위에 놓인 쪽(선 각기둥)으로 — 얇은 판처럼 보이지 않게
+      if (prism) s += 0.5 * spread(folded, turn) + (candidate.faces.find((f) => f.id === root).role === 'base' ? 0.3 : 0);
       if (!best || s > best.score) best = { net: candidate, turn, score: s };
     }
   }
