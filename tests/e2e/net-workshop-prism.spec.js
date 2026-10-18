@@ -528,6 +528,76 @@ test('각기둥이 될까? 정답 노출 0: 답하기 전 화면은 되는 전�
   expect(seen.has('length') || seen.has('shape')).toBe(true);
 });
 
+test('각기둥이 될까? 키보드만: Tab으로 답 버튼, 안 되는 것은 까닭 칩(첫 칩에 초점이 온다)에서 방향을 바꿔 Tab·Enter, [다음 문제]도 Enter — 다섯 문항 끝까지', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서');
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  await page.goto(STAGE_URL('prism-judge'));
+  async function tabTo(selector, n = 40) {
+    for (let i = 0; i < n; i += 1) {
+      if (await page.evaluate((sel) => document.activeElement?.matches(sel), selector)) return;
+      await page.keyboard.press('Tab');
+    }
+    throw new Error(`${selector}에 Tab으로 가지 못했어요`);
+  }
+  for (const q of questionsFor('prism-judge')) {
+    await expect(page.locator('.q-counter')).toHaveText(`문제 ${q.number} / 5`);
+    await tabTo(`.answer-btn[data-answer="${q.expected}"]`);
+    await page.keyboard.press('Enter');
+    if (!q.valid) {
+      await expect(page.locator('.reason-chip').first()).toBeFocused();
+      await tabTo(`.reason-chip[data-reason="${prismReasonOf(q.problems)}"]`);
+      await page.keyboard.press('Enter');
+    }
+    await folded(page);
+    await expect(page.locator('.next-btn')).toBeFocused();
+    await page.keyboard.press('Enter');
+  }
+  await expect(page.getByText('5번 중 5번 맞힘')).toBeVisible();
+  await expect(page.locator('.behavior', { hasText: '설명 맞힘' })).toContainText('3번');
+  expect(errors).toEqual([]);
+});
+
+test('접은 각기둥의 길이 이름표("3 cm")는 돌려 본 자세에서도 글줄이 화면 가로다(눕거나 거꾸로 서지 않음 — 직육면체 검토 M2b-5의 각기둥 몫)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '조작판으로 돌려 보는 검사는 크롬북 화면에서 한 번');
+  test.setTimeout(150_000);
+  const seed = ['1', '2', '3', '4', '5', '6', '7', '8'].find((x) => questionsFor('prism-judge', x).some((q) => q.intended === 'length'));
+  const qs = questionsFor('prism-judge', seed);
+  await page.goto(STAGE_URL('prism-judge', '&fx=low', seed));
+  for (const q of qs.slice(0, qs.findIndex((x) => x.intended === 'length'))) {
+    await page.locator(`.answer-btn[data-answer="${q.expected}"]`).click();
+    if (!q.valid) await page.locator('.reason-skip').click();
+    await folded(page);
+    await page.locator('.next-btn').click();
+  }
+  await page.locator('.answer-btn[data-answer="yes"]').click();
+  await folded(page);
+  await expect(page.locator('.edge-tag')).toHaveCount(2);
+  const rng = createRng('tag-turns');
+  const names = ['위쪽으로 돌려 보기', '아래쪽으로 돌려 보기', '왼쪽으로 돌려 보기', '오른쪽으로 돌려 보기'];
+  const worst = [];
+  for (let k = 0; k < 24; k += 1) {
+    for (let j = rng.int(1, 3); j > 0; j -= 1) await page.locator('.view-pad').getByRole('button', { name: rng.pick(names) }).click();
+    const angles = await page.evaluate(() => [...document.querySelectorAll('.edge-tag')].map((tag) => {
+      const paper = tag.closest('.net-face').querySelector('.face-paper').getBoundingClientRect();
+      if (paper.width * paper.height < 1600) return null; // 거의 옆으로 선 면(이름표가 거의 안 보인다)은 빼고 본다
+      const text = tag.querySelector('span').firstChild;
+      const r = document.createRange();
+      const mid = (i) => {
+        r.setStart(text, i);
+        r.setEnd(text, i + 1);
+        const b = r.getBoundingClientRect();
+        return [b.left + b.width / 2, b.top + b.height / 2];
+      };
+      const [a, b] = [mid(0), mid(text.length - 1)];
+      return Math.abs((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI); // 글자 첫 자 → 끝 자의 화면 방향
+    }).filter((x) => x != null));
+    worst.push(...angles);
+  }
+  expect(worst.length).toBeGreaterThan(20);
+  expect(Math.max(...worst), JSON.stringify(worst.map((x) => Math.round(x)))).toBeLessThanOrEqual(45);
+});
+
 // ── 3단계: 맞닿는 선분 ───────────────────────────
 test('맞닿는 선분: 전개도의 번호 띠(바로 옆 선분)를 누르면 까닭과 [반만 접어 보기], 다시 눌러도 기록하지 않는다. 힌트 동안에도 접기·돌리기 잠김. 맞히면 두 선분이 같은 무늬로 만난다 (크롬북은 마우스, 태블릿은 손가락)', async ({ page }, testInfo) => {
   test.setTimeout(120_000);

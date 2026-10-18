@@ -300,8 +300,14 @@ export function uprightTurn(right, down, pose) {
  * 면이 거의 옆으로 서서 정할 수 없으면 null
  */
 export function uprightAngle(right, down, pose, back = false) {
-  const r = turnVector(pose, right);
-  const d = turnVector(pose, down);
+  return uprightAngleOnScreen(turnVector(pose, right), turnVector(pose, down), back);
+}
+
+/**
+ * uprightAngle과 같은 계산을 화면에 비친 두 축(r · d — [x, y], 원근을 넣어 그 자리에서 비친 방향)으로 한다.
+ * 무대는 원근(perspective)이 있어 화면 가장자리의 면은 돌림 행렬만으로 본 방향과 조금 다르게 비친다 — 무대가 그 자리의 비침으로 부른다
+ */
+export function uprightAngleOnScreen(r, d, back = false) {
   if (Math.hypot(r[1], d[1]) < 1e-6) return 0; // 두 축이 모두 수평: 돌리지 않아도 글줄이 가로
   let theta = Math.atan2(-r[1], d[1]);
   const x = Math.cos(theta) * r[0] + Math.sin(theta) * d[0];
@@ -309,6 +315,19 @@ export function uprightAngle(right, down, pose, back = false) {
   if ((x > 0) === back) theta += Math.PI;
   const out = deg(theta) % 360;
   return out < 0 ? out + 360 : out;
+}
+
+/**
+ * 면 위의 방향 v(모델 좌표)가 그 면의 한 점 p(무대 가운데 기준 px — 배율을 곱한 모델 좌표)에서 화면에 비치는 방향 [x, y] —
+ * CSS perspective(눈 eye — eyeOf)의 비침을 그 자리에서 미분한 것
+ */
+export function screenDirection(v, p, pose, eye) {
+  const P = turnVector(pose, p);
+  const V = turnVector(pose, v);
+  const [X, Y, Z] = [P[0] - eye[0], P[1] - eye[1], P[2]];
+  const w = eye[2] - Z;
+  const k = eye[2] / w;
+  return [k * V[0] + (X * eye[2] * V[2]) / (w * w), k * V[1] + (Y * eye[2] * V[2]) / (w * w)];
 }
 
 // ── 보는 방향·크기를 말로 (화면 읽기 알림) ─────────

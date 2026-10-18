@@ -64,8 +64,9 @@ import {
   tiltWord,
   tiltZone,
   turnBy,
+  screenDirection,
   turnVector,
-  uprightAngle,
+  uprightAngleOnScreen,
   uprightTurn,
   viewDir,
   viewLimits,
@@ -475,7 +476,17 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
       if (turned !== tag.turn) placeTag(tag, turned);
       // 각기둥: 이름표("5 cm")는 90° 단위가 아니라 끊김 없이 돌려 글줄을 늘 화면 가로로 — 돌려 본 자세에서도 눕지 않는다(자리는 위의 90° 단위 그대로)
       if (net.kind === 'prism') {
-        const exact = uprightAngle(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose, faceEls.get(f.id)?.classList.contains('is-back'));
+        // 원근까지 넣은 그 이름표 자리에서의 비침으로(화면 가장자리의 면은 돌림만으로 본 방향과 다르다 — 뒤집힌 면의 판정 is-back도 원근으로 한다)
+        const src = net.faces.find((x) => x.id === tag.face);
+        const { min: low } = bounds(src.poly);
+        const at = tag.rect ? applyPoint(f.matrix, [low[0] + (tag.rect[0] + tag.rect[2]) / 2, low[1] + (tag.rect[1] + tag.rect[3]) / 2, 0]) : f.center;
+        const mid = scaleVec(sub(at, center), unit * scale);
+        const eye = eyeOf(boxSize.height);
+        const exact = uprightAngleOnScreen(
+          screenDirection(applyDir(f.matrix, [1, 0, 0]), mid, pose, eye),
+          screenDirection(applyDir(f.matrix, [0, 1, 0]), mid, pose, eye),
+          faceEls.get(f.id)?.classList.contains('is-back'),
+        );
         tag.el.style.setProperty('--tag-turn', `${(exact ?? turned).toFixed(2)}deg`);
       }
     }
