@@ -1,0 +1,132 @@
+/*
+ * 각기둥의 전개도 차시(6학년 1학기)만의 스타일. 틀(매트·작업 지시서·접기 조작)은 style.css · cuboid.css 그대로 쓰고, 여기에는 더한 것만 둔다:
+ * 다각형 면(종이 + 변의 선 — 자른 곳 실선 · 접는 곳 점선), 다각형 비어요 자리, 밑면 고르기의 표시, 맞닿는 선분의 보기 띠.
+ * 색·간격·글꼴은 base.css 토큰만 쓴다. 무대 안의 px 값은 style.css처럼 var(--k, 1)을 곱한다(크게 볼 때 굵기가 그대로).
+ */
+
+/* ── 다각형 면(.is-poly): 버튼은 투명한 틀, 종이(.face-paper)에 다각형 clip-path — 누르기 판정도 종이 모양 ── */
+.net-face.is-poly,
+.net-face.is-poly.is-overlap,
+.net-face.is-poly.is-correct,
+.net-face.is-poly.is-wrong,
+.net-face.is-poly.is-placed {
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  pointer-events: none;
+}
+.net-face.is-poly::after { content: none; }
+.net-face.is-poly:not([tabindex="-1"]):hover { box-shadow: none; }
+.net-face.is-poly .face-paper {
+  position: absolute;
+  inset: 0;
+  background-color: var(--face-color, var(--face-1));
+  background-image: linear-gradient(135deg, rgb(255 255 255 / 35%), transparent 45%);
+  pointer-events: auto;
+}
+.net-face.is-poly .face-paper::after { content: ''; position: absolute; inset: 0; background: rgb(15 20 40 / var(--shade, 0)); }
+.net-face.is-poly .face-inner { inset: auto; pointer-events: none; }
+.net-face.is-poly .face-label { pointer-events: none; }
+
+/* 변의 선: 자른 곳은 실선, 접는 곳은 점선(교과서 6-1 43쪽 약속). 접히기 시작하면 입체의 모서리라 실선 */
+.poly-line {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  top: 0;
+  height: 0;
+  border-top: calc(2.5px * var(--k, 1)) solid var(--ink);
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+.poly-line.is-fold { border-top-style: dashed; }
+.fold-stage:not(.is-flat) .poly-line.is-fold { border-top-style: solid; }
+
+/* 키보드 초점: 변의 선을 노랑 + 잉크 테두리로 굵게(종이는 clip-path라 바깥 후광이 잘린다) */
+.net-face.is-poly:focus-visible { outline: none; box-shadow: none; }
+.net-face.is-poly:focus-visible .poly-line {
+  border-top: calc(6px * var(--k, 1)) solid var(--butter);
+  box-shadow: 0 0 0 calc(2px * var(--k, 1)) var(--ink);
+}
+
+/* 겹친 면: 빗금 + ✗ 겹쳐요 (style.css의 겹친 면과 같은 무늬) */
+.net-face.is-poly.is-overlap .face-paper {
+  background-color: #fff4ec;
+  background-image: repeating-linear-gradient(45deg, rgb(178 63 20 / 50%) 0 calc(4px * var(--k, 1)), transparent calc(4px * var(--k, 1)) calc(11px * var(--k, 1)));
+}
+.net-face.is-poly.is-overlap .poly-line { border-top-color: var(--wrong); }
+
+/* 직사각형이 아닌 옆면(답한 뒤): 벽돌색 점선 + 글자 */
+.net-face.is-poly.is-bent .poly-line { border-top-color: var(--wrong); border-top-style: dashed; }
+.net-face.is-poly.is-bent .face-mark { color: var(--wrong); top: 100%; transform: none; } /* 면 이름(가~바) 아래에 — 포개지지 않게 */
+
+/* ── 비어요 자리(다각형) ── */
+.net-ghost.is-poly { border: none; background: none; }
+.net-ghost .ghost-fill { position: absolute; inset: 0; background: rgb(255 241 194 / 22%); }
+.poly-line.is-ghost { border-top: calc(4px * var(--k, 1)) dashed var(--butter); }
+
+/* ── 밑면과 옆면: 고른 면 · 틀린 면 · 맞힌 뒤의 밑면(○)·옆면(△) ── */
+.net-face.is-poly.is-picked .poly-line { border-top: calc(5px * var(--k, 1)) solid var(--primary); }
+.net-face.is-poly.is-picked .face-mark { color: var(--primary-edge); }
+.net-face.is-poly.is-missed .poly-line { border-top: calc(4px * var(--k, 1)) dashed var(--wrong); }
+.net-face.is-poly.is-missed .face-mark { color: var(--wrong); }
+.net-face.is-poly .face-mark {
+  font-size: max(calc(12px * var(--k, 1)), calc(var(--unit, 40px) * 0.26));
+  bottom: auto;
+  top: 50%;
+  transform: translateY(-50%);
+}
+/* 고른 면 ✓ · 틀린 면 ✗: 면의 이름 상자(--fi 칸)에 맞춘 동그란 표 — 입체를 작게 놓아도 읽힌다(review-prism-g1 G1-6). 변의 선 위에 올린다 */
+.net-face.is-poly .face-inner { z-index: 2; }
+.net-face.is-poly.is-picked .face-mark:not(:empty),
+.net-face.is-poly.is-missed .face-mark:not(:empty) {
+  left: 50%;
+  right: auto;
+  top: 50%;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  display: grid;
+  place-items: center;
+  width: calc(var(--unit, 40px) * var(--fi, 1) * 0.62);
+  height: calc(var(--unit, 40px) * var(--fi, 1) * 0.62);
+  border-radius: 50%;
+  border: calc(2px * var(--k, 1)) solid currentColor;
+  background: var(--paper);
+  font-family: var(--font);
+  font-weight: 900;
+  font-size: calc(var(--unit, 40px) * var(--fi, 1) * 0.42);
+  line-height: 1;
+}
+.net-face.is-poly.is-base .face-paper { background-color: var(--face-1); }
+.net-face.is-poly.is-side .face-paper { background-color: var(--face-2); }
+.net-face.is-poly.is-base .face-label,
+.net-face.is-poly.is-side .face-label { font-size: max(calc(16px * var(--k, 1)), calc(var(--unit, 40px) * 0.6)); }
+
+/* 밑면과 옆면의 작업 지시서: 고른 면 수 · [확인] */
+.parts-count { margin: 0; font-weight: 800; color: var(--ink-2); }
+.parts-count b { color: var(--ink); }
+.parts-check { width: 100%; }
+.parts-name { margin: 0; font-family: var(--font-display); font-size: 1.35rem; line-height: 1.3; }
+
+/* ── 맞닿는 선분: 보기 띠(번호) · 틀린 보기 ── */
+.edge-band.is-c {
+  background-color: var(--paper);
+  background-image: radial-gradient(circle, var(--ink) calc(1.3px * var(--k, 1)), transparent calc(1.6px * var(--k, 1)));
+  background-size: calc(7px * var(--k, 1)) calc(7px * var(--k, 1));
+  pointer-events: auto;
+  cursor: pointer;
+}
+/* 누르는 곳: 띠 위아래로 넓힌다(보이는 띠보다 두껍게) */
+.edge-band.is-c::before { content: ''; position: absolute; inset: calc(-7px * var(--k, 1)) 0; }
+.edge-band.is-x {
+  background-color: var(--wrong-bg);
+  background-image: repeating-linear-gradient(-45deg, var(--wrong) 0 calc(2px * var(--k, 1)), transparent calc(2px * var(--k, 1)) calc(7px * var(--k, 1)));
+}
+.edge-tag.is-c,
+.edge-tag.is-x { color: var(--ink); font-family: var(--font-display); font-weight: 700; }
+.edge-tag.is-c { pointer-events: auto; cursor: pointer; }
+.edge-tag.is-x { color: var(--wrong); border-color: var(--wrong); text-decoration: line-through; text-decoration-thickness: 2px; }
+.fold-stage:not(.is-flat) .edge-band.is-c,
+.fold-stage:not(.is-flat) .edge-tag.is-c { visibility: hidden; }
+.edge-opt .opt-band { display: inline-block; width: 1.4em; height: 0.55em; border: 1.5px solid var(--ink); border-radius: 2px; background-color: var(--paper); background-image: radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px); background-size: 6px 6px; }

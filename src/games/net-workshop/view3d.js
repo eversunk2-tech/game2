@@ -15,16 +15,20 @@
  * 답하기 전에는 조작판을 보이지 않는다(spec 17-16): 무대 위에 겹쳐 놓이는 조작판이 펼친 전개도의 면·빈 자리를 가리지 않게,
  * 그리고 전개도 크기가 조작판 때문에 달라지지 않게 — 그동안은 좌우 돌리기 두 개만 아래 조작 띠에 있다.
  */
+import { josa } from '../../shared/core/korean.js';
 import { icon } from '../../shared/ui/icons.js';
-import { LABELS, checkNet, foldNet, fullVertices, missingSlots, overlappingPairs } from './fold.js';
+import { LABELS, checkNet, findHinges, foldNet, fullVertices, missingSlots, overlappingPairs, pickFace } from './fold.js';
 import {
   add,
   applyDir,
+  applyPoint,
   bounds,
   centroid,
   dot,
   identity,
   multiply,
+  normalize,
+  rotationAbout,
   scale as scaleVec,
   scaling,
   sub,
@@ -52,6 +56,8 @@ import {
   mixStep,
   pinchView,
   poseOf,
+  rollBy,
+  rotationMatrix,
   sameLook,
   sceneAt,
   shadeOf,
@@ -60,6 +66,9 @@ import {
   tiltWord,
   tiltZone,
   turnBy,
+  screenDirection,
+  turnVector,
+  uprightAngleOnScreen,
   uprightTurn,
   viewDir,
   viewLimits,
@@ -117,7 +126,7 @@ const ease = (p) => (p < 0.5 ? 2 * p * p : 1 - ((-2 * p + 2) ** 2) / 2);
 
 // 기본 시점(TILT, SPIN)에서 잘 보이는 면의 법선: 위 > 앞 > 왼쪽
 const SEEN_NORMALS = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]];
-const seenScore = (normal) => {
+const seenScoreOf = (normal) => {
   const i = SEEN_NORMALS.findIndex((v) => dot(v, normal) > 0.99);
   return i < 0 ? 0 : SEEN_NORMALS.length - i;
 };
@@ -175,19 +184,40 @@ const isTopOrBottom = (normal) => Math.abs(normal[2]) > 0.99;
  *   마주 보는 면 단계는 [★ 면, 정답 면] — 마주 보는 두 면은 한 시점에서 함께 보일 수 없으므로 ★ 면은 [↺][↻]로 돌려 본다.
  *   면 붙이기에서 맞힌 경우는 [붙인 면].
  */
+/** 접은 각기둥이 처음 시점(turn만큼 더 돌린)에서 보이는 정도: 보는 쪽을 향한 면의 넓이 × 향한 정도의 합 ÷ 겉넓이 (0~1) */
+function spread(folded, turn) {
+  let seen = 0;
+  let total = 0;
+  for (const f of folded.faces) {
+    const [a, ...rest] = f.points;
+    let area = 0;
+    for (let i = 0; i + 1 < rest.length; i += 1) {
+      const u = sub(rest[i], a);
+      const w = sub(rest[i + 1], a);
+      area += Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2;
+    }
+    total += area;
+    seen += area * Math.max(0, viewDirection(turnNormal(f.normal, turn), 0)[2]);
+  }
+  return total > 0 ? seen / total : 0;
+}
+
 export function displayNet(net, { focus = [], show = [] } = {}) {
   // 돌려주는 값: { net(바닥 면을 고른 전개도), turn(더 돌릴 각도), tilt(다 접었을 때 기울기) }
   const blocked = fullVertices(net);
   if (blocked.length > 0) return displayBlocked(net, blocked);
   let best = null;
   const roots = [net.root, ...net.faces.map((f) => f.id).filter((id) => id !== net.root)];
+  // 각기둥(면의 방향이 축과 나란하지 않다): 보이는 정도를 처음 시점에서 면이 보는 쪽을 향한 만큼으로 재고, 15° 단위로 돌려 본다
+  const prism = net.kind === 'prism';
+  const seenScore = prism ? (normal) => 3 * Math.max(0, viewDirection(normal, 0)[2]) : seenScoreOf;
   for (const root of roots) {
     const candidate = root === net.root ? net : { ...net, root };
     const folded = foldNet(candidate, 1);
     const normalOf = (id) => folded.faces.find((f) => f.id === id).normal;
     const pairs = overlappingPairs(folded);
     const missing = missingSlots(candidate, folded);
-    for (const turn of TURNS) {
+    for (const turn of prism ? FINE_TURNS : TURNS) {
       let s = 0;
       for (const [a] of pairs) s += 10 * seenScore(turnNormal(normalOf(a), turn));
       for (const slot of missing) s += isBottom(slot.normal) ? -100 : seenScore(turnNormal(slot.normal, turn));
@@ -195,6 +225,8 @@ export function displayNet(net, { focus = [], show = [] } = {}) {
       if (focus.length > 0) s += seenScore(turnNormal(normalOf(focus[focus.length - 1]), turn));
       // show: 처음 시점에서 함께 보여야 할 면들(만나는 두 선분이 놓인 면, 길이가 다른 두 변이 놓인 면)
       for (const id of show) s += 4 * seenScore(turnNormal(normalOf(id), turn));
+      // 각기둥: 보여 줄 것이 같으면 입체가 넓게 보이는 쪽(보는 쪽을 향한 면의 넓이) · 밑면이 위에 놓인 쪽(선 각기둥)으로 — 얇은 판처럼 보이지 않게
+      if (prism) s += 0.5 * spread(folded, turn) + (candidate.faces.find((f) => f.id === root).role === 'base' ? 0.3 : 0);
       if (!best || s > best.score) best = { net: candidate, turn, score: s };
     }
   }
@@ -211,8 +243,10 @@ export function displayNet(net, { focus = [], show = [] } = {}) {
  * @param {boolean} [p.still]          그림으로만 쓰는 무대(처음 화면): 초점·키보드·화면 읽기에서 빠진다
  * @param {object} [p.skin]            면의 겉모습을 바꿀 때(주사위 주문의 눈 카드): { name(label) 화면 읽기 이름, mark(h, label) 면 안의 그림,
  *   color(label) 면 색 }. 없으면 지금처럼 "가 면" · 글자 · 색종이 색
+ * @param {(faceId: string) => void} [p.onPick] 입체 상태의 면을 눌러 고르는 단계(각기둥의 밑면 고르기): 무대를 누르면 브라우저의 누르기 판정 대신
+ *   직접 계산한 맨 앞 면(fold.js pickFace — 거의 옆으로 선 면은 누를 수 없다)을 알린다. 8px 넘게 끌면 돌리기(누르기가 아니다). 키보드(Enter)는 초점 받은 면
  */
-export function createNetView({ h, interactive = false, onFaceClick = null, sfx = null, still = false, skin = null }) {
+export function createNetView({ h, interactive = false, onFaceClick = null, onPick = null, sfx = null, still = false, skin = null }) {
   const scene = h('div', { class: 'net-scene' });
   const badge = h('p', { class: 'stage-badge', hidden: true });
   const el = h('div', {
@@ -276,6 +310,12 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   const sayListeners = new Set();
   let viewKey = '';
   let destroyed = false;
+  // 각기둥 차시: 접은 입체를 놓는 자세(눕히기 · 세로축 둘레 돌림 — [{ axis, angle }] 차례로), 접는 정도에 맞춰 줄여 다 편 전개도는 늘 처음 모습
+  let model = [];
+  let lastScene = null; // 마지막으로 그린 장면 { folded, center, pose, px } — 면 누르기(pickAt)가 같은 계산을 쓴다
+  // 접은 입체의 처음 크기를 자동 맞춤의 몇 배로 할지(각기둥의 밑면 고르기 1.5 — 사용자 결정 15-20 G1-3). 감싸는 공의 지름이 무대 짧은 쪽의 약 79%라
+  // 어느 쪽으로 돌려도 무대 안이다. 펼친 전개도(접는 정도 0)의 크기는 그대로(자동 맞춤은 접는 정도에 비례)
+  let grow = 1;
 
   const later = (fn, ms) => {
     const id = setTimeout(() => {
@@ -329,7 +369,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     unit = layout ? layout.unit : Math.max(cube ? MIN_UNIT : MIN_UNIT_CM, Math.min(MAX_UNIT, size));
     if (blocked.length > 0) zoom = 1;
     else if (cube) zoom = Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
-    else zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(width, height) / (SPAN_PER_DIAGONAL * solidDiagonal * unit)));
+    else zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM * grow, (grow * Math.min(width, height)) / (SPAN_PER_DIAGONAL * solidDiagonal * unit)));
     applyRaster();
   }
 
@@ -367,9 +407,26 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     );
   }
 
+  /** 접는 정도 tt의 모습: 입체를 놓는 자세(model)가 있으면 그만큼 돌린다(tt에 비례 — 다 편 전개도는 돌리지 않는다) */
+  function foldedAt(tt) {
+    const folded = foldNet(net, tt, { tOf });
+    if (model.length === 0) return folded;
+    const M = model.reduce((m, r) => multiply(rotationAbout([0, 0, 0], r.axis, r.angle * tt), m), identity());
+    return {
+      ...folded,
+      faces: folded.faces.map((f) => ({
+        ...f,
+        matrix: multiply(M, f.matrix),
+        points: f.points.map((p) => applyPoint(M, p)),
+        normal: normalize(applyDir(M, f.normal)),
+        center: applyPoint(M, f.center),
+      })),
+    };
+  }
+
   function render() {
     if (!net || destroyed) return;
-    const folded = foldNet(net, t, { tOf });
+    const folded = foldedAt(t);
     const pts = folded.faces.flatMap((f) => f.points);
     if (t <= 1e-6) {
       for (const s of slots) {
@@ -404,7 +461,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       const back = isBack(f.normal, f.center, center, look);
       faceEl.classList.toggle('is-back', back);
       if (marksShown) faceEl.style.setProperty('--mark-turn', `${uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose)}deg`);
-      if (net.kind !== 'cube') settleInner(faceEl, f, back, pose);
+      if (net.kind !== 'cube' && net.kind !== 'prism') settleInner(faceEl, f, back, pose);
     }
     for (const s of slots) {
       const slotEl = slotEls.get(s.key);
@@ -422,8 +479,24 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       if (!f) continue;
       const turned = uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose);
       if (turned !== tag.turn) placeTag(tag, turned);
+      // 각기둥: 이름표("5 cm")는 90° 단위가 아니라 끊김 없이 돌려 글줄을 늘 화면 가로로 — 돌려 본 자세에서도 눕지 않는다(자리는 위의 90° 단위 그대로)
+      if (net.kind === 'prism') {
+        // 원근까지 넣은 그 이름표 자리에서의 비침으로(화면 가장자리의 면은 돌림만으로 본 방향과 다르다 — 뒤집힌 면의 판정 is-back도 원근으로 한다)
+        const src = net.faces.find((x) => x.id === tag.face);
+        const { min: low } = bounds(src.poly);
+        const at = tag.rect ? applyPoint(f.matrix, [low[0] + (tag.rect[0] + tag.rect[2]) / 2, low[1] + (tag.rect[1] + tag.rect[3]) / 2, 0]) : f.center;
+        const mid = scaleVec(sub(at, center), unit * scale);
+        const eye = eyeOf(boxSize.height);
+        const exact = uprightAngleOnScreen(
+          screenDirection(applyDir(f.matrix, [1, 0, 0]), mid, pose, eye),
+          screenDirection(applyDir(f.matrix, [0, 1, 0]), mid, pose, eye),
+          faceEls.get(f.id)?.classList.contains('is-back'),
+        );
+        tag.el.style.setProperty('--tag-turn', `${(exact ?? turned).toFixed(2)}deg`);
+      }
     }
     el.classList.toggle('is-flat', t <= 1e-6);
+    lastScene = { folded, center, pose, px: look.px };
     for (const m of markEls) m.place(center, folded, look);
     // 애니메이션 중에는 animateTo가 상태를 정한다
     if (!raf && timers.size === 0) el.dataset.fold = foldState();
@@ -488,6 +561,11 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
 
   function ghostMark(slot) {
     const markEl = h('div', { class: 'net-ghost', 'aria-hidden': 'true' }, h('span', null, '비어요'));
+    // 다각형 자리(각기둥의 밑면): 자리 모양대로 칠하고 변마다 점선 — 감싸는 직사각형이 아니라
+    if (slot.clip) {
+      markEl.classList.add('is-poly');
+      markEl.prepend(h('i', { class: 'ghost-fill', style: { clipPath: clipOf(slot.clip) } }), ...polyLines(slot.clip, slot.clip.map(() => 'ghost')));
+    }
     const { u, v, normal, center: c } = slot;
     const [gw, gh] = slot.size ?? [1, 1]; // 자리의 크기(정육면체는 한 칸)
     const origin = sub(sub(c, scaleVec(u, gw / 2)), scaleVec(v, gh / 2));
@@ -520,7 +598,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     el.classList.add('marks-on');
     // 2×2 덩어리 장면: 면 글자가 비스듬하거나 거꾸로 보이지 않게 모든 면의 글자를 보는 쪽으로 바로 세운다 (재검토 2 R3)
     el.classList.toggle('marks-blocked', blocked.length > 0);
-    const folded = foldNet(net, 1, { tOf });
+    const folded = foldedAt(1);
     const pairs = overlappingPairs(folded);
     const missing = blocked.length > 0 ? [] : missingSlots(net, folded);
     for (const id of new Set(pairs.flat())) {
@@ -539,7 +617,9 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     badge.classList.toggle('is-wrong', !shownOk);
     const solid = SOLID_NAMES[net.kind] ?? SOLID_NAMES.cube;
     const stuck = blocked.every((v) => v.faces.length >= 4) ? '네 면이 한 점에 모여 접을 수 없어요' : '면이 한 점을 둘러싸 접을 수 없어요';
-    const text = ok ? (verdict?.text ?? `${solid}가 됐어요`) : blocked.length > 0 ? stuck : `${solid}가 안 돼요`;
+    // 각기둥: 되는 전개도는 그 이름("오각기둥이 됐어요"), 안 되는 전개도는 "각기둥이 안 돼요"
+    const made = net.kind === 'prism' ? `${josa(net.name ?? '각기둥', '이/가')} 됐어요` : `${solid}가 됐어요`;
+    const text = ok ? (verdict?.text ?? made) : blocked.length > 0 ? stuck : net.kind === 'prism' ? '각기둥이 안 돼요' : `${solid}가 안 돼요`;
     badge.replaceChildren(h('span', { class: 'badge-main' }, icon(shownOk ? 'check' : 'cross'), text));
     // 빈 자리가 겹친 자리의 정반대라 지금 보기(내가 돌리고 기울인 것까지)에서 안 보이면 돌려 보라고 알려 준다
     unseenSlots = hintDone ? [] : missing.filter(slotHidden);
@@ -576,6 +656,50 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   }
 
   // ── 면 만들기 ─────────────────────────
+  const clipOf = (points) => `polygon(${points.map(([x, y]) => `calc(var(--unit) * ${x.toFixed(4)}) calc(var(--unit) * ${y.toFixed(4)})`).join(', ')})`;
+  /** 다각형의 변마다 선(.poly-line): 변 위에 가운데를 맞춘 얇은 띠. kinds[i]: 'cut'(자른 곳 — 실선) · 'fold'(접는 곳 — 점선) · 'ghost' · null(선 없음) */
+  function polyLines(points, kinds = []) {
+    return points.map((p, i) => {
+      if (kinds[i] === null) return null;
+      const q = points[(i + 1) % points.length];
+      const line = h('i', { class: `poly-line${kinds[i] ? ` is-${kinds[i]}` : ''}`, 'aria-hidden': 'true' });
+      line.style.left = `calc(var(--unit) * ${p[0].toFixed(4)})`;
+      line.style.top = `calc(var(--unit) * ${p[1].toFixed(4)})`;
+      line.style.width = `calc(var(--unit) * ${Math.hypot(q[0] - p[0], q[1] - p[1]).toFixed(4)})`;
+      line.style.transform = `rotate(${Math.atan2(q[1] - p[1], q[0] - p[0]).toFixed(5)}rad) translateY(-50%)`;
+      return line;
+    }).filter(Boolean);
+  }
+  let foldEdges = new Map(); // 각기둥: 면 id → 접는 선인 변 번호들(경첩을 이룬 두 변 가운데 한 면에만 점선을 그린다 — 겹친 두 점선이 어긋나 보이지 않게)
+
+  /**
+   * 각기둥의 면(.is-poly): 버튼은 투명한 틀이고, 다각형 종이(.face-paper — clip-path, 누르기 판정도 이 모양)와 변의 선(.poly-line)을 안에 둔다.
+   * 버튼에 clip-path를 주면 그 안의 띠 이름표·초점 표시까지 잘리므로 종이에만 준다. 이름(.face-inner)은 다각형의 가운데(무게중심)에
+   */
+  function buildPolyFace(faceEl, f, min) {
+    const pts = f.poly.map(([x, y]) => [x - min[0], y - min[1]]);
+    faceEl.classList.add('is-poly');
+    const folds = foldEdges.get(f.id) ?? new Set();
+    const hinged = hingedEdges.get(f.id) ?? new Set();
+    const kinds = pts.map((_, i) => (folds.has(i) ? 'fold' : hinged.has(i) ? null : 'cut'));
+    faceEl.prepend(h('span', { class: 'face-paper', 'aria-hidden': 'true', style: { clipPath: clipOf(pts) } }), ...polyLines(pts, kinds));
+    const [cx, cy] = centroid(pts);
+    // 이름 상자: 가운데에서 가장 가까운 변까지의 거리로 — 좁은 삼각형에서도 상자가 면 안에 든다
+    const room = Math.min(...pts.map((p, i) => {
+      const q = pts[(i + 1) % pts.length];
+      const len = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+      return Math.abs((q[0] - p[0]) * (cy - p[1]) - (q[1] - p[1]) * (cx - p[0])) / len;
+    }));
+    const side = Math.max(0.6, 1.6 * room);
+    const inner = faceEl.querySelector('.face-inner');
+    inner.style.left = `calc(var(--unit) * ${(cx - side / 2).toFixed(4)})`;
+    inner.style.top = `calc(var(--unit) * ${(cy - side / 2).toFixed(4)})`;
+    inner.style.width = `calc(var(--unit) * ${side.toFixed(4)})`;
+    inner.style.height = `calc(var(--unit) * ${side.toFixed(4)})`;
+    faceEl.style.setProperty('--fi', side.toFixed(4)); // 이름 상자의 한 변(칸) — 고른 면의 ✓·✗ 크기를 면 크기에 맞춘다(prism.css)
+  }
+  let hingedEdges = new Map(); // 각기둥: 면 id → 경첩을 이룬 변 번호들(그 가운데 점선을 그리지 않는 쪽은 선 없이 — 이웃 면이 그린다)
+
   function buildFace(f) {
     const { min, max } = bounds(f.poly);
     const faceEl = h('button', {
@@ -593,6 +717,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       ),
     );
     faceEl.style.setProperty('--face-color', skin?.color ? skin.color(f.label) : faceColor(f.label));
+    if (net.kind === 'prism') {
+      buildPolyFace(faceEl, f, min);
+      return faceEl;
+    }
     if (net.kind !== 'cube') {
       faceEl.classList.add('is-rect'); // 직사각형 면: 이름 자리(--lx · --ly)와 안쪽 상자(.is-quarter)를 view3d.js가 맞춘다 (cuboid.css)
       // 면의 가로·세로(칸): 글자를 바로 세우느라 면 안쪽을 90° 돌릴 때 안쪽 상자의 가로·세로를 바꾸는 데 쓴다(.is-quarter)
@@ -720,7 +848,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
 
   /**
    * 면의 변에 띠 무늬와 이름표를 붙인다(만나는 선분 · 길이가 다른 두 변). 새 전개도가 놓일 때까지 남는다.
-   * marks: [{ face(면 id), edge(몇 번째 변), tone('q' 물음 · 'a' · 'b' 같은 무늬끼리 짝), text(이름표 글자, 없어도 됨) }]
+   * marks: [{ face(면 id), edge(몇 번째 변), tone('q' 물음 · 'a' · 'b' 같은 무늬끼리 짝), text(이름표 글자, 없어도 됨), key(띠의 data-mark, 없어도 됨) }]
    * 띠는 변을 따라 면 안쪽에 놓이고(면과 함께 접힌다), 이름표는 그 변 안쪽에서 화면 기준으로 바로 선다(render → placeTag).
    * 길이 이름표(lengths)가 있는 면: 이름표가 붙은 변과 같은 쪽 길이 글자(위·아래 변이면 가로, 왼쪽·오른쪽 변이면 세로)는 숨긴다 —
    *   띠 이름표가 그 길이를 말하고, 두 글자가 포개지지 않는다 (.has-tag-w · .has-tag-h, cuboid.css)
@@ -748,6 +876,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       const len = Math.hypot(q[0] - p[0], q[1] - p[1]);
       const angle = Math.atan2(q[1] - p[1], q[0] - p[0]);
       const band = h('span', { class: `edge-band is-${mark.tone ?? 'a'}`, 'aria-hidden': 'true' });
+      if (mark.key != null) band.dataset.mark = String(mark.key); // 띠를 눌러 고르는 단계(각기둥의 맞닿는 선분): 어느 보기의 띠인지
       band.style.left = `calc(var(--unit) * ${p[0] - min[0]})`;
       band.style.top = `calc(var(--unit) * ${p[1] - min[1]})`;
       band.style.width = `calc(var(--unit) * ${len})`;
@@ -755,6 +884,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       faceEl.append(band);
       if (!mark.text) continue;
       const tag = h('span', { class: `edge-tag is-${mark.tone ?? 'a'}`, 'aria-hidden': 'true' }, h('span', null, mark.text));
+      if (mark.key != null) tag.dataset.mark = String(mark.key);
       faceEl.append(tag);
       const wide = Math.abs(Math.cos(angle)) > 0.7; // 위·아래 변
       faceEl.classList.add(wide ? 'has-tag-w' : 'has-tag-h');
@@ -779,7 +909,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
         face: mark.face,
         angle,
         len,
-        deep: wide ? size[1] : size[0], // 그 변에서 맞은편 변까지(면의 깊이)
+        // 그 변에서 맞은편 변까지(면의 깊이). 각기둥의 다각형 면은 그 변에서 가장 먼 꼭짓점까지
+        deep: net.kind === 'prism' ? Math.max(...face.poly.map(([x, y]) => Math.abs(-(q[1] - p[1]) * (x - p[0]) + (q[0] - p[0]) * (y - p[1])) / (len || 1))) : wide ? size[1] : size[0],
         mid: [(p[0] + q[0]) / 2 - min[0], (p[1] + q[1]) / 2 - min[1]], // 변 가운데
         along: [Math.cos(angle), Math.sin(angle)],
         inward: [-Math.sin(angle), Math.cos(angle)],
@@ -802,18 +933,39 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
    *   slots의 rect: { x, y, w, h } 빈 자리가 칸 하나가 아닐 때 · show: 처음 시점에서 함께 보여야 할 면 id
    *   fitBox: [가로, 세로] 전개도가 작아도 이 크기에 맞춰 그린다(문항마다 1 cm의 화면 크기가 같게 — 크기로 답이 드러나지 않게)
    *   pad: 무대 가장자리에 비워 둘 px(양쪽 합) · lengths: 면마다 가로·세로 길이(cm) 이름표 · names: 꼭짓점 이름 [{ name, point, out }]
+   *   grow: 다 접은 입체의 처음 크기를 자동 맞춤의 몇 배로(기본 1 — 각기둥의 밑면 고르기 1.5)
    */
   function setNet(nextNet, {
     slots: nextSlots = [], focus = [], show = [], layout: nextLayout = null, fitBox: nextFit = null, pad: nextPad = 0, lengths = false, names = [],
+    model: nextModel = [], view: fixedView = null, grow: nextGrow = 1,
   } = {}) {
+    grow = Number(nextGrow) > 0 ? Number(nextGrow) : 1;
     stopAnimation();
+    cancelAnimationFrame(showRaf);
+    showRaf = 0;
     clearMarks();
     marksKey = '';
     layout = nextLayout && nextLayout.unit > 0 && Array.isArray(nextLayout.origin) ? { unit: nextLayout.unit, origin: [...nextLayout.origin] } : null;
     fitBox = Array.isArray(nextFit) ? [...nextFit] : null;
     pad = Math.max(0, Number(nextPad) || 0);
     showLengths = Boolean(lengths);
-    ({ net, turn: baseTurn, tilt: baseTilt } = displayNet(nextNet, { focus, show }));
+    // view: 처음 보기를 정해 줄 때({ turn, tilt } — 각기둥의 밑면 고르기: 입체의 자세는 model이 정한다). 없으면 지금처럼 displayNet이 고른다
+    model = Array.isArray(nextModel) ? nextModel.map((r) => ({ axis: [...r.axis], angle: r.angle })) : [];
+    ({ net, turn: baseTurn, tilt: baseTilt } = fixedView
+      ? { net: nextNet, turn: fixedView.turn ?? 0, tilt: fixedView.tilt ?? TILT }
+      : displayNet(nextNet, { focus, show }));
+    lastScene = null;
+    // 각기둥: 경첩(접는 곳)마다 한 면에만 점선, 다른 면은 그 변에 선을 그리지 않는다. 나머지 변은 자른 곳(실선) — spec-grade6 1-1절 정리
+    foldEdges = new Map();
+    hingedEdges = new Map();
+    if (net.kind === 'prism') {
+      const put = (map, id, i) => map.set(id, (map.get(id) ?? new Set()).add(i));
+      for (const hg of findHinges(net)) {
+        const [first, second] = hg.a < hg.b ? [[hg.a, hg.ea], [hg.b, hg.eb]] : [[hg.b, hg.eb], [hg.a, hg.ea]];
+        put(foldEdges, ...first);
+        put(hingedEdges, ...second);
+      }
+    }
     slots = nextSlots;
     revealed = false;
     verdict = null;
@@ -833,7 +985,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     scene.replaceChildren(...faceEls.values(), ...slotEls.values(), ...nameEls.map((n) => n.el));
     if (net.kind !== 'cube') {
       // 자동 맞춤에 쓰는 크기: 다 접은 모습을 감싸는 상자의 대각선
-      const { min, max } = bounds(foldNet(net, 1, { tOf }).faces.flatMap((f) => f.points));
+      const { min, max } = bounds(foldedAt(1).faces.flatMap((f) => f.points));
       solidDiagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]);
     }
     el.dataset.fold = 'flat';
@@ -1018,6 +1170,51 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     return true;
   }
 
+  /**
+   * 그 면들이 보이게 입체를 돌린다(각기둥의 밑면 고르기에서 틀린 두 면 — 4절 "고른 두 면이 서로 평행하지 않음을 입체에서 보여 줌").
+   * 두 면의 바깥 법선의 가운데 방향이 보는 사람 쪽(조금 위)을 향하게 화면 기준으로 한 번 돌린다. 두 면이 서로 반대를 보면(평행) 덜 보이는 쪽을.
+   * 0.35초 동안 잇는다(움직임 줄이기·?fx=low면 바로). 보기 조작이 되는 때(접힌 입체)만
+   */
+  let showRaf = 0;
+  function showFaces(ids) {
+    if (!canView() || !lastScene) return false;
+    const normals = lastScene.folded.faces.filter((f) => ids.includes(f.id)).map((f) => normalize(turnVector(lastScene.pose, f.normal)));
+    if (normals.length === 0) return false;
+    let aim = normals.reduce((sum, n) => add(sum, n), [0, 0, 0]);
+    if (Math.hypot(...aim) < 0.3) aim = normals.reduce((a, b) => (b[2] < a[2] ? b : a));
+    aim = normalize(aim);
+    const target = normalize([0, -0.35, 1]); // 보는 사람 쪽, 조금 위에서 내려다보게
+    const angle = (Math.acos(Math.max(-1, Math.min(1, dot(aim, target)))) * 180) / Math.PI;
+    if (angle < 3) return true;
+    let axis = [aim[1] * target[2] - aim[2] * target[1], aim[2] * target[0] - aim[0] * target[2], aim[0] * target[1] - aim[1] * target[0]];
+    if (Math.hypot(...axis) < 1e-9) axis = [1, 0, 0];
+    // 돌림 방향: 그 축 둘레로 돌린 가운데 방향이 목표에 닿는 쪽
+    const turned = turnVector(rotationMatrix(axis, angle), aim);
+    const sign = dot(turned, target) > 0.999 ? 1 : -1;
+    const start = { roll: [...view.roll], zoom: view.zoom };
+    const end = rollBy(view, axis, sign * angle);
+    cancelAnimationFrame(showRaf);
+    if (instantMix()) {
+      view = end;
+      render();
+      settle();
+      return true;
+    }
+    const t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / 350);
+      view = { ...view, roll: lookToward(start, { roll: end.roll, zoom: view.zoom }, ease(p)).roll };
+      render();
+      if (p < 1 && !destroyed) showRaf = requestAnimationFrame(step);
+      else {
+        showRaf = 0;
+        settle();
+      }
+    };
+    showRaf = requestAnimationFrame(step);
+    return true;
+  }
+
   /** 가로 돌림·기울기·배율을 한 번에 처음으로 */
   function resetView() {
     if (!canView()) return false;
@@ -1087,6 +1284,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       swallowClick = false;
     }
     if (!canView() || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (showRaf) {
+      cancelAnimationFrame(showRaf); // 돌려 보여 주는 중에 학생이 끌기 시작하면 그 자리에서 멈춘다
+      showRaf = 0;
+    }
     if (event.isPrimary && gesture) endGesture(); // 뗀 것을 못 받은 포인터가 남아 있으면 버린다
     if (pointers.size >= 2) return; // 셋째 손가락은 쓰지 않는다
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1171,6 +1372,47 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     }, 300);
   }
 
+  /**
+   * 화면의 점(clientX, clientY)에서 맨 앞에 보이는 면 id (없으면 null). 마지막으로 그린 장면을 무대와 같은 계산(자세 · 배율 · 원근)으로 화면 좌표에 놓고
+   * fold.js pickFace로 고른다 — 브라우저의 누르기 판정은 거의 옆으로 선 3D 면에서 어긋날 수 있다(spec-grade6 6-1절)
+   */
+  function pickAt(clientX, clientY) {
+    if (!net || !lastScene) return null;
+    const box = el.getBoundingClientRect();
+    const point = [clientX - (box.left + box.width / 2), clientY - (box.top + box.height / 2)];
+    const { folded, center, pose, px } = lastScene;
+    const faces = folded.faces.map((f) => ({ id: f.id, points: f.points.map((p) => turnVector(pose, scaleVec(sub(p, center), px))) }));
+    return pickFace(faces, point, { eye: eyeOf(box.height) });
+  }
+
+  /**
+   * 면 고르기 단계(onPick): 누른 순간(pointerdown)의 자리를 적어 둔다. 손가락으로 누르면 크롬이 click의 좌표를 "누를 수 있는 가까운 요소" 쪽으로
+   * 옮기므로(touch adjustment — 3D로 돌린 다각형 면은 둘레 직사각형으로 후보가 된다) click의 좌표로 면을 계산하면 이웃 면이 골라질 수 있다(review-prism-g1 G1-1)
+   */
+  let pickDown = null;
+  function onPickDown(event) {
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    pickDown = { x: event.clientX, y: event.clientY };
+  }
+
+  /**
+   * 면 고르기 단계(onPick): 무대를 누르면 그 누르기를 시작한 점(pointerdown)에서 계산한 맨 앞 면을 알린다. 8px 넘게 끌면 돌리기라
+   * 뒤따르는 click은 onClickCapture가 먼저 삼킨다. 키보드(Enter·Space — detail 0)는 초점 받은 면
+   */
+  function onPickClick(event) {
+    if (!onPick || event.defaultPrevented) {
+      pickDown = null;
+      return;
+    }
+    const faceEl = event.target instanceof Element ? event.target.closest('.net-face') : null;
+    const at = pickDown ?? { x: event.clientX, y: event.clientY };
+    pickDown = null;
+    const id = event.detail === 0 ? faceEl?.dataset.face ?? null : pickAt(at.x, at.y);
+    event.preventDefault();
+    event.stopPropagation();
+    if (id != null) onPick(id);
+  }
+
   /** 사파리의 두 손가락 벌리기(화면 전체 확대)를 접은 입체 위에서는 막는다 */
   function onGestureStart(event) {
     if (canView()) event.preventDefault();
@@ -1195,6 +1437,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
   if (!still) {
     el.addEventListener('pointerdown', onPointerDown);
     el.addEventListener('click', onClickCapture, true);
+    if (onPick) {
+      el.addEventListener('pointerdown', onPickDown, true);
+      el.addEventListener('click', onPickClick, true);
+    }
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('gesturestart', onGestureStart);
   }
@@ -1261,6 +1507,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
     },
     faceEl: (id) => faceEls.get(id),
     slotEl: (key) => slotEls.get(key),
+    pickAt,
+    showFaces,
     setEdgeMarks,
     /** 지금 1칸(1 cm)의 화면 크기(px) */
     unit: () => unit,
@@ -1277,6 +1525,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       destroyed = true;
       stopAnimation();
       stopMix();
+      cancelAnimationFrame(showRaf);
       resizer?.disconnect();
       endGesture();
       clearTimeout(swallowTimer);
@@ -1284,6 +1533,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, sfx 
       el.removeEventListener('keydown', onKey);
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('click', onClickCapture, true);
+      el.removeEventListener('click', onPickClick, true);
+      el.removeEventListener('pointerdown', onPickDown, true);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('gesturestart', onGestureStart);
       listeners.clear();
@@ -1425,12 +1676,15 @@ export function createFoldTools({ ctx, view }) {
     el,
     pad,
     turnRight,
-    /** 접기(버튼·막대)와 보기 조작(끌기·위아래·크게 작게)을 함께 잠그고 푼다. 답이 기록된 뒤에만 푼다 */
-    lock(value) {
+    /**
+     * 접기(버튼·막대)와 보기 조작(끌기·위아래·크게 작게)을 함께 잠그고 푼다. 답이 기록된 뒤에만 푼다.
+     * view: 보기 조작만 따로 정할 때(각기둥의 밑면 고르기 — 답하기 전에도 입체를 돌려 본다, spec-grade6 5절). 주지 않으면 접기와 같이
+     */
+    lock(value, { view: allowView = !value } = {}) {
       foldButton.disabled = value;
       slider.disabled = value;
-      setLocked(value);
-      view.setViewEnabled(!value);
+      setLocked(!allowView);
+      view.setViewEnabled(allowView);
     },
     reset() {
       sync(0);
@@ -1449,7 +1703,7 @@ export function createFoldTools({ ctx, view }) {
  * 작업 지시서: 주문 도장 + 문제 번호, 물음, 답 칸(단계가 채움), 까닭 쪽지, 보너스 쪽지, 다음 버튼.
  * 답하기 전에는 접기 막대와 보기 조작(끌기·위아래·크게 작게)이 잠긴다. hint면 틀린 뒤 [반만 접어 보기]가 열린다.
  */
-export function createWorkbench({ ctx, view, total, hint = false }) {
+export function createWorkbench({ ctx, view, total, hint = false, lockText = '답한 뒤에 접어 볼 수 있어요.' }) {
   const { h } = ctx;
   const tools = createFoldTools({ ctx, view });
   const order = ctx.ui.order({ kind: ctx.stage.order ?? '', label: '문제 판' });
@@ -1460,7 +1714,7 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
   const halfButton = hint
     ? h('button', { type: 'button', class: 'btn btn-small hint-btn', hidden: true, onclick: () => useHint() }, icon('bulb'), '반만 접어 보기')
     : null;
-  const lockNote = h('p', { class: 'fold-note' }, icon('lock'), '답한 뒤에 접어 볼 수 있어요.');
+  const lockNote = h('p', { class: 'fold-note' }, icon('lock'), lockText);
   const reasonSlot = h('div', { class: 'reason-slot' });
   const bonusSlot = h('div', { class: 'bonus-slot' });
   const nextLabel = h('span', null, '');
@@ -1494,9 +1748,9 @@ export function createWorkbench({ ctx, view, total, hint = false }) {
     view.peek(0.5);
   }
 
-  function lockFold(value) {
+  function lockFold(value, options) {
     locked = value;
-    tools.lock(locked);
+    tools.lock(locked, options);
     updateNote();
   }
 
