@@ -540,21 +540,34 @@ export function playFreeBuild(stage, ctx) {
   view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.compact ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
   controls.lock(false);
   showCount();
-  // 창 크기가 바뀌면 무대가 먼저 크기를 다시 잰 뒤(block-view의 ResizeObserver) 비킬 거리를 다시 잰다
+  // 무대 크기가 바뀌면(창 크기·화면 방향) 펼치는 칸의 자리·칸 크기·비킬 거리·알림 자리를 다시 잰다 — 무대가 제 크기를 다시 잰 뒤에(F1b-1).
+  // 같은 무대를 지켜보는 ResizeObserver는 만든 차례대로 알림을 받으므로, block-view의 것(먼저 만듦)이 view.getSize()를 새 값으로 바꾼 뒤 이것이 돈다.
+  // (창 크기 이벤트 뒤의 requestAnimationFrame은 ResizeObserver보다 먼저 돌아 옛 무대 크기로 배치했다.) 지켜보기를 시작할 때 한 번 불려 처음 배치도 한다
+  const relayout = () => {
+    layoutSlot();
+    placeBoard();
+    placeToast();
+  };
+  const stageWatch = typeof ResizeObserver === 'function' ? new ResizeObserver(relayout) : null;
+  stageWatch?.observe(view.el);
+  // ResizeObserver가 없는 브라우저: 창 크기 이벤트 뒤 두 프레임(무대가 먼저 다시 재게)
   let resizeRaf = 0;
   const onResize = () => {
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
-      resizeRaf = 0;
-      layoutSlot();
-      placeBoard();
-      placeToast();
+      resizeRaf = requestAnimationFrame(() => {
+        resizeRaf = 0;
+        relayout();
+      });
     });
   };
-  globalThis.addEventListener('resize', onResize);
-  onResize(); // 처음 그린 뒤 매트 모양·알림 자리를 잰다
+  if (!stageWatch) {
+    globalThis.addEventListener('resize', onResize);
+    onResize();
+  }
 
   return () => {
+    stageWatch?.disconnect();
     globalThis.removeEventListener('resize', onResize);
     cancelAnimationFrame(resizeRaf);
     cancelAnimationFrame(panRaf);
