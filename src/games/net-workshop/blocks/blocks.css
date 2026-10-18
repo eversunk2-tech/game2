@@ -527,4 +527,9 @@
   .blk-s3 .blk-view-fig { padding: 4px 4px 3px; }
   .blk-s3 .blk-view-fig .blk-grid-pic.is-top { width: 70px; }
   .blk-s3 .blk-given.is-done { display: none; }
+  /* 매트가 좁다(606px 안팎): [되돌리기]·[모두 치우기]는 그림만(1001~1180px와 같다) — 도구 띠가 매트 밖으로 나가 매트가 옆으로 밀리지 않게 */
+  .blk-s3 .blk-tools .blk-undo, .blk-s3 .blk-tools .blk-clear { min-width: var(--tap); padding: 6px 12px; }
+  .blk-s3 .blk-tools .blk-undo span, .blk-s3 .blk-tools .blk-clear span { display: none; }
 }
+/* 고르기 전에는 보기 그림을 크게(그림 틀이 판 3×3×3 전체라 모양은 그 가운데 일부다) */
+.blk-options.blk-pictures.blk-add-options:not(.is-answered) .blk-picture { width: 112px; }
