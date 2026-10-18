@@ -2170,7 +2170,7 @@ test('보상: 자유 배치를 마친 뒤 새로 고쳐도 칭호 점수·도감
   // 예상하기를 없애며 조건을 바꾼 두 도장(spec 16-12): 도장판의 "받는 방법"이 새 조건이다
   await expect(page.locator('.badge-item[data-badge="overlap-detective"]')).toContainText('안 되는 까닭을 5번 맞혀요');
   await expect(page.locator('.badge-item[data-badge="predict-master"]')).toContainText('안 되는 모양 없이 전개도를 5번 연달아 만들어요');
-  await expect(page.locator('.badge-item[data-badge="dice-master"]')).toContainText('주사위 주문(도전)을 성공해요');
+  await expect(page.locator('.badge-item[data-badge="dice-master"]')).toContainText('주사위 주문(도전)을 성공해요 (정육면체 단계에서 수행)');
   await expect(page.locator('.badge-board')).not.toContainText(/예상|예측/);
   await page.getByRole('button', { name: '기록 모두 지우기' }).click();
   await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
