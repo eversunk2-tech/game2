@@ -873,7 +873,7 @@ for (const size of SIZES) {
         if (!hinted) {
           hinted = true;
           await press(testInfo, page.locator('.blk-hint'));
-          await expect(page.locator('.blk-hint-text')).toContainText('칠한 것은');
+          await expect(page.locator('.blk-hint-text')).toContainText(kind === 'front' ? '층별 모양의 아래쪽(앞)에서 보면' : '층별 모양의 오른쪽(옆)에서 보면');
           await scene(`layer-views ${kind} 힌트`);
         }
         await paint(page, testInfo, kind, q.views[kind]);

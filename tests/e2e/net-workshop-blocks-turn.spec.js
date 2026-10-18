@@ -125,7 +125,7 @@ const PATHS = [
 
 test('마우스 끌기: 가로는 판 돌리기·세로는 내려다보는 높이 — 끄는 동안과 놓은 뒤 모두 쌓기나무의 세로 모서리가 곧고, 화면 = 규칙대로 계산한 자세', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '마우스는 크롬북에서');
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 12배 느리게 한 실행에서 37초
   const errors = collectErrors(page);
   await open(page, 'blocks-play');
   await build(page, testInfo);
@@ -188,7 +188,7 @@ test('마우스 끌기: 가로는 판 돌리기·세로는 내려다보는 높�
 
 test('터치 한 손가락 끌기: 마우스와 같은 규칙 — 판이 기울지 않고, 화면 = 규칙대로 계산한 자세. 두 손가락 벌리기는 크기만 바꾼다', async ({ page }, testInfo) => {
   test.skip(!isTouch(testInfo), '터치는 태블릿에서');
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 12배 느리게 한 실행에서 20초
   const errors = collectErrors(page);
   await open(page, 'blocks-play');
   await build(page, testInfo);
@@ -231,7 +231,7 @@ test('터치 한 손가락 끌기: 마우스와 같은 규칙 — 판이 기울�
 });
 
 test('조작판·방향키는 눈금에 멈춘다: 판은 버튼 45°·방향키 15°, 높이는 15° — 수평·바로 위에 닿으면 그 버튼이 꺼지고(점선) 키는 그대로다', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 12배 느리게 한 실행에서 16초
   const errors = collectErrors(page);
   await open(page, 'blocks-play');
   await build(page, testInfo);

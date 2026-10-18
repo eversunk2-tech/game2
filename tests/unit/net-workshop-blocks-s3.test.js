@@ -497,7 +497,7 @@ test('층별 모양만 보고 칠하기의 힌트 (시드 2,000개, review-block
       const heights = columnHeights(q.target, kind);
       // 앞과 옆을 바꿔 칠함 (가장 흔한 틀림)
       const swapped = drawHint(q, { [kind]: q.views[other] }, { from: 'layers' });
-      const lead = kind === 'front' ? '칠한 것은 옆에서 본 모양이에요. 층별 모양의 아래쪽이 앞이에요. 앞에서 보면 왼쪽부터 ' : '칠한 것은 앞에서 본 모양이에요. 층별 모양의 오른쪽에서 봐요. 옆에서 보면 앞줄부터 ';
+      const lead = kind === 'front' ? '층별 모양의 아래쪽(앞)에서 보면 왼쪽부터 ' : '층별 모양의 오른쪽(옆)에서 보면 앞줄부터 ';
       const m = swapped.match(/(\d)번째 (?:세로줄|줄)은 (?:(\d)층까지 보여요|(비어 있어요))\.$/);
       assert.ok(swapped.startsWith(lead) && m, swapped);
       assert.doesNotMatch(swapped, /0층/);

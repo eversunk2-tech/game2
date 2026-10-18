@@ -996,10 +996,13 @@ export function judgeDrawing(q, drawings, { from = 'picture' } = {}) {
   const where = q.kinds.length > 1 ? `${wrong.map((p) => VIEW_NAMES[p.kind]).join(', ')}에서 본 모양에 다른 칸이 있어요. ` : '';
   return { correct: false, tag: lead.tag, diff, wrongKinds: wrong.map((p) => p.kind), expected: q.expected, message: `${where}${lead.note}` };
 }
-/** 층별 모양만 보고 앞·옆을 칠할 때 앞과 옆을 바꿔 칠한 힌트의 첫마디(4절 "앞과 옆" — 층별 모양의 어느 쪽에서 보는지) */
+/**
+ * 층별 모양만 보고 앞·옆을 칠할 때 앞과 옆을 바꿔 칠한 힌트: 층별 모양의 어느 쪽에서 보는지와 함께 한 줄을 말한다
+ * (4절 "앞과 옆" — 판의 '앞' 글자 쪽에서 봐야 한다. 바꿔 그렸다는 말은 틀린 까닭에 이미 있다)
+ */
 const LAYER_SWAP_HINT = {
-  front: '칠한 것은 옆에서 본 모양이에요. 층별 모양의 아래쪽이 앞이에요.',
-  side: '칠한 것은 앞에서 본 모양이에요. 층별 모양의 오른쪽에서 봐요.',
+  front: '층별 모양의 아래쪽(앞)에서 보면 왼쪽부터',
+  side: '층별 모양의 오른쪽(옆)에서 보면 앞줄부터',
 };
 
 /**
@@ -1027,8 +1030,7 @@ export function drawHint(q, drawings, { from = 'picture' } = {}) {
     if (from === 'layers') {
       const other = q.views[kind === 'front' ? 'side' : 'front'];
       if (mine && other && !sameView(other, target, kind) && sameView(mine, other, kind)) {
-        const line = kind === 'front' ? `앞에서 보면 왼쪽부터 ${col + 1}번째 세로줄은` : `옆에서 보면 앞줄부터 ${col + 1}번째 줄은`;
-        return `${LAYER_SWAP_HINT[kind]} ${line} ${want[col] > 0 ? `${want[col]}층까지 보여요.` : '비어 있어요.'}`;
+        return `${LAYER_SWAP_HINT[kind]} ${col + 1}번째 ${kind === 'front' ? '세로줄' : '줄'}은 ${want[col] > 0 ? `${want[col]}층까지 보여요.` : '비어 있어요.'}`;
       }
       const where = kind === 'front' ? `왼쪽부터 ${col + 1}번째 세로줄` : `${col + 1}줄(앞줄부터)`;
       if (want[col] === 0) return `층별 모양에서 ${where}에는 칠해진 칸이 없어요. ${viewTitle(kind)}에서는 그 세로줄이 비어 있어요.`;
