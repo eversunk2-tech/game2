@@ -221,7 +221,7 @@ async function solveAdd(page, testInfo, q) {
 
 // ── 차시 흐름 ─────────────────────────────
 test('5차시(?lesson=blocks-layer): 층별 모양 그리기 → 층별 모양을 보고 쌓기 → 층별 모양만 보고 알아내기를 마치면 도전 주문서 "더 붙여서 만들기"가 열리고, 도전 성공까지', async ({ page }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(180_000); // CPU 4배 느리게 한 실행에서 11초
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=blocks-layer&stage=blocks-layer-draw&seed=1&sound=off'));
   await expect(page.locator('.order-kind')).toHaveText('기록 주문');
@@ -306,7 +306,7 @@ test('단계 지도: 쌓기나무 영역에 5차시가 4차시 뒤에 보이고(
 // ── 정답 노출 ─────────────────────────────
 test('정답 노출 0 (층별 모양 그리기): 돌려 볼 수 있지만 답하기 전에는 면에 자리 값(높이)·층 색·층 숫자·층별로 벌려 보기가 없다. 문항이 달라도 화면의 틀이 같다. [확인하기] 뒤에 층별로 벌어진다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 4배 느리게 한 실행에서 10초
   const errors = collectErrors(page);
   const frames = new Set();
   for (const seed of [1, 2, 3]) {
@@ -358,7 +358,7 @@ test('정답 노출 0 (층별 모양 그리기): 돌려 볼 수 있지만 답하
 });
 
 test('정답 노출 0 (층별 모양만 보고 · 층별 모양을 보고 쌓기): 답하기 전에는 입체가 없고(층별 모양 셋만), 쌓는 단계는 [확인하기] 전에 견준 표시가 없다', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await open(page, 'blocks-layer-views');
   for (const q of questionsFor('blocks-layer-views')) {
@@ -391,7 +391,7 @@ test('정답 노출 0 (층별 모양만 보고 · 층별 모양을 보고 쌓기
 
 test('정답 노출 0 (더 붙여서 만들기): 예상하기 전에는 처음 모양이 멈춘 그림(판·자리 값 없음)이고 내 판(위에서 본 판·쌓기 도구)과 판정 글이 없다. 문항이 달라도 화면의 틀이 같고, 만들 수 있는 보기의 자리는 여러 곳', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 4배 느리게 한 실행에서 10초
   const errors = collectErrors(page);
   const frames = new Set();
   const spots = new Set();
@@ -437,7 +437,7 @@ test('정답 노출 0 (더 붙여서 만들기): 예상하기 전에는 처음 �
 
 // ── 틀린 답·힌트·별 ──────────────────────────
 test('층별 모양 그리기: 틀린 [확인하기]도 기록되고(고치지 않고 또 누르면 다시 세지 않는다) 벌어진 층에 내 그림을 겹쳐 ✗, 두 번 틀리면 힌트. 아래층이 빈 자리에 칠하면 "위층은 아래층 위에"', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await open(page, 'blocks-layer-draw');
   const [q1, q2, q3] = questionsFor('blocks-layer-draw');
@@ -492,7 +492,7 @@ test('층별 모양 그리기: 틀린 [확인하기]도 기록되고(고치지 �
 });
 
 test('층별 모양을 보고 쌓기: 틀리면 다른 층 그림에 ✗(같은 층은 ✓), 두 번 틀리면 힌트(그 자리 표시), 맞히면 내 쌓기가 층별로 벌어진다', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await open(page, 'blocks-layer-build');
   const [q] = questionsFor('blocks-layer-build');
@@ -521,7 +521,7 @@ test('층별 모양을 보고 쌓기: 틀리면 다른 층 그림에 ✗(같은 
 });
 
 test('층별 모양만 보고 알아내기: 개수를 틀리면 입체가 나타나 층별로 벌어지고(층마다 몇 개), 칠하기를 틀리면 그 방향에서 내 그림을 겹친다. 별은 틀린 횟수로(한 번 틀림 → ★2)', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 5초
   const errors = collectErrors(page);
   await open(page, 'blocks-layer-views');
   const [cnt, front, side] = questionsFor('blocks-layer-views');
@@ -562,7 +562,7 @@ test('층별 모양만 보고 알아내기: 개수를 틀리면 입체가 나타
 });
 
 test('더 붙여서 만들기: 예상이 틀리면 만들 수 있는 보기와 까닭, 붙인 쌓기나무 점선. 내 판에서 처음 모양 그대로·보기에 없는 모양은 기록하지 않고, 틀린 만들기는 기록(고치지 않고 또 누르면 다시 세지 않는다)·힌트. 만든 모양에 수 쓰기', async ({ page }, testInfo) => {
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 4배 느리게 한 실행에서 4초
   const errors = collectErrors(page);
   await open(page, 'blocks-add');
   const [q] = questionsFor('blocks-add');
@@ -628,7 +628,7 @@ test('더 붙여서 만들기: 예상이 틀리면 만들 수 있는 보기와 �
 // ── 도장 셋 ───────────────────────────────
 test('쌓기나무 도장 셋: 도장판 16칸에 받는 방법이 보이고(숨은 도장 없음), 지난 학습 기록으로 조건을 채운 학생은 다음에 단계를 마칠 때 한 번만 받는다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 4초
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off&intro=0'));
   // 사이트에 이미 있는 2·3차시에서 쌓은 기록: 모두 몇 개일까?를 4문항 모두 처음에 맞힌 판 둘(숨겨진 문항 4번) · 위, 앞, 옆을 보고 쌓기를 첫 [확인하기]에 세 번
@@ -671,7 +671,7 @@ test('쌓기나무 도장 셋: 도장판 16칸에 받는 방법이 보이고(숨
 // ── 키보드만 ────────────────────────────
 test('키보드만: 층별 모양 칠하기(방향키 + Space) · 쌓기(위에서 본 판의 방향키 + 숫자) · 개수 고르기(Enter) · 더 붙여서 만들기(보기 Space, 판 숫자, 수 쓰기 숫자)로 5차시와 도전을 끝까지', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '키보드는 크롬북에서');
-  test.setTimeout(180_000);
+  test.setTimeout(180_000); // CPU 4배 느리게 한 실행에서 4초
   const errors = collectErrors(page);
   /** 모눈(그 이름)의 첫 칸에서 시작해 행마다 오른쪽으로 → 위로 돌며 칠한다 */
   const keyPaint = async (name, target) => {
@@ -782,7 +782,7 @@ const SIZES = [
 for (const size of SIZES) {
   test(`배치(${size.name}): 5차시 세 단계와 도전의 모든 장면에 세로·가로 스크롤이 없고, 판 안쪽이 넘치지 않으며, 매트와 머리가 움직이지 않는다`, async ({ page }, testInfo) => {
     test.skip(testInfo.project.name !== size.project, `${size.project}에서 확인`);
-    test.setTimeout(360_000);
+    test.setTimeout(360_000); // CPU 4배 느리게 한 실행에서 20초
     const errors = collectErrors(page);
     await page.setViewportSize({ width: size.width, height: size.height });
     const frame = () => page.evaluate(() => {
@@ -910,7 +910,7 @@ for (const size of SIZES) {
 
 test('휴대폰(390×844): 5차시·도전 화면에 가로 스크롤이 없고, 칠하기 칸·판 칸·보기·[확인하기]가 48px이다. 층별 모양만 보고 알아내기를 손가락으로 끝까지', async ({ page }, testInfo) => {
   test.skip(!isTouch(testInfo), '터치 기기에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 3초
   const errors = collectErrors(page);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const id of ['blocks-layer-draw', 'blocks-layer-build', 'blocks-layer-views', 'blocks-add']) {
@@ -932,7 +932,7 @@ test('휴대폰(390×844): 5차시·도전 화면에 가로 스크롤이 없고,
 
 test('폭 901~1000px 낮은 화면의 수만 보고 알아내기(4차시): 답한 뒤 수를 쓴 그림 카드가 [확인하기] 띠에 가리지 않는다 (review-blocks-s2 S2b-2)', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(120_000);
+  test.setTimeout(120_000); // CPU 4배 느리게 한 실행에서 8초
   const errors = collectErrors(page);
   for (const [w, h] of [[960, 768], [960, 680], [1000, 768]]) {
     await page.setViewportSize({ width: w, height: h });
@@ -969,7 +969,7 @@ test('폭 901~1000px 낮은 화면의 수만 보고 알아내기(4차시): 답�
 // ── 접근성·정리 ───────────────────────────
 test('접근성: 층 모양 모눈·층별 모양 그림·보기 고르기의 이름과 알림, 움직임 줄이기에서는 바로 벌어진다, 단계를 나가면 남는 것이 없다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 2초
   const errors = collectErrors(page);
   await open(page, 'blocks-layer-draw', { extra: '&fx=low' });
   const [q] = questionsFor('blocks-layer-draw');
@@ -1015,7 +1015,7 @@ test('접근성: 층 모양 모눈·층별 모양 그림·보기 고르기의 �
 });
 
 test('점수: 별 3개를 받은 5차시 단계를 다시 해도 점수가 쌓이지 않는다', async ({ page }, testInfo) => {
-  test.setTimeout(90_000);
+  test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 5초
   const errors = collectErrors(page);
   const playOnce = async () => {
     await open(page, 'blocks-layer-build');
