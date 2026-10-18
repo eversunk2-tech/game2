@@ -145,7 +145,8 @@ test('단계 목록: 교과서 1~5차시와 짝지은 다섯 차시 × 세 단�
   assert.equal(BLOCK_UNIT, '6학년 2학기 · 공간과 입체');
   // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) · 5차시의 층별 모양과 도전 주문서(S3) 다음에 쌓기·돌려 보기 두 줄이 맨 끝
   // (처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
-  assert.equal(BLOCK_HOW_TO.length, 6);
+  assert.equal(BLOCK_HOW_TO.length, 7); // F1: 자유 쌓기 한 줄(끝 두 줄 바로 앞)이 더해졌다
+  assert.match(BLOCK_HOW_TO[4], /^\[자유 쌓기\]에서는 넓은 판에/);
   for (const line of BLOCK_HOW_TO) assert.match(line, /요\.$/);
   for (const line of BLOCK_HOW_TO.slice(-2)) assert.match(line, /쌓기나무.*요\.$/);
   for (const line of BLOCK_HOW_TO.slice(0, 4)) assert.doesNotMatch(line, /쌓기나무/);
@@ -367,19 +368,15 @@ test('blocks-count: 네 문항 모두 그림과 위에서 본 모양으로 쌓�
       assert.deepEqual(q.top, topView(q.target));
       assert.equal(q.seen, q.expected - q.hidden.length);
       assert.equal(q.spots, count(q.top));
-      // 보기 넷: 서로 다른 자연수, 작은 수부터, 정답이 들어 있다. 정답이 아닌 보기는 함정 값(보이는 것만 센 수 · 위에서 본 모양의 칸 수)이거나
-      // 정답과 1~6 차이 나는 수다. (함정 값을 늘 넣던 것은 정답의 자리가 드러나 바꿨다 — 아래 "보기의 자리" 검사.
-      // 큰 쪽 보기를 1~3 차이로만 두던 것은 "가장 큰 수 − 3" 규칙으로 풀려 함정 값과 같은 꼴로 떨어지게 바꿨다 — review-blocks S1b-1)
+      // 보기 넷: 서로 다른 자연수, 작은 수부터, 정답이 들어 있다. 보기의 값은 모두 이 단계의 정답 값(5~10개)에서 뽑는다 — 보기 값의 크기만 보고는
+      // 정답이 드러나지 않게(review-blocks-r1 R1-1. 전에는 정답보다 작은 보기에 함정 값을 먼저 넣고 큰 쪽은 함정과 같은 꼴로 떨어진 수 — 꼴은 고르게 됐지만
+      // 정답이 좁은 범위에 몰려 값의 크기 규칙이 52~61%. 함정이 드는 비율은 아래 "보기의 자리와 값" 검사)
       assert.equal(q.options.length, 4);
       assert.deepEqual(q.options, [...new Set(q.options)].sort((a, b) => a - b));
-      assert.ok(q.options.every((n) => Number.isInteger(n) && n > 0));
+      assert.ok(q.options.every((n) => Number.isInteger(n) && n >= 5 && n <= 10), `${seed} ${q.options}`);
       assert.ok(q.options.includes(q.expected), `${seed}`);
-      for (const n of q.options) assert.ok(n === q.seen || n === q.spots || Math.abs(n - q.expected) <= 6, `${seed} ${n}`);
-      // 함정 값은 늘 정답보다 작다(2층 이상이 있으므로 칸 수 < 개수). 정답보다 작은 보기가 있으면 함정 값이 먼저 들어간다
+      // 함정 값은 늘 정답보다 작다(2층 이상이 있으므로 칸 수 < 개수)
       assert.ok(q.spots < q.expected && q.seen <= q.expected);
-      const below = q.options.filter((n) => n < q.expected);
-      const traps = [...new Set([q.seen, q.spots])].filter((n) => n < q.expected);
-      assert.ok(traps.slice(0, below.length).every((n) => below.includes(n)), `${seed} ${q.options}`);
       for (const n of q.options) {
         const r = judgeCount(q, n);
         assert.equal(r.correct, n === q.expected);
@@ -492,20 +489,29 @@ test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교
   }
 });
 
-test('보기의 자리와 값(blocks-count, 시드 1,000개): 정답이 네 자리에 고르게 나오고, 한 자리만 누르거나 보기의 값만 보는 규칙으로는 찍기(25%)에서 ±10%p 안', () => {
+test('보기의 자리와 값(blocks-count, 시드 2,000개): 정답이 네 자리에 고르게 나오고, 한 자리만 누르거나 보기의 꼴·값의 크기만 보는 규칙으로는 찍기(25%)에서 ±10%p 안', () => {
+  const SEEDS = 2000;
   const position = [0, 0, 0, 0];
   const perfect = [0, 0, 0, 0]; // 늘 그 자리만 눌렀을 때 네 문항이 모두 맞는 판의 수
   const rules = { run: 0, gap: 0, median: 0, beforeGap: 0, largest: 0, smallest: 0, secondLargest: 0, maxMinus3: 0, minPlus3: 0 };
   let trapShown = 0;
+  let hiddenItems = 0;
+  let seenShown = 0; // 숨겨진 쌓기나무가 있는 문항에 "보이는 것만 센 수"가 든 수
   let total = 0;
-  for (let seed = 1; seed <= 1000; seed += 1) {
+  const valueItems = [];
+  for (let seed = 1; seed <= SEEDS; seed += 1) {
     const qs = questions('blocks-count', seed);
     const at = qs.map((q) => q.options.indexOf(q.expected));
     for (let p = 0; p < 4; p += 1) if (at.every((i) => i === p)) perfect[p] += 1;
     qs.forEach((q, k) => {
       position[at[k]] += 1;
       total += 1;
+      valueItems.push({ o: [...q.options], at: at[k] });
       if (q.options.some((n) => n !== q.expected && (n === q.seen || n === q.spots))) trapShown += 1;
+      if (q.seen < q.expected) {
+        hiddenItems += 1;
+        if (q.options.includes(q.seen)) seenShown += 1;
+      }
       // 보기의 값만 보고 고르는 규칙들: 맨 위에서 1씩 이어지는 수 묶음의 첫 수 / 가장 큰 간격 바로 뒤의 수 / 가운데 두 수 가운데 작은 것
       let i = 3;
       while (i > 0 && q.options[i] - q.options[i - 1] === 1) i -= 1;
@@ -523,37 +529,74 @@ test('보기의 자리와 값(blocks-count, 시드 1,000개): 정답이 네 자�
       if ([...q.options].reverse().find((n) => n <= q.options[0] + 3) === q.expected) rules.minPlus3 += 1;
     });
   }
-  assert.equal(total, 4000);
+  assert.equal(total, SEEDS * 4);
   // 자리마다 15~35% (고치기 전: 셋째 95.4% · 둘째 4.6% · 첫째와 넷째 0%)
   for (const n of position) assert.ok(n / total >= 0.15 && n / total <= 0.35, `정답 자리 ${position}`);
   // 한 자리만 눌러 만점인 판: 자리마다 2% 아래 (고치기 전: 셋째만 눌러 82.5%)
-  for (const n of perfect) assert.ok(n / 1000 < 0.02, `한 자리만 눌러 만점 ${perfect}`);
-  // 보기의 값만 보는 규칙은 모두 찍기(25%)에서 ±10%p 안 (고치기 전: 가장 큰 수 − 3 규칙 60.3%, 이어진 수 묶음 37.0%, 큰 간격 앞 35.0%)
+  for (const n of perfect) assert.ok(n / SEEDS < 0.02, `한 자리만 눌러 만점 ${perfect}`);
+  // 보기의 꼴만 보는 규칙은 모두 찍기(25%)에서 ±10%p 안 (고치기 전: 가장 큰 수 − 3 규칙 60.3%, 이어진 수 묶음 37.0%, 큰 간격 앞 35.0%)
   for (const [name, n] of Object.entries(rules)) assert.ok(n / total >= 0.15 && n / total <= 0.35, `${name} ${n / total}`);
-  // 오개념 함정(보이는 것만 센 수 · 위에서 본 칸 수)은 문항의 60% 이상에 들어 있다
-  assert.ok(trapShown / total >= 0.6, `함정이 든 문항 ${trapShown}`);
+  // 값의 크기만 보는 규칙(review-blocks-r1 R1-1 — 고치기 전: "6.5에 가장 가까운 보기" 52.7%, 가장 작은·가장 큰 보기로 배운 표 60.8%, 값마다 정답이던 비율로 고름 52.5%)
+  const half = Math.floor(valueItems.length / 2);
+  const idx = [0, 1, 2, 3];
+  const share = (sel, at) => (sel.includes(at) ? 1 / sel.length : 0);
+  for (let c = 1; c <= 15; c += 0.5) {
+    const rate = valueItems.reduce((sum, { o, at }) => {
+      const d = o.map((v) => Math.abs(v - c));
+      return sum + share(idx.filter((k) => d[k] === Math.min(...d)), at);
+    }, 0) / valueItems.length;
+    assert.ok(rate < 0.35, `${c}에 가장 가까운 보기 ${rate}`);
+  }
+  for (const [name, key] of Object.entries({ smallest: (o) => o[0], largest: (o) => o[3], both: (o) => `${o[0]}|${o[3]}` })) {
+    const tab = new Map();
+    for (const { o, at } of valueItems.slice(0, half)) {
+      const row = tab.get(key(o)) ?? [0, 0, 0, 0];
+      row[at] += 1;
+      tab.set(key(o), row);
+    }
+    const rate = valueItems.slice(half).reduce((sum, { o, at }) => {
+      const row = tab.get(key(o));
+      return sum + (row ? share(idx.filter((k) => row[k] === Math.max(...row)), at) : 0.25);
+    }, 0) / (valueItems.length - half);
+    assert.ok(rate < 0.35, `${name}로 배운 표 ${rate}`);
+  }
+  // 오개념 함정: 숨겨진 쌓기나무가 있는 문항의 70% 이상에 "보이는 것만 센 수"(이 단계의 중심 오개념), 함정이 하나라도 든 문항은 45% 이상
+  // (R1-1 전에는 함정이 든 문항 75% — 위에서 본 칸 수는 이 단계의 정답 범위보다 작을 때가 많아, 값만 보고 지울 수 있는 그 수는 이제 보기에 드물다)
+  assert.ok(seenShown / hiddenItems >= 0.7, `보이는 것만 센 수가 든 문항 ${seenShown} / ${hiddenItems}`);
+  assert.ok(trapShown / total >= 0.45, `함정이 든 문항 ${trapShown}`);
 });
 
-test('countOptions: 정답보다 작은 보기의 수를 먼저 뽑고, 함정 값부터 채운다. 작은 수가 모자라면 큰 수로', () => {
+test('countOptions(R1-1): 보기 넷은 서로 다른 1 이상의 수(작은 수부터)이고 정답을 품는다. 값은 이 단계의 정답 값(5~10개)에서 — 정답이 그 밖이어도(1·14) 넣는다', () => {
   const rng = createRng('options');
   const ranks = [0, 0, 0, 0];
   for (let n = 0; n < 2000; n += 1) {
-    const total = rng.int(5, 10);
+    // 정답을 이 단계의 정답 분포대로 뽑으면 정답 자리가 고르다(분포에서 뽑는 보기의 성질)
+    const prior = [0.14, 0.187, 0.203, 0.182, 0.158, 0.129];
+    let r = rng.next() * prior.reduce((a, b) => a + b, 0);
+    let total = 5;
+    for (const p of prior) {
+      if (r < p) break;
+      r -= p;
+      total += 1;
+    }
+    total = Math.min(total, 10);
     const spots = rng.int(3, Math.min(6, total - 1));
     const seen = rng.next() < 0.5 ? total : total - rng.int(1, 2);
     const options = countOptions(rng, { total, seen, spots });
     assert.equal(options.length, 4);
     assert.deepEqual(options, [...new Set(options)].sort((a, b) => a - b));
-    assert.ok(options.includes(total) && options.every((v) => v > 0));
+    assert.ok(options.includes(total) && options.every((v) => v >= 5 && v <= 10), `${options}`);
     ranks[options.indexOf(total)] += 1;
   }
-  for (const n of ranks) assert.ok(n > 400 && n < 600, `${ranks}`);
-  // 정답이 아주 작으면(1) 작은 보기를 만들 수 없다: 모두 큰 수로 채운다
-  for (let n = 0; n < 20; n += 1) {
-    const options = countOptions(rng, { total: 1, seen: 1, spots: 1 });
-    assert.equal(options[0], 1);
-    assert.equal(new Set(options).size, 4);
-    assert.ok(options.every((v) => v <= 7), `${options}`);
+  // 정답 자리마다 15~35%: 함정 값(정답보다 작다)이 들게 다시 뽑는 만큼 가장 작은 자리가 조금 적다(실제 문항에서는 위 "보기의 자리와 값" 검사)
+  for (const n of ranks) assert.ok(n > 300 && n < 700, `${ranks}`);
+  for (const total of [1, 14]) {
+    for (let n = 0; n < 20; n += 1) {
+      const options = countOptions(rng, { total, seen: total, spots: 1 });
+      assert.ok(options.includes(total), `${options}`);
+      assert.deepEqual(options, [...new Set(options)].sort((a, b) => a - b));
+      assert.equal(options.length, 4);
+    }
   }
 });
 

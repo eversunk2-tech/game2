@@ -72,6 +72,10 @@ const FACE_CORNERS = {
 /** 층별로 벌려 놓을 때 층 사이의 틈(쌓기나무 한 변 = 1)과, 그때 무대에 들어오게 줄이는 배율 */
 export const APART_GAP = 0.7;
 const APART_FIT = 0.86;
+/** 두 손가락 사이가 이만큼(비율) 바뀌면 벌리기 — 판 옮기기가 켜져 있을 때 함께 끌기와 가른다 */
+const PINCH_START = 0.12;
+/** Shift+방향키 → 그쪽을 보기 [x, y] (판 옮기기) */
+const PAN_KEYS = Object.freeze({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] });
 /** 무대 위 글자 칩의 너비(px) — 글자 수로 어림한다 */
 const chipWidth = (text) => Math.max(30, [...text].length * 15 + 14);
 /** 벌려 놓은 z층이 뜨는 높이:가운데 층(mid — 차시는 3층 판의 2층, 자유 쌓기는 쌓은 층들의 가운데)은 그대로, 아래층은 내려가고 위층은 올라간다 */
@@ -660,6 +664,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let swallowTimer = 0;
   let wheelTimer = 0;
   let lastMouse = null;
+  // 판 옮기기(자유 쌓기 — 위에서 본 판을 펼쳐 판이 비킨 동안, spec-grade6 15-19 결정 9): 두 손가락으로 함께 끌기 · Shift+방향키.
+  // panner({ move: [dx, dy] }) — 두 손가락이 움직인 거리(px), panner({ look: [lx, ly] }) — Shift+방향키(→ 이면 [1, 0] "오른쪽 보기").
+  // 없으면(차시 단계) 두 손가락은 지금처럼 벌리기·오므리기만, Shift+방향키는 방향키와 같다
+  let panner = null;
 
   const hitOf = (target) => {
     const node = target?.closest?.('[data-kind]');
@@ -738,10 +746,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       globalThis.addEventListener('touchmove', onTouchMove, TOUCH_MOVE);
       return;
     }
-    // 두 번째 손가락: 벌리기·오므리기 (누르기는 없던 일로)
+    // 두 번째 손가락: 벌리기·오므리기 (누르기는 없던 일로). 판 옮기기가 켜져 있으면 처음 움직임으로 벌리기인지 함께 끌기인지 가른다
     if (!canView()) return;
     const [a, b] = [...pointers.values()];
-    gesture = { ...gesture, mode: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: view.zoom };
+    gesture = { ...gesture, mode: 'pinch', dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: view.zoom, mid: [(a.x + b.x) / 2, (a.y + b.y) / 2], two: panner ? null : 'zoom' };
     startMoving();
   }
 
@@ -753,7 +761,20 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       p.y = event.clientY;
       if (pointers.size < 2) return;
       const [a, b] = [...pointers.values()];
-      view = pinchView(view, gesture.zoom0, gesture.dist, Math.hypot(a.x - b.x, a.y - b.y));
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const mid = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+      if (!gesture.two) {
+        // 두 손가락 사이가 12% 넘게 바뀌면 벌리기(크게·작게), 그 전에 가운데가 문턱(8px)을 넘게 움직이면 함께 끌기(판 옮기기)
+        if (Math.abs(dist / gesture.dist - 1) > PINCH_START) gesture.two = 'zoom';
+        else if (Math.hypot(mid[0] - gesture.mid[0], mid[1] - gesture.mid[1]) > DRAG_START) gesture.two = 'pan';
+        else return;
+      }
+      if (gesture.two === 'pan') {
+        if (panner) panner({ move: [mid[0] - gesture.mid[0], mid[1] - gesture.mid[1]] });
+        gesture.mid = mid;
+        return;
+      }
+      view = pinchView(view, gesture.zoom0, gesture.dist, dist);
       follow();
       return;
     }
@@ -900,6 +921,12 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (frozen || event.ctrlKey || event.metaKey || event.altKey) return;
     if (!canView()) return;
     const { key } = event;
+    if (panner && event.shiftKey && PAN_KEYS[key]) {
+      // Shift+방향키 = 판 옮기기(그쪽을 보기) — 판이 비켜 가려진 동안만(자유 쌓기)
+      panner({ look: PAN_KEYS[key] });
+      event.preventDefault();
+      return;
+    }
     if (key === 'ArrowLeft') turnStep('left', YAW_KEY);
     else if (key === 'ArrowRight') turnStep('right', YAW_KEY);
     else if (key === 'ArrowUp') step('up');
@@ -1026,6 +1053,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       shiftX = nx;
       shiftY = ny;
       render();
+    },
+    /** 판 옮기기(두 손가락 함께 끌기 · Shift+방향키)를 받을 함수 — null이면 끈다(자유 쌓기: 위에서 본 판을 펼쳐 판이 비킨 동안만) */
+    setPanner(fn) {
+      panner = typeof fn === 'function' ? fn : null;
     },
     /** 모델 점들이 (옮기지 않은) 무대에서 차지하는 상자 { x0, x1, y0, y1 }(무대 기준 px) — 지금 보기(돌아가는 중이면 가는 곳)로 잰다 */
     boxOf(pts) {

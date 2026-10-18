@@ -23,7 +23,7 @@ export const EMPTY_TEXT = '여기에는 뺄 쌓기나무가 없어요.';
  * 판 크기(cols × rows, maxH층)를 주지 않으면 차시의 3×3칸·3층(지금 그대로). 자유 쌓기(spec-grade6 15-19)는 14×14칸·10층, 휴대폰 6×6칸·6층에
  * colorful(쌓기나무마다 색 — 지금 고른 색으로 쌓는다)과 setWindow(넓은 판의 한 쪽만 보이기 — 14×14를 7×7 네 쪽으로 나눔)를 쓴다.
  */
-export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = MAX_H, colorful = false, title = '위에서 본 판' }) {
+export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = MAX_H, colorful = false, title = '위에서 본 판', head = null }) {
   const { h } = ctx;
   let map = emptyMap(cols, rows);
   // 쌓기나무마다 색(colorful): [줄][칸] = 층마다 토큰. 높이 지도와 한 쌍으로 기록·되돌리기
@@ -79,10 +79,12 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     rowEls.push(h('div', { class: 'blk-pad-row', role: 'row', dataset: { y } }, row));
   }
   const topDigit = Math.min(9, maxH); // 숫자 키 0 ~ 9 (10층은 9층에서 Enter로 하나 더)
-  const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': `${title}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${topDigit}은 그 높이로 맞추기예요.` }, rowEls);
+  const gridLabel = (text) => `${text}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${topDigit}은 그 높이로 맞추기예요.`;
+  const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': gridLabel(title) }, rowEls);
   const titleEl = h('p', { class: 'blk-pad-title' }, title);
-  const pad = h('div', { class: 'blk-padbox' },
-    titleEl,
+  // head(자유 쌓기 — 넓은 판의 네 쪽 고르기)를 주면 제목 자리에 그것을 둔다(제목은 판의 화면 읽기 이름에 남는다)
+  const pad = h('div', { class: `blk-padbox${head ? ' has-head' : ''}` },
+    head ?? titleEl,
     grid,
     h('span', { class: 'blk-pad-side', 'aria-hidden': 'true' }, '옆'),
     h('span', { class: 'blk-pad-front', 'aria-hidden': 'true' }, '앞'),
@@ -301,6 +303,7 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     },
     setTitle(text) {
       titleEl.textContent = text;
+      grid.setAttribute('aria-label', gridLabel(text));
     },
     /** 잠그면 쌓기·빼기·되돌리기가 모두 꺼진다 (맞힌 뒤) */
     lock(value) {

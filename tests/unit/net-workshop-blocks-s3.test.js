@@ -399,12 +399,14 @@ test('blocks-layer-build 문제 만들기·채점 (시드 300개): 좌우로 뒤
   }
 });
 
-test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 · 옆 칠하기. 개수 보기의 자리·값 규칙은 찍기(25%)에서 ±10%p 안, 함정 값(1층만 · 3층을 빠뜨림)의 까닭', () => {
+test('blocks-layer-views (시드 2,000개): 개수 고르기 · 앞 칠하기 · 옆 칠하기. 개수 보기의 자리·꼴·값의 크기 규칙은 찍기(25%)에서 +10%p 안, 함정 값(1층만 · 3층을 빠뜨림)의 까닭', () => {
   const pos = [0, 0, 0, 0];
   const rules = { largest: 0, smallest: 0, secondLargest: 0, median: 0, run: 0, afterPair: 0, beforePair: 0, beforeGap: 0, maxMinus3: 0, even: 0, middle: 0 };
   let traps = 0;
   const gapItems = []; // 간격 셋 → 정답 자리 (앞 절반으로 배운 표를 뒤 절반에 — review-blocks-s3 S3-1)
-  for (let seed = 1; seed <= 1000; seed += 1) {
+  const valueItems = []; // 보기 값 · 정답 (값의 크기만 보는 규칙 — review-blocks-r1 R1-1)
+  const SEEDS = 2000;
+  for (let seed = 1; seed <= SEEDS; seed += 1) {
     const [cnt, front, side] = questions('blocks-layer-views', seed);
     assert.deepEqual([cnt.kind, front.kind, front.kinds, side.kind, side.kinds], ['count', 'paint', ['front'], 'paint', ['side']]);
     for (const q of [cnt, front, side]) {
@@ -437,8 +439,9 @@ test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 ·
     const middles = idx.filter((k) => idx.some((j) => j !== k && idx.some((l) => l !== k && l !== j && o[j] - o[k] === o[k] - o[l] && o[j] > o[k])));
     rules.middle += middles.length ? share(middles) : 0.25;
     gapItems.push({ gaps: gaps.join(','), at });
+    valueItems.push({ o: [...cnt.options], at });
     const [c1, , c3] = cnt.layers.map((g) => g.flat().filter(Boolean).length);
-    if (cnt.options.includes(c1) || cnt.options.includes(cnt.total - c3)) traps += 1;
+    if (cnt.options.includes(cnt.total - c3)) traps += 1; // 맨 위층을 빠뜨린 수(R1-1부터: 1층 모양의 칸 수는 정답 범위 밖일 때가 많아 드물다)
     for (const v of cnt.options) {
       const r = judgeLayerCount(cnt, v);
       assert.equal(r.correct, v === cnt.expected);
@@ -464,25 +467,73 @@ test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 ·
       assert.match(drawHint(q, { [kind]: [[1, 0, 0], [0, 0, 0], [0, 0, 0]] }, { from: 'layers' }), /^층별 모양에서 (.*에 칠해진 칸이 있는 가장 높은 층은 [1-3]층이에요\. (앞|옆)에서 본 모양에서는 그만큼 보여요|.*에는 칠해진 칸이 없어요\. (앞|옆)에서 본 모양에서는 그 세로줄이 비어 있어요)\.$/);
     }
   }
-  for (const p of pos) assert.ok(p / 1000 > 0.2 && p / 1000 < 0.3, `정답 자리 ${pos}`);
+  for (const p of pos) assert.ok(p / SEEDS > 0.2 && p / SEEDS < 0.3, `정답 자리 ${pos}`);
   // 보기의 값만 보고 고르는 규칙은 찍기(25%)보다 10%p 넘게 높지 않다(낮은 규칙은 그것을 피해도 남은 셋 가운데 찍기라 33%를 넘지 않는다)
-  for (const [name, v] of Object.entries(rules)) assert.ok(v / 1000 < 0.35, `${name} ${v}`);
-  // 간격 셋으로 배운 표: 앞 500판에서 간격 꼴마다 가장 잦았던 정답 자리를 뒤 500판에 고른다(S3-1: 예전 보기는 70%)
+  for (const [name, v] of Object.entries(rules)) assert.ok(v / SEEDS < 0.35, `${name} ${v}`);
+  // 값의 크기만 보는 규칙(R1-1 — 고치기 전: "9.5에 가장 가까운 보기" 56.2%, 가장 작은·가장 큰 보기로 배운 표 76.9%, 값마다 정답이던 비율로 고름 60.2%)
+  for (const [name, rate] of Object.entries(valueRules(valueItems))) assert.ok(rate < 0.35, `${name} ${rate}`);
+  // 간격 셋으로 배운 표: 앞 절반에서 간격 꼴마다 가장 잦았던 정답 자리를 뒤 절반에 고른다(S3-1: 예전 보기는 70%)
+  const half = SEEDS / 2;
   const table = new Map();
-  for (const { gaps, at } of gapItems.slice(0, 500)) {
+  for (const { gaps, at } of gapItems.slice(0, half)) {
     const m = table.get(gaps) ?? [0, 0, 0, 0];
     m[at] += 1;
     table.set(gaps, m);
   }
-  const learned = gapItems.slice(500).reduce((sum, { gaps, at }) => {
+  const learned = gapItems.slice(half).reduce((sum, { gaps, at }) => {
     const m = table.get(gaps);
     if (!m) return sum + 0.25;
     const best = m.filter((v) => v === Math.max(...m)).length;
     return sum + (m[at] === Math.max(...m) ? 1 / best : 0);
   }, 0);
-  assert.ok(learned / 500 < 0.35, `간격 표 ${learned}`);
-  assert.ok(traps / 1000 > 0.6, `함정 값이 든 문항 ${traps}`);
+  assert.ok(learned / half < 0.35, `간격 표 ${learned}`);
+  // 함정: 맨 위층을 빠뜨린 수가 든 문항(R1-1 전에는 이 값 51% · 1층 모양의 칸 수 50% — 둘 중 하나 75%. 지금은 정답 범위 안의 값만 보기에 넣는다)
+  assert.ok(traps / SEEDS > 0.45, `맨 위층을 빠뜨린 수가 든 문항 ${traps}`);
 });
+
+/**
+ * 보기 값의 크기만 보고 고르는 규칙들(review-blocks-r1 R1-1): items = [{ o: 보기(작은 수부터), at: 정답 자리 }] → { 규칙: 맞히는 비율 }
+ * 가까운 수 c(1~15, 가장 잘 맞는 c — 위쪽 어림) · 가장 작은 보기/가장 큰 보기/둘 다로 배운 표(앞 절반 → 뒤 절반) · 값마다 정답이던 비율(앞 절반)이 가장 큰 보기
+ */
+function valueRules(items) {
+  const idx = [0, 1, 2, 3];
+  const share = (sel, at) => (sel.length ? (sel.includes(at) ? 1 / sel.length : 0) : 0.25);
+  const half = Math.floor(items.length / 2);
+  const train = items.slice(0, half);
+  const test = items.slice(half);
+  let nearest = 0;
+  for (let c = 1; c <= 15; c += 0.5) {
+    const rate = items.reduce((s, { o, at }) => {
+      const d = o.map((v) => Math.abs(v - c));
+      return s + share(idx.filter((k) => d[k] === Math.min(...d)), at);
+    }, 0) / items.length;
+    nearest = Math.max(nearest, rate);
+  }
+  const table = (key) => {
+    const tab = new Map();
+    for (const { o, at } of train) {
+      const row = tab.get(key(o)) ?? [0, 0, 0, 0];
+      row[at] += 1;
+      tab.set(key(o), row);
+    }
+    return test.reduce((s, { o, at }) => {
+      const row = tab.get(key(o));
+      return s + (row ? share(idx.filter((k) => row[k] === Math.max(...row)), at) : 0.25);
+    }, 0) / test.length;
+  };
+  const seen = new Map();
+  const right = new Map();
+  for (const { o, at } of train) {
+    for (const v of o) seen.set(v, (seen.get(v) ?? 0) + 1);
+    right.set(o[at], (right.get(o[at]) ?? 0) + 1);
+  }
+  const ratio = (v) => (right.get(v) ?? 0) / (seen.get(v) ?? 1);
+  const frequency = test.reduce((s, { o, at }) => {
+    const r = o.map(ratio);
+    return s + share(idx.filter((k) => r[k] === Math.max(...r)), at);
+  }, 0) / test.length;
+  return { nearest, smallestTable: table((o) => o[0]), largestTable: table((o) => o[3]), bothTable: table((o) => `${o[0]}|${o[3]}`), frequency };
+}
 
 test('층별 모양만 보고 칠하기의 힌트 (시드 2,000개, review-blocks-s3 S3-2): 앞과 옆을 바꿔 칠했으면 어느 쪽에서 보는지부터 말하고, 비어 있는 세로줄을 "0층"이라고 하지 않는다 — 말한 높이는 독립 계산과 같다', () => {
   // 독립: 앞에서 보면 세로줄(칸 x)마다 가장 높은 쌓기나무, 옆(오른쪽)에서 보면 줄(앞줄부터 y)마다 가장 높은 쌓기나무
