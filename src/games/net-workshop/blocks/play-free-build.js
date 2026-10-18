@@ -15,8 +15,9 @@
  *   펼친 동안 판은 칸을 피해 남는 자리 쪽으로 비키고(크기는 그대로, 무대 밖으로 밀어내지 않을 만큼 — placeBoard), 그래서 가려지거나 무대 밖으로 나간 곳은
  *     판 옮기기로 본다(결정 9 "펼쳐서 가려진 부분은 화면을 옆으로 이동해서 볼 수 있도록"): 무대 가장자리의 [◀][▶](태블릿 세로는 [▲][▼]) ·
  *     두 손가락으로 함께 끌기 · Shift+방향키. 돌기의 중심은 그대로 판 가운데이고, 접으면 처음 자리로 돌아온다.
- *   좁은 화면(1000px 이하 — 태블릿 세로·휴대폰): 매트가 위, 띠는 매트 아래 가로 줄. 태블릿 세로는 매트가 남는 높이를 다 쓰고 펼치는 칸은 매트 왼쪽 아래
- *     (판이 위로 비킨다), 휴대폰은 펼치는 칸이 매트 안 흐름에(조작판 아래 — 판이 비키지 않는다).
+ *   좁은 화면(1000px 이하 — 태블릿 세로·휴대폰): 매트가 위, 띠는 매트 아래 가로 줄(태블릿은 매트가 남는 높이를 다 쓴다). 펼치는 칸의 자리는 폭이 아니라
+ *     매트 모양으로(F1b): 세로가 긴 매트는 매트 왼쪽 아래(판이 위로 비킨다), 가로가 긴 매트는 크롬북처럼 왼쪽 위. 휴대폰은 펼치는 칸이 매트 안 흐름에
+ *     (조작판 아래 — 판이 비키지 않는다).
  */
 import { icon } from '../../../shared/ui/icons.js';
 import { count, emptyMap, frontView, sideView, topView } from './blocks.js';
@@ -47,6 +48,13 @@ export const FREE_COLORS = Object.freeze([
 /** 판 옮기기 한 번(버튼·Shift+방향키)의 거리: 무대 폭(태블릿 세로는 높이)의 30% · 그 움직임 */
 const PAN_PART = 0.3;
 const PAN_MS = 180;
+/** 펼치는 칸의 위아래 여백(blocks.css .blk-free-slot — top 84px · 아래 12px) · 넓은 판의 칸 크기(px) 처음과 가장 작게 */
+const SLOT_EDGE = 96;
+const CELL_MAX = 24;
+const CELL_MIN = 13;
+/** 엔진 알림이 기준 요소 안 아래쪽에 뜨는 폭(shared/ui/feedback.js ANCHOR_MEDIA와 같다 — 늦게 받는 묶음이라 값을 옮겨 적는다) · 좁은 화면 알림에 비워 두는 높이 */
+const WIDE_TOAST = '(min-width: 901px)';
+const TOAST_ROOM = 80;
 
 // ── 저장 ──────────────────────────
 /**
@@ -135,18 +143,22 @@ export function playFreeBuild(stage, ctx) {
     type: 'button',
     class: `btn blk-sbtn ${cls}`,
     ...attrs,
-    onclick: () => {
+    onclick: (event) => {
       ctx.sfx.play('click');
-      onclick();
+      onclick(event);
     },
   }, iconName ? h('span', { class: 'btn-ico', 'aria-hidden': 'true' }, icon(iconName)) : null, h('span', { class: 'blk-sbtn-text' }, text));
 
-  // 펼치는 칸(왼쪽): 위에서 본 판 · 위·앞·옆 모양 가운데 하나
-  const slot = h('div', { class: 'blk-free-slot', hidden: true });
+  // 펼치는 칸(왼쪽): 위에서 본 판 · 위ㆍ앞ㆍ옆 모양 가운데 하나
+  const slot = h('div', { class: 'blk-free-slot', id: 'blk-free-slot', hidden: true });
   let open = null; // 펼친 것: 'pad'(위에서 본 판) · 'views'(위·앞·옆 모양)
-  const padButton = stripButton('blk-free-pad', 'grid', '위에서 본 판', () => toggle('pad'), { 'aria-expanded': 'false' });
+  // 키보드로 펼치면(Enter·Space — click의 detail이 0) 초점을 펼친 판의 고른 칸으로(F1-4). 마우스·터치로 펼치면 초점은 버튼에 그대로
+  const padButton = stripButton('blk-free-pad', 'grid', '위에서 본 판', (event) => {
+    toggle('pad');
+    if (open === 'pad' && event?.detail === 0) tools.focusPad();
+  }, { 'aria-expanded': 'false', 'aria-controls': 'blk-free-slot' });
   const apartButton = stripButton('blk-free-apart', 'layers', '층별로 벌려 보기', () => setApart(!view.isApart()), { 'aria-pressed': 'false' });
-  const viewsButton = stripButton('blk-free-views', 'viewfront', '위·앞·옆 모양', () => toggle('views'), { 'aria-expanded': 'false' });
+  const viewsButton = stripButton('blk-free-views', 'viewfront', '위ㆍ앞ㆍ옆 모양', () => toggle('views'), { 'aria-expanded': 'false', 'aria-controls': 'blk-free-slot' });
   let paint = FREE_COLORS[0];
   const swatch = h('span', { class: 'blk-free-swatch', 'aria-hidden': 'true' });
   const colorName = h('span', null, '');
@@ -154,13 +166,24 @@ export function playFreeBuild(stage, ctx) {
     type: 'button',
     class: 'btn blk-sbtn blk-free-color',
     'aria-expanded': 'false',
-    onclick: () => {
+    'aria-controls': 'blk-free-colors',
+    onclick: (event) => {
       ctx.sfx.play('click');
-      setColorsOpen(colorPop.hidden);
+      const opening = colorPop.hidden;
+      setColorsOpen(opening);
+      // 키보드로 열면 초점을 지금 색으로(F1-4)
+      if (opening && event?.detail === 0) colorPop.querySelector('[aria-pressed="true"]')?.focus({ preventScroll: true });
+    },
+    // [색] 버튼에서도 Escape로 닫는다(F1-4)
+    onkeydown: (event) => {
+      if (event.key !== 'Escape' || colorPop.hidden) return;
+      event.preventDefault();
+      setColorsOpen(false);
     },
   }, swatch, h('span', { class: 'blk-sbtn-text' }, '색 ', colorName));
   const colorPop = h('div', {
     class: 'blk-free-colors',
+    id: 'blk-free-colors',
     hidden: true,
     role: 'group',
     'aria-label': '쌓기나무 색 고르기',
@@ -206,7 +229,8 @@ export function playFreeBuild(stage, ctx) {
     apartButton,
     viewsButton,
     colorButton);
-  const mat = h('div', { class: 'mat blk-mat blk-free-mat' }, view.el, controls.dirs, controls.pad, panPrev, panNext, slot, colorPop);
+  const toastMark = h('i', { class: 'blk-free-toastmark', 'aria-hidden': 'true' });
+  const mat = h('div', { class: 'mat blk-mat blk-free-mat' }, view.el, controls.dirs, controls.pad, panPrev, panNext, slot, colorPop, toastMark);
   ctx.el.append(h('div', { class: 'workbench blk-bench blk-free' }, mat, strip));
   ctx.feedback.anchor?.(mat, { lift: 16, narrow: 'below' });
   // 휴대폰(560px 이하 — 무대가 매트 안 흐름에 놓인다)에서 무대의 높이를 판에 맞춘다: 처음 보기 맞춤이 너비로 정해지게(block-view.js homeUnitFor와 같은 비)
@@ -220,7 +244,7 @@ export function playFreeBuild(stage, ctx) {
     const top = topView(map);
     const front = frontView(map);
     const side = sideView(map);
-    const cell = cols > 8 ? 8 : 18;
+    const cell = cols > 8 ? 8 : 13; // 휴대폰 6×6: 세 그림이 390px 휴대폰의 매트 한 줄에 들어가게(좁으면 줄바꿈 — blocks.css)
     const fig = (caption, svg) => h('figure', { class: 'blk-figure blk-free-fig' }, svg, h('figcaption', null, caption));
     viewsBox.replaceChildren(
       fig('위', flatPicture({ cells: (r, c) => top[r][c], cols, rows, cell, label: '위에서 본 모양' })),
@@ -246,7 +270,7 @@ export function playFreeBuild(stage, ctx) {
       slot.replaceChildren();
     } else if (open === 'views') {
       drawViews();
-      slot.replaceChildren(h('div', { class: 'blk-padbox blk-free-viewspanel' }, h('p', { class: 'blk-pad-title' }, '위·앞·옆에서 본 모양'), viewsBox));
+      slot.replaceChildren(h('div', { class: 'blk-padbox blk-free-viewspanel' }, h('p', { class: 'blk-pad-title' }, '위ㆍ앞ㆍ옆에서 본 모양'), viewsBox));
       slot.hidden = false;
     } else {
       slot.replaceChildren(tools.pad);
@@ -254,7 +278,58 @@ export function playFreeBuild(stage, ctx) {
     }
     syncMarks();
     syncButtons();
+    layoutSlot();
     placeBoard();
+    placeToast();
+  }
+
+  // ── 펼치는 칸의 자리 · 칸 크기 · 알림 자리 (F1b) ──
+  /**
+   * 펼치는 칸의 자리는 화면 폭이 아니라 매트(무대)의 모양으로 정한다: 가로가 긴 매트는 크롬북처럼 왼쪽 위(판은 옆으로 비키고 옮긴다),
+   * 세로가 긴 매트는 세로 태블릿처럼 왼쪽 아래(위아래로). 휴대폰은 칸이 매트 안 흐름에 놓여 상관없다.
+   * 낮은 매트(폭 901~1000px 가로 화면 등)에서 14×14 판이 칸 높이를 넘으면 칸을 줄인다(24px부터 — 글자는 12px 아래로 줄이지 않는다)
+   */
+  function layoutSlot() {
+    const { w, h: sh } = view.getSize();
+    if (w && sh) mat.classList.toggle('is-tall', sh > w * 0.9);
+    slot.style.removeProperty('--free-cell');
+    slot.style.removeProperty('--free-cell-font');
+    tools.pad.classList.remove('is-low');
+    if (!board.compact || open !== 'pad' || slot.hidden || !sh || getComputedStyle(slot).position !== 'absolute') return;
+    const room = sh - SLOT_EDGE; // 칸의 max-height(calc(100% − 96px))와 같다
+    if (tools.pad.getBoundingClientRect().height <= room) return;
+    // 먼저 제목 줄을 감춘다(화면 읽기 이름에는 남는다 — 띠의 [위에서 본 판]이 눌린 모습으로 무엇인지 알린다). 그래도 넘치면 칸을 줄인다
+    tools.pad.classList.add('is-low');
+    const height = tools.pad.getBoundingClientRect().height;
+    if (height <= room) return;
+    const cell = Math.max(CELL_MIN, Math.floor(CELL_MAX - (height - room) / rows));
+    slot.style.setProperty('--free-cell', `${cell}px`);
+    slot.style.setProperty('--free-cell-font', `${Math.max(12, Math.min(13, Math.round(cell * 0.6)))}px`);
+  }
+  /**
+   * 알림 자리(F1-3). 엔진은 넓은 화면(901px 이상)에서 알림을 기준 요소 안 아래쪽에, 좁은 화면에서는 기준 요소 바로 밑에 띄운다.
+   * 자유 쌓기는 좁은 화면에서 매트 바로 밑이 띠(버튼)라, 기준을 매트 안의 표시(toastMark)로 한다:
+   *   넓은 화면 — 표시 = 매트 아래 끝의 펼친 칸 밖 가로 범위(왼쪽 위에 펼친 칸이 있으면 그 오른쪽) → 알림이 그 범위 안 아래쪽에(펼친 칸·띠를 가리지 않게)
+   *   좁은 화면 — 표시 = 무대 아래 끝에서 알림 높이만큼 위 → 알림이 매트 안 아래쪽에
+   *   세로가 긴 매트에서 아래에 펼친 칸이 있으면 두 경우 모두 그 칸 위에
+   */
+  function placeToast() {
+    const matBox = mat.getBoundingClientRect();
+    const stageBox = view.el.getBoundingClientRect();
+    const slotOn = !slot.hidden && getComputedStyle(slot).position === 'absolute';
+    const slotBox = slotOn ? slot.getBoundingClientRect() : null;
+    const below = slotOn && mat.classList.contains('is-tall');
+    let bottom = stageBox.bottom - matBox.top; // 매트 기준 아래 끝
+    if (below) bottom = slotBox.top - matBox.top - 8;
+    const left = slotOn && !below ? Math.round(slotBox.right - matBox.left + 8) : 0;
+    toastMark.style.left = `${left}px`;
+    if (globalThis.matchMedia?.(WIDE_TOAST).matches) {
+      toastMark.style.top = `${Math.round(bottom)}px`;
+      ctx.feedback.anchor?.(toastMark, { lift: below ? 0 : 16, narrow: 'below' });
+      return;
+    }
+    toastMark.style.top = `${Math.max(0, Math.round(bottom - TOAST_ROOM))}px`;
+    ctx.feedback.anchor?.(toastMark, { narrow: 'below' });
   }
 
   // ── 판 비키기 · 옮기기 (결정 9) ──
@@ -471,10 +546,13 @@ export function playFreeBuild(stage, ctx) {
     cancelAnimationFrame(resizeRaf);
     resizeRaf = requestAnimationFrame(() => {
       resizeRaf = 0;
+      layoutSlot();
       placeBoard();
+      placeToast();
     });
   };
   globalThis.addEventListener('resize', onResize);
+  onResize(); // 처음 그린 뒤 매트 모양·알림 자리를 잰다
 
   return () => {
     globalThis.removeEventListener('resize', onResize);

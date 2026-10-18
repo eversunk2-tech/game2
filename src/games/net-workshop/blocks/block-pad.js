@@ -7,6 +7,7 @@
  *   키보드: 방향키로 자리 이동, Enter·Space = 1개 쌓기, Backspace·Delete = 1개 빼기, 숫자 0~3 = 그 자리를 그 높이로, Ctrl+Z = 되돌리기
  * 무대(block-view.js)의 누르기(tap)도 여기로 온다: 누른 면 → 바뀌는 자리(blocks.js targetOf).
  */
+import { josa } from '../../../shared/core/korean.js';
 import { icon } from '../../../shared/ui/icons.js';
 import { COLS, MAX_H, ROWS, count, emptyMap, place, remove, sameMap, setHeight, targetOf } from './blocks.js';
 import { spotName } from './blocks-logic.js';
@@ -77,7 +78,7 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     rowEls.push(h('div', { class: 'blk-pad-row', role: 'row' }, row));
   }
   const topDigit = Math.min(9, maxH); // 숫자 키 0 ~ 9 (10층은 9층에서 Enter로 하나 더)
-  const gridLabel = (text) => `${text}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${topDigit}은 그 높이로 맞추기예요.`;
+  const gridLabel = (text) => `${text}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${josa(topDigit, '은/는')} 그 높이로 맞추기예요.`;
   const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': gridLabel(title) }, rowEls);
   const titleEl = h('p', { class: 'blk-pad-title' }, title);
   // compact: 넓은 판(자유 쌓기 14×14)을 작은 칸으로 한눈에 — 칸이 48px보다 작은 이 판만의 예외(blocks.css .blk-padbox.is-compact)
@@ -283,6 +284,11 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     /** 앞으로 쌓을 쌓기나무의 색 토큰(colorful) */
     setPaint(token) {
       paintToken = token;
+    },
+    /** 위에서 본 판의 고른 칸(마지막에 옮겨 간 칸)에 초점 — 자유 쌓기에서 키보드로 판을 펼쳤을 때 */
+    focusPad() {
+      paint();
+      cellAt(focusAt[0], focusAt[1])?.button.focus({ preventScroll: true });
     },
     /** 잠그면 쌓기·빼기·되돌리기가 모두 꺼진다 (맞힌 뒤) */
     lock(value) {
