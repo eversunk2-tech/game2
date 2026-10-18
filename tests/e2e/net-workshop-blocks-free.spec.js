@@ -695,26 +695,33 @@ test('펼친 채 창 크기·화면 방향 바꾸기(F1b-1): 무대가 새 크�
       }
       expect(union.size, `${label} 옮기기로 본 칸`).toBe(196);
       // 알림: [빼기]로 보이는 빈 판 칸을 누르면 "여기에는 뺄 쌓기나무가 없어요." — 그 밑에 버튼(띠·조작판·펼친 판의 칸)이 없다.
-      // 단 좁은 화면(900px 이하)인데 매트가 가로로 길어 펼친 칸이 왼쪽에 있는 때(크롬북 반 창 683×680)는 엔진이 알림 폭을 화면 폭으로 정해
-      // 펼친 칸 아래쪽 칸 몇 개를 가린다 — 엔진 옵션이 필요해 코디네이터 결정을 기다린다(F1c 보고). 그 장면만 알림 검사를 건너뛴다
-      if (w <= 900 && !(await look(page)).tall) {
-        testInfo.annotations.push({ type: '결정 기다림', description: `${label}: 좁은 화면 + 왼쪽 펼친 칸의 알림 자리(엔진 옵션 필요)` });
-        continue;
-      }
+      // 예외(spec-grade6 15-23 사용자 결정: 그대로): 좁은 화면(900px 이하)인데 매트가 가로로 길어 펼친 칸이 왼쪽에 있는 때(크롬북 반 창 683×680)는
+      // 엔진이 알림 폭을 화면 폭으로 정해 펼친 판의 아래쪽 칸을 잠깐 가린다 — 엔진은 고치지 않는다. 지금 값을 고정해 더 나빠지지 않게 본다:
+      // 펼친 판의 칸만(띠·조작판 버튼은 가리지 않음), 앞 두 줄의 오른쪽 칸 8개(글꼴 흉내 10개 — 알림이 다 올라온 뒤에 잼) 이하, 약 2.9초 뒤 사라짐
+      const sideNarrow = w <= 900 && !(await look(page)).tall;
       await page.locator('.blk-free-strip .blk-mode[data-mode="remove"]').click();
       const [tx, ty] = (await look(page)).seen.find((k) => k === '7,7') ? [7, 7] : (await look(page)).seen[0].split(',').map(Number);
       const tb = await page.locator(`.blk-free .blk-stage polygon.blk-tile[data-x="${tx}"][data-y="${ty}"]`).boundingBox();
       await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
       await expect(page.locator('.toast')).toContainText('여기에는 뺄 쌓기나무가 없어요.');
+      const shownAt = Date.now();
       await settled(page);
       const under = await page.evaluate(() => {
         const t = document.querySelector('.toast').getBoundingClientRect();
         return [...document.querySelectorAll('.blk-free button')].filter((el) => {
           const r = el.getBoundingClientRect();
           return r.width > 0 && !el.closest('[hidden]') && r.left < t.right && r.right > t.left && r.top < t.bottom && r.bottom > t.top;
-        }).map((el) => el.getAttribute('aria-label') || el.textContent.trim());
+        }).map((el) => ({ cell: el.classList.contains('blk-cell'), name: el.getAttribute('aria-label') || el.textContent.trim() }));
       });
-      expect(under, `${label} 알림 밑 버튼`).toEqual([]);
+      if (sideNarrow) {
+        testInfo.annotations.push({ type: '사용자 결정 예외', description: `${label}: 알림이 펼친 판의 칸 ${under.length}개를 잠깐 가림(spec-grade6 15-23 — 그대로)` });
+        expect(under.filter((u) => !u.cell), `${label} 알림 밑 칸 말고 버튼`).toEqual([]);
+        expect(under.length, `${label} 알림이 가리는 칸(지금 8개 · 글꼴 흉내 10개)`).toBeLessThanOrEqual(10);
+        await expect(page.locator('.toast'), `${label} 알림은 3초 안에 사라진다`).toHaveCount(0, { timeout: 3200 });
+        expect(Date.now() - shownAt, `${label} 알림이 떠 있던 시간(ms)`).toBeLessThanOrEqual(3300);
+      } else {
+        expect(under.map((u) => u.name), `${label} 알림 밑 버튼`).toEqual([]);
+      }
       await page.locator('.blk-free-strip .blk-mode[data-mode="add"]').click();
     }
     expect(errors).toEqual([]);
