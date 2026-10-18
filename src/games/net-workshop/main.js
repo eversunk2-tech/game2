@@ -81,7 +81,7 @@ const BADGES = [
   {
     id: 'dice-master',
     title: '주사위 장인',
-    desc: '주사위 주문(도전)을 성공해요',
+    desc: '주사위 주문(도전)을 성공해요 (정육면체 단계에서 수행)',
     icon: 'cube',
     test: (s) => (s.stars['cube-dice'] ?? 0) > 0,
   },
