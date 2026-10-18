@@ -53,15 +53,14 @@ import {
   APART_GAP,
   POSES,
   depthOf,
-  poseOfRoll,
   poseWord,
   projectPoint,
-  rollTo,
   sceneShapes,
   toViewerOf,
   unitFor,
 } from '../../src/games/net-workshop/blocks/block-view.js';
-import { dragView, homeView, stepView } from '../../src/games/net-workshop/orbit.js';
+import { dragView, homeView, rollOf, rotationMatrix, stepView } from '../../src/games/net-workshop/orbit.js';
+import { SNAP, dragTurn, homeTurn, poseAt, stepTurn } from '../../src/games/net-workshop/blocks/turn-view.js';
 
 // ── 모든 높이 지도 (4^9 = 262,144) ────────────────
 const ALL = [];
@@ -440,14 +439,19 @@ test('그림에서 다른 곳(lookDiff): 같아 보이면 없고, 통째로 옮�
 // ── 그리기: 자세·그리는 순서 ─────────────────
 const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const rows = (m) => [[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]];
+const mul3 = (a, b) => {
+  const out = new Array(9).fill(0);
+  for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) for (let k = 0; k < 3; k += 1) out[r * 3 + c] += a[r * 3 + k] * b[k * 3 + c];
+  return out;
+};
 
 test('자세: 직교 행렬이고, 처음 보기는 교과서 방향(앞이 왼쪽 아래·옆이 오른쪽 아래), [위][앞][옆]은 2D 그림과 같은 모눈이 된다', () => {
   for (const [name, pose] of Object.entries(POSES)) {
     const [r, d, v] = rows(pose);
     for (const a of [r, d, v]) assert.ok(Math.abs(dot3(a, a) - 1) < 1e-12, name);
     assert.ok(Math.abs(dot3(r, d)) < 1e-12 && Math.abs(dot3(r, v)) < 1e-12 && Math.abs(dot3(d, v)) < 1e-12, name);
-    // 처음 보기에서 그 방향 보기로 가는 회전을 넣으면 그 자세가 된다
-    poseOfRoll(rollTo(name)).forEach((value, i) => assert.ok(Math.abs(value - pose[i]) < 1e-9, `${name} ${i}`));
+    // 그 방향의 돌림판 각도(turn-view.js SNAP)로 계산한 자세가 그 자세다 (R1: 보기 값이 쌓인 회전에서 돌림판 각도로 바뀌었다 — 뜻은 같다)
+    poseAt(SNAP[name].yaw, SNAP[name].pitch).forEach((value, i) => assert.ok(Math.abs(value - pose[i]) < 1e-12, `${name} ${i}`));
   }
   // 처음 보기: 앞·오른쪽·위가 같은 비율로 보인다. 판의 앞쪽 가운데는 왼쪽 아래, 옆(오른쪽) 가운데는 오른쪽 아래
   const home = POSES.home;
@@ -514,13 +518,21 @@ function depthsAt(shapes, pose, p) {
   return out;
 }
 
-test('그리는 순서: 뒤에 그린 것이 앞에 그린 것에 가려지는 일이 없다 — 광선 계산과 견줌 (자세 60가지 × 쌓기 × 화면 점, 벌려 놓은 것 포함)', () => {
+test('그리는 순서: 뒤에 그린 것이 앞에 그린 것에 가려지는 일이 없다 — 광선 계산과 견줌 (자세 115가지 — 정해진 7 · 아무 자세 54 · 돌림판 자세 54 — × 쌓기 × 화면 점, 벌려 놓은 것 포함)', () => {
   const rng = createRng('paint');
   const poses = [...Object.values(POSES)];
+  // 아무 자세(판 밑에서 보는 것 포함): 화면 기준으로 구르는 돌리기(orbit.js)로 만든 자세 — 그리는 순서는 어느 자세에서도 맞아야 한다
   let view = homeView();
   for (let i = 0; i < 54; i += 1) {
     view = i % 3 === 0 ? stepView(view, rng.pick(['left', 'right', 'up', 'down'])) : dragView(view, rng.int(-200, 200), rng.int(-200, 200));
-    poses.push(poseOfRoll(view.roll));
+    const { axis, angle } = rollOf(view.roll);
+    poses.push(Math.abs(angle) < 1e-9 ? [...POSES.home] : mul3(rotationMatrix(axis, angle), POSES.home));
+  }
+  // 쌓기나무 무대가 실제로 쓰는 돌림판 자세(R1 — turn-view.js)
+  let turn = homeTurn();
+  for (let i = 0; i < 54; i += 1) {
+    turn = i % 3 === 0 ? stepTurn(turn, rng.pick(['left', 'right', 'up', 'down'])) : dragTurn(turn, rng.int(-200, 200), rng.int(-200, 200));
+    poses.push(poseAt(turn.yaw, turn.pitch));
   }
   let samples = 0;
   let wrong = 0;

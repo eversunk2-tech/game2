@@ -8,8 +8,8 @@ import { expect, test } from '@playwright/test';
 import { createRng } from '../../src/shared/core/random.js';
 import { count, hiddenCells, picturedFaces, frontView, sideView, topView, targetOf, OPPOSITE } from '../../src/games/net-workshop/blocks/blocks.js';
 import { BLOCK_STAGES, DIR_LETTERS, judgeLook, makeBlockQuestions, mirrorMap, spotName } from '../../src/games/net-workshop/blocks/blocks-logic.js';
-import { POSES, depthOf, poseOfRoll, poseWord, projectPoint, sceneShapes } from '../../src/games/net-workshop/blocks/block-view.js';
-import { homeView, stepView } from '../../src/games/net-workshop/orbit.js';
+import { POSES, depthOf, poseWord, projectPoint, sceneShapes } from '../../src/games/net-workshop/blocks/block-view.js';
+import { homeTurn, poseOf, stepTurn } from '../../src/games/net-workshop/blocks/turn-view.js';
 import { collectErrors, expectNoFling, fileUrl, hasHorizontalScroll, touchFlick, touchGestures } from './helpers.js';
 
 const FILE = 'net-workshop.html';
@@ -310,7 +310,7 @@ test('단계 지도: 쌓기나무 네 차시가 6학년 쌓기나무 영역의 �
   const howTo = await page.locator('.howto-list li').allTextContents();
   expect(howTo.slice(-2).map((t) => t.replace(/^\d+/, ''))).toEqual([
     '쌓기나무 차시에서는 판을 짧게 누르면 쌓이고, [빼기]를 누른 다음 누르면 빠져요. "위에서 본 판"의 칸을 눌러도 돼요.',
-    '쌓기나무는 끌어서 여러 방향으로 돌려 보고, [위] [앞] [옆]을 누르면 그 방향에서 본 모양이 돼요.',
+    '쌓기나무 판은 옆으로 끌면 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요. [위] [앞] [옆]을 누르면 그 방향에서 본 모양이 돼요.', // R1: 돌림판식 돌리기에 맞춘 문장
   ]);
   expect(howTo.join(' ')).not.toContain('전개도');
   // 정육면체 차시(5학년 영역): 칩 없이 제목만, 약 10분, 단원 글 없음. 그 영역의 놀이 방법에는 쌓기나무 줄이 없다
@@ -964,12 +964,13 @@ test('누른 곳이 가리키는 쌓기나무·면이 광선 계산과 같다 (�
     const box = stage.getBoundingClientRect();
     return { unit: parseFloat(stage.style.getPropertyValue('--blk-unit')), cx: box.left + box.width / 2, cy: box.top + box.height / 2, w: box.width, h: box.height };
   });
-  // 보기: 처음 보기에서 방향키로 한 단계씩(게임과 같은 orbit.js 값으로 자세를 따라 계산한다) + [위][앞][옆]
-  let view = homeView();
-  const views = [{ keys: [], pose: poseOfRoll(view.roll) }];
-  for (const key of ['ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowDown', 'ArrowDown']) {
-    view = stepView(view, key.replace('Arrow', '').toLowerCase(), key === 'ArrowLeft' || key === 'ArrowRight' ? 15 : 15);
-    views.push({ keys: [key], pose: poseOfRoll(view.roll) });
+  // 보기: 처음 보기에서 방향키로 한 단계씩(게임과 같은 turn-view.js 값으로 자세를 따라 계산한다) + [위][앞][옆]
+  // (R1: 돌림판식이라 높이는 수평 ~ 바로 위에서 멈춘다. 수평에 닿은 뒤에는 위로 올려 14가지가 모두 다른 보기가 되게 했다)
+  let view = homeTurn();
+  const views = [{ keys: [], pose: poseOf(view) }];
+  for (const key of ['ArrowRight', 'ArrowRight', 'ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'ArrowUp']) {
+    view = stepTurn(view, key.replace('Arrow', '').toLowerCase(), 15);
+    views.push({ keys: [key], pose: poseOf(view) });
   }
   for (const [key, name] of [['1', 'top'], ['2', 'front'], ['3', 'side']]) views.push({ keys: [key], pose: POSES[name] });
   const rng = createRng('pick');
@@ -1077,7 +1078,7 @@ test('정답 노출 0 (어느 방향에서 보았을까?): 답하기 전에는 �
       await page.locator(`.blk-choice[data-answer="${q.dir}"]`).click();
       await expect(stage).toHaveAttribute('data-facing', VIEW_OF[q.dir]);
       await expect(stage).toHaveAttribute('tabindex', '0');
-      await expect(stage).toHaveAttribute('aria-label', /끌거나 방향키로 돌려 보고/);
+      await expect(stage).toHaveAttribute('aria-label', /옆으로 끌거나 왼쪽·오른쪽 방향키를 누르면 판이 돌고/); // 돌려 볼 수 있는 무대의 이름(R1: 돌림판식에 맞춘 문장)
       await expect(page.locator('.blk-dirs')).toBeVisible();
       await expect(page.locator('.view-pad')).toBeVisible();
       await expect(page.locator('.blk-dir')).toHaveText(['가', '나', '다', '라']);
@@ -1520,28 +1521,33 @@ test('돌려 보기 알림(화면 읽기): 조작판 버튼·방향키로 돌려
   test.setTimeout(90_000);
   const errors = collectErrors(page);
   await open(page, 'blocks-copy');
-  let view = homeView();
-  let word = poseWord(poseOfRoll(view.roll));
+  let view = homeTurn();
+  let word = poseWord(poseOf(view));
   const said = [];
   /** 한 번 돌리고, 구간이 바뀌었으면 그 말이 화면 읽기 알림에 나오는지 본다 */
   const turn = async (dir, degrees, act) => {
-    view = stepView(view, dir, degrees);
+    view = stepTurn(view, dir, degrees);
     await act();
-    const now = poseWord(poseOfRoll(view.roll));
+    const now = poseWord(poseOf(view));
     if (now !== word) {
       await expect.poll(() => liveText(page), `${dir} → ${now}`).toContain(now);
       said.push(now);
     }
     word = now;
   };
-  // 조작판 버튼: 아래로 눕히고(앞에서 → 비스듬히 아래에서), 옆으로 돌리고(옆에서), 다시 위로 올린다(비스듬히 위에서)
+  // 조작판 버튼(R1 돌림판식 — 높이는 수평 ~ 바로 위, 판 돌리기는 45° 눈금): 수평까지 내리고(비스듬히 위에서 → 앞에서),
+  // 판을 돌리고(옆에서 → 뒤에서), 바로 위까지 올린다(비스듬히 위에서 → 위에서). 한도에 닿으면 그쪽 버튼이 꺼진다
   const button = (name) => () => press(testInfo, page.locator(name));
-  for (let i = 0; i < 4; i += 1) await turn('down', 15, button('.view-down'));
-  for (let i = 0; i < 3; i += 1) await turn('right', 30, button('.view-right'));
-  for (let i = 0; i < 7; i += 1) await turn('up', 15, button('.view-up'));
+  for (let i = 0; i < 3; i += 1) await turn('down', 15, button('.view-down'));
+  await expect(page.locator('.view-down')).toBeDisabled();
+  for (let i = 0; i < 3; i += 1) await turn('right', 45, button('.view-right'));
+  for (let i = 0; i < 6; i += 1) await turn('up', 15, button('.view-up'));
+  await expect(page.locator('.view-up')).toBeDisabled();
+  await expect(page.locator('.view-down')).toBeEnabled();
   expect(new Set(said).size).toBeGreaterThanOrEqual(3);
   expect(said).toContain('앞에서 본 모습이에요.');
-  // 방향키(크롬북): 같은 방식으로 알린다
+  expect(said).toContain('위에서 본 모습이에요.');
+  // 방향키(크롬북): 같은 방식으로 알린다. 한도에서 더 눌러도 그대로다
   if (!isTouch(testInfo)) {
     const before = said.length;
     await stageEl(page).focus();
@@ -1942,7 +1948,7 @@ test('접근성: 무대와 판의 이름, 그림의 글 이름(높이는 읽어 
   const errors = collectErrors(page);
   await open(page, 'blocks-hidden');
   const [q] = questionsFor('blocks-hidden');
-  await expect(stageEl(page)).toHaveAttribute('aria-label', /끌거나 방향키로 돌려 보고/);
+  await expect(stageEl(page)).toHaveAttribute('aria-label', /옆으로 끌거나 왼쪽·오른쪽 방향키를 누르면 판이 돌고, 위아래로 끌거나 위·아래 방향키를 누르면 내려다보는 높이가 바뀌어요/); // R1: 돌림판식에 맞춘 이름
   await expect(page.locator('.blk-pad-grid')).toHaveAttribute('aria-label', /방향키로 자리를 옮기고/);
   await expect(page.locator('.blk-svg')).toHaveAttribute('aria-hidden', 'true');
   // 주어진 그림: 멈춘 입체 그림은 높이를 말하지 않고, 위에서 본 모양은 쌓인 자리만 말한다
