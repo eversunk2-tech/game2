@@ -227,7 +227,7 @@ test('?lesson=prism: 세 단계(밑면과 옆면 · 각기둥이 될까? · 맞�
   for (const q of questionsFor('prism-parts')) {
     await expect(page.locator('.q-counter')).toHaveText(`문제 ${q.number} / 3`);
     await answerParts(page, q);
-    await expect(page.locator('.parts-name')).toHaveText(`${q.name} · 옆면 ${q.sides}개`);
+    await expect(page.locator('.parts-name')).toHaveText(`${q.name}, 옆면 ${q.sides}개`);
     await flat(page); // 맞히면 펼쳐진다
     await expect(page.locator('.net-face.is-base .face-label')).toHaveText(['○', '○']);
     await expect(page.locator('.net-face.is-side .face-label')).toHaveCount(q.sides);

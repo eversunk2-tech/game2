@@ -105,7 +105,7 @@
 .edge-tag.is-c,
 .edge-tag.is-x { color: var(--ink); font-family: var(--font-display); font-weight: 700; }
 .edge-tag.is-c { pointer-events: auto; cursor: pointer; }
-.edge-tag.is-x { color: var(--wrong); border-color: var(--wrong); }
+.edge-tag.is-x { color: var(--wrong); border-color: var(--wrong); text-decoration: line-through; text-decoration-thickness: 2px; }
 .fold-stage:not(.is-flat) .edge-band.is-c,
 .fold-stage:not(.is-flat) .edge-tag.is-c { visibility: hidden; }
 .edge-opt .opt-band { display: inline-block; width: 1.4em; height: 0.55em; border: 1.5px solid var(--ink); border-radius: 2px; background-color: var(--paper); background-image: radial-gradient(circle, var(--ink) 1.2px, transparent 1.5px); background-size: 6px 6px; }

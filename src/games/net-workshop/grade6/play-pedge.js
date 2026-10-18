@@ -31,7 +31,7 @@ export function playPrismEdge(stage, ctx, questions) {
     const q = questions[index];
     view.setEdgeMarks([
       segMark(q, q.target, 'q'),
-      ...q.options.map((o) => segMark(q, o.index, tried.has(o.index) ? 'x' : 'c', { text: tried.has(o.index) ? `✗${o.number}` : String(o.number), key: o.number })),
+      ...q.options.map((o) => segMark(q, o.index, tried.has(o.index) ? 'x' : 'c', { text: String(o.number), key: o.number })), // 틀린 보기: 빗금 띠 + 줄 그은 번호(색만이 아니라)
     ]);
   }
 

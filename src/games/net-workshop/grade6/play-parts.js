@@ -129,10 +129,10 @@ export function playParts(stage, ctx, questions) {
     // 고른 면 수 · [확인] 자리에 이름과 옆면의 수
     count.hidden = true;
     check.hidden = true;
-    name.textContent = `${q.name} · 옆면 ${q.sides}개`;
+    name.textContent = `${q.name}, 옆면 ${q.sides}개`; // 제목 글꼴에 없는 가운뎃점(·)은 쓰지 않는다
     name.hidden = false;
     bench.clearBonus();
-    view.reveal({ ok: true, text: `${q.name} · 옆면 ${q.sides}개` });
+    view.reveal({ ok: true, text: `${q.name}, 옆면 ${q.sides}개` });
     bench.lockFold(false);
     timer = setTimeout(() => {
       timer = 0;
