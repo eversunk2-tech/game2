@@ -56,6 +56,8 @@ import {
   mixStep,
   pinchView,
   poseOf,
+  rollBy,
+  rotationMatrix,
   sameLook,
   sceneAt,
   shadeOf,
@@ -311,6 +313,9 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
   // 각기둥 차시: 접은 입체를 놓는 자세(눕히기 · 세로축 둘레 돌림 — [{ axis, angle }] 차례로), 접는 정도에 맞춰 줄여 다 편 전개도는 늘 처음 모습
   let model = [];
   let lastScene = null; // 마지막으로 그린 장면 { folded, center, pose, px } — 면 누르기(pickAt)가 같은 계산을 쓴다
+  // 접은 입체의 처음 크기를 자동 맞춤의 몇 배로 할지(각기둥의 밑면 고르기 1.5 — 사용자 결정 15-20 G1-3). 감싸는 공의 지름이 무대 짧은 쪽의 약 79%라
+  // 어느 쪽으로 돌려도 무대 안이다. 펼친 전개도(접는 정도 0)의 크기는 그대로(자동 맞춤은 접는 정도에 비례)
+  let grow = 1;
 
   const later = (fn, ms) => {
     const id = setTimeout(() => {
@@ -364,7 +369,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     unit = layout ? layout.unit : Math.max(cube ? MIN_UNIT : MIN_UNIT_CM, Math.min(MAX_UNIT, size));
     if (blocked.length > 0) zoom = 1;
     else if (cube) zoom = Math.max(1, Math.min(MAX_ZOOM, Math.min(width, height) / (3.3 * unit)));
-    else zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(width, height) / (SPAN_PER_DIAGONAL * solidDiagonal * unit)));
+    else zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM * grow, (grow * Math.min(width, height)) / (SPAN_PER_DIAGONAL * solidDiagonal * unit)));
     applyRaster();
   }
 
@@ -691,6 +696,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     inner.style.top = `calc(var(--unit) * ${(cy - side / 2).toFixed(4)})`;
     inner.style.width = `calc(var(--unit) * ${side.toFixed(4)})`;
     inner.style.height = `calc(var(--unit) * ${side.toFixed(4)})`;
+    faceEl.style.setProperty('--fi', side.toFixed(4)); // 이름 상자의 한 변(칸) — 고른 면의 ✓·✗ 크기를 면 크기에 맞춘다(prism.css)
   }
   let hingedEdges = new Map(); // 각기둥: 면 id → 경첩을 이룬 변 번호들(그 가운데 점선을 그리지 않는 쪽은 선 없이 — 이웃 면이 그린다)
 
@@ -927,12 +933,16 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
    *   slots의 rect: { x, y, w, h } 빈 자리가 칸 하나가 아닐 때 · show: 처음 시점에서 함께 보여야 할 면 id
    *   fitBox: [가로, 세로] 전개도가 작아도 이 크기에 맞춰 그린다(문항마다 1 cm의 화면 크기가 같게 — 크기로 답이 드러나지 않게)
    *   pad: 무대 가장자리에 비워 둘 px(양쪽 합) · lengths: 면마다 가로·세로 길이(cm) 이름표 · names: 꼭짓점 이름 [{ name, point, out }]
+   *   grow: 다 접은 입체의 처음 크기를 자동 맞춤의 몇 배로(기본 1 — 각기둥의 밑면 고르기 1.5)
    */
   function setNet(nextNet, {
     slots: nextSlots = [], focus = [], show = [], layout: nextLayout = null, fitBox: nextFit = null, pad: nextPad = 0, lengths = false, names = [],
-    model: nextModel = [], view: fixedView = null,
+    model: nextModel = [], view: fixedView = null, grow: nextGrow = 1,
   } = {}) {
+    grow = Number(nextGrow) > 0 ? Number(nextGrow) : 1;
     stopAnimation();
+    cancelAnimationFrame(showRaf);
+    showRaf = 0;
     clearMarks();
     marksKey = '';
     layout = nextLayout && nextLayout.unit > 0 && Array.isArray(nextLayout.origin) ? { unit: nextLayout.unit, origin: [...nextLayout.origin] } : null;
@@ -1160,6 +1170,51 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     return true;
   }
 
+  /**
+   * 그 면들이 보이게 입체를 돌린다(각기둥의 밑면 고르기에서 틀린 두 면 — 4절 "고른 두 면이 서로 평행하지 않음을 입체에서 보여 줌").
+   * 두 면의 바깥 법선의 가운데 방향이 보는 사람 쪽(조금 위)을 향하게 화면 기준으로 한 번 돌린다. 두 면이 서로 반대를 보면(평행) 덜 보이는 쪽을.
+   * 0.35초 동안 잇는다(움직임 줄이기·?fx=low면 바로). 보기 조작이 되는 때(접힌 입체)만
+   */
+  let showRaf = 0;
+  function showFaces(ids) {
+    if (!canView() || !lastScene) return false;
+    const normals = lastScene.folded.faces.filter((f) => ids.includes(f.id)).map((f) => normalize(turnVector(lastScene.pose, f.normal)));
+    if (normals.length === 0) return false;
+    let aim = normals.reduce((sum, n) => add(sum, n), [0, 0, 0]);
+    if (Math.hypot(...aim) < 0.3) aim = normals.reduce((a, b) => (b[2] < a[2] ? b : a));
+    aim = normalize(aim);
+    const target = normalize([0, -0.35, 1]); // 보는 사람 쪽, 조금 위에서 내려다보게
+    const angle = (Math.acos(Math.max(-1, Math.min(1, dot(aim, target)))) * 180) / Math.PI;
+    if (angle < 3) return true;
+    let axis = [aim[1] * target[2] - aim[2] * target[1], aim[2] * target[0] - aim[0] * target[2], aim[0] * target[1] - aim[1] * target[0]];
+    if (Math.hypot(...axis) < 1e-9) axis = [1, 0, 0];
+    // 돌림 방향: 그 축 둘레로 돌린 가운데 방향이 목표에 닿는 쪽
+    const turned = turnVector(rotationMatrix(axis, angle), aim);
+    const sign = dot(turned, target) > 0.999 ? 1 : -1;
+    const start = { roll: [...view.roll], zoom: view.zoom };
+    const end = rollBy(view, axis, sign * angle);
+    cancelAnimationFrame(showRaf);
+    if (instantMix()) {
+      view = end;
+      render();
+      settle();
+      return true;
+    }
+    const t0 = performance.now();
+    const step = (now) => {
+      const p = Math.min(1, (now - t0) / 350);
+      view = { ...view, roll: lookToward(start, { roll: end.roll, zoom: view.zoom }, ease(p)).roll };
+      render();
+      if (p < 1 && !destroyed) showRaf = requestAnimationFrame(step);
+      else {
+        showRaf = 0;
+        settle();
+      }
+    };
+    showRaf = requestAnimationFrame(step);
+    return true;
+  }
+
   /** 가로 돌림·기울기·배율을 한 번에 처음으로 */
   function resetView() {
     if (!canView()) return false;
@@ -1229,6 +1284,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
       swallowClick = false;
     }
     if (!canView() || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    if (showRaf) {
+      cancelAnimationFrame(showRaf); // 돌려 보여 주는 중에 학생이 끌기 시작하면 그 자리에서 멈춘다
+      showRaf = 0;
+    }
     if (event.isPrimary && gesture) endGesture(); // 뗀 것을 못 받은 포인터가 남아 있으면 버린다
     if (pointers.size >= 2) return; // 셋째 손가락은 쓰지 않는다
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -1326,11 +1385,29 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     return pickFace(faces, point, { eye: eyeOf(box.height) });
   }
 
-  /** 면 고르기 단계(onPick): 무대를 누르면 계산한 맨 앞 면을 알린다. 끌기 뒤 따라오는 click은 onClickCapture가 먼저 삼킨다. 키보드(Enter·Space)는 초점 받은 면 */
+  /**
+   * 면 고르기 단계(onPick): 누른 순간(pointerdown)의 자리를 적어 둔다. 손가락으로 누르면 크롬이 click의 좌표를 "누를 수 있는 가까운 요소" 쪽으로
+   * 옮기므로(touch adjustment — 3D로 돌린 다각형 면은 둘레 직사각형으로 후보가 된다) click의 좌표로 면을 계산하면 이웃 면이 골라질 수 있다(review-prism-g1 G1-1)
+   */
+  let pickDown = null;
+  function onPickDown(event) {
+    if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    pickDown = { x: event.clientX, y: event.clientY };
+  }
+
+  /**
+   * 면 고르기 단계(onPick): 무대를 누르면 그 누르기를 시작한 점(pointerdown)에서 계산한 맨 앞 면을 알린다. 8px 넘게 끌면 돌리기라
+   * 뒤따르는 click은 onClickCapture가 먼저 삼킨다. 키보드(Enter·Space — detail 0)는 초점 받은 면
+   */
   function onPickClick(event) {
-    if (!onPick || event.defaultPrevented) return;
+    if (!onPick || event.defaultPrevented) {
+      pickDown = null;
+      return;
+    }
     const faceEl = event.target instanceof Element ? event.target.closest('.net-face') : null;
-    const id = event.detail === 0 ? faceEl?.dataset.face ?? null : pickAt(event.clientX, event.clientY);
+    const at = pickDown ?? { x: event.clientX, y: event.clientY };
+    pickDown = null;
+    const id = event.detail === 0 ? faceEl?.dataset.face ?? null : pickAt(at.x, at.y);
     event.preventDefault();
     event.stopPropagation();
     if (id != null) onPick(id);
@@ -1360,7 +1437,10 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
   if (!still) {
     el.addEventListener('pointerdown', onPointerDown);
     el.addEventListener('click', onClickCapture, true);
-    if (onPick) el.addEventListener('click', onPickClick, true);
+    if (onPick) {
+      el.addEventListener('pointerdown', onPickDown, true);
+      el.addEventListener('click', onPickClick, true);
+    }
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('gesturestart', onGestureStart);
   }
@@ -1428,6 +1508,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     faceEl: (id) => faceEls.get(id),
     slotEl: (key) => slotEls.get(key),
     pickAt,
+    showFaces,
     setEdgeMarks,
     /** 지금 1칸(1 cm)의 화면 크기(px) */
     unit: () => unit,
@@ -1444,6 +1525,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
       destroyed = true;
       stopAnimation();
       stopMix();
+      cancelAnimationFrame(showRaf);
       resizer?.disconnect();
       endGesture();
       clearTimeout(swallowTimer);
@@ -1452,6 +1534,7 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('click', onClickCapture, true);
       el.removeEventListener('click', onPickClick, true);
+      el.removeEventListener('pointerdown', onPickDown, true);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('gesturestart', onGestureStart);
       listeners.clear();

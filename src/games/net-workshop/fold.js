@@ -698,7 +698,8 @@ function slotCovered(slot, folded) {
  * 화면의 한 점에서 맨 앞에 보이는 면 (입체 상태의 면 누르기 — spec-grade6 6-1절 끝: 브라우저의 누르기 판정 대신 직접 계산).
  * faces: [{ id, points: [[x, y, z], …] }] 화면 좌표(px, x 오른쪽 · y 아래 · z 보는 사람 쪽, 무대 가운데 기준)의 볼록 다각형
  * point: [x, y] 누른 점(무대 가운데 기준 px, 화면 평면 z = 0) · eye: 눈의 자리(같은 좌표 — CSS perspective)
- * minFacing: 눈에서 오는 빛살과 면의 법선이 이루는 각의 코사인이 이보다 작으면(거의 옆으로 선 면) 누를 수 없는 면으로 본다
+ * minFacing: 눈에서 오는 빛살과 면의 법선이 이루는 각의 코사인이 이보다 작으면(거의 옆으로 선 면) 누를 수 없는 면으로 본다 —
+ *   맨 앞 면이 그런 면이면 null(그 뒤에 숨은 면을 고르지 않는다: 보이는 가는 면을 눌렀는데 안 보이는 면이 골라지면 안 된다)
  * → 면 id 또는 null
  */
 export function pickFace(faces, point, { eye, minFacing = 0.12 } = {}) {
@@ -709,7 +710,7 @@ export function pickFace(faces, point, { eye, minFacing = 0.12 } = {}) {
     if (!pts || pts.length < 3) continue;
     const n = normalize(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
     const facing = dot(n, dir);
-    if (Math.abs(facing) < minFacing) continue;
+    if (Math.abs(facing) < 1e-9) continue; // 빛살과 나란한 면(화면에서 선)
     const dist = dot(n, sub(pts[0], eye)) / facing;
     if (!(dist > 0)) continue;
     const hit = add(eye, scale(dir, dist));
@@ -720,9 +721,9 @@ export function pickFace(faces, point, { eye, minFacing = 0.12 } = {}) {
       if (sign === 0) sign = Math.sign(s);
       return Math.sign(s) === sign;
     });
-    if (inside && (!best || dist < best.dist)) best = { id: f.id, dist };
+    if (inside && (!best || dist < best.dist)) best = { id: f.id, dist, facing };
   }
-  return best?.id ?? null;
+  return best && Math.abs(best.facing) >= minFacing ? best.id : null;
 }
 
 /**

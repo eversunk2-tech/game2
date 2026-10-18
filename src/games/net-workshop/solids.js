@@ -191,48 +191,70 @@ export function stripOrientations(net) {
 }
 
 // ── 전개도 모양의 열쇠 (돌리기·뒤집기로 겹치면 같은 열쇠) ─────────────
-const round = (v, digits) => {
+/** 변의 길이(cm) · 꼭짓점의 각(도)을 적는 자릿수: 나오는 길이·각은 이 자리에서 반올림 경계와 멀다(검사 tests/unit/net-workshop-prism.test.js) */
+export const KEY_LENGTH_DIGITS = 3;
+export const KEY_ANGLE_DIGITS = 2;
+const fixed = (v, digits) => {
   const r = Math.round(v * 10 ** digits) / 10 ** digits;
-  return Object.is(r, -0) ? 0 : r;
+  return String(Object.is(r, -0) ? 0 : r);
 };
-
-/** 다각형 하나의 글자열: 꼭짓점을 반올림해 가장 작은 꼭짓점부터, 두 도는 방향 가운데 작은 쪽 */
-function polygonText(points, digits) {
-  const txt = points.map(([x, y]) => `${round(x, digits)},${round(y, digits)}`);
-  const n = txt.length;
-  let best = null;
-  for (const seq of [txt, [...txt].reverse()]) {
-    for (let k = 0; k < n; k += 1) {
-      const s = [...seq.slice(k), ...seq.slice(0, k)].join(' ');
-      if (best == null || s < best) best = s;
-    }
-  }
-  return best;
-}
+const polyArea2 = (poly) => poly.reduce((sum, p, i) => sum + p[0] * poly[(i + 1) % poly.length][1] - poly[(i + 1) % poly.length][0] * p[1], 0);
 
 /**
- * 다각형 면 전개도의 모양 열쇠: 면의 변 하나를 x축에 맞춰 놓은(앞·뒤 두 가지) 모든 놓기 가운데 가장 작은 글자열 (spec 16-2의 각기둥 netKey).
- * 면의 종류(밑면·옆면)는 넣고(roles: false면 넣지 않는다 — 직육면체처럼 크기가 같은 면은 서로 바꿔도 같은 모양), 면의 이름은 넣지 않는다
+ * 다각형 면 전개도의 모양 열쇠 (spec 16-2의 각기둥 netKey — 돌리기·뒤집기로 겹치면 같은 열쇠, review-prism-g1 G1-2).
+ * 좌표를 반올림하지 않는다(꼭짓점 좌표는 2.40625처럼 반올림 경계에 걸려 합동인 전개도가 갈렸다). 대신 면을 이은 모양을 적는다:
+ * 한 면의 한 변에서 시작해 면의 둘레를 평면에서 늘 같은 방향(반시계 — 뒤집은 것은 시계)으로 돌며 변마다 [길이 / 그 변이 시작하는 꼭짓점의 각]과
+ * 그 변에 이어 붙인 면(그 면도 이어 붙인 변에서 시작해 같은 방향으로)을 차례로 적는다. 길이·각은 면의 고유한 값이라 놓인 자리와 무관하고,
+ * 이은 모양과 면의 모양이 같으면 전개도는 합동이다. 모든 시작(면 · 변 · 두 방향) 가운데 가장 작은 글자열이 열쇠다.
+ * 면의 종류(밑면·옆면)는 넣고(roles: false면 넣지 않는다 — 직육면체처럼 크기가 같은 면은 서로 바꿔도 같은 모양), 면의 이름은 넣지 않는다.
+ * (길이가 다르게 일부만 이어 붙인 안 되는 전개도는 어긋난 자리까지는 적지 않는다 — 되는 전개도와 접어 본 모양에 쓴다)
  */
-export function polyNetKey(net, { digits = 4, roles = true } = {}) {
+export function polyNetKey(net, { roles = true } = {}) {
+  const faces = net.faces;
+  const index = new Map(faces.map((f, i) => [f.id, i]));
+  const link = faces.map((f) => f.poly.map(() => null));
+  for (const hg of findHinges(net)) {
+    const [a, b] = [index.get(hg.a), index.get(hg.b)];
+    link[a][hg.ea] = { face: b, edge: hg.eb };
+    link[b][hg.eb] = { face: a, edge: hg.ea };
+  }
+  const turn = faces.map((f) => (polyArea2(f.poly) >= 0 ? 1 : -1)); // 평면에서 면의 꼭짓점이 도는 방향
+  const sides = faces.map((f) => f.poly.map((p, i) => {
+    const q = f.poly[(i + 1) % f.poly.length];
+    return fixed(Math.hypot(q[0] - p[0], q[1] - p[1]), KEY_LENGTH_DIGITS);
+  }));
+  const corners = faces.map((f) => f.poly.map((_, i) => fixed((interiorAngle(f.poly, i) * 180) / Math.PI, KEY_ANGLE_DIGITS)));
+  const roleOf = (i) => (roles ? (faces[i].role === 'base' ? 'B' : 'S') : '');
+  /** 면 i를 변 e0부터 방향 dir(1 반시계 · −1 시계)로: from은 들어온 변(부모와 이은 변 — 다시 적지 않는다) */
+  function walk(i, e0, dir, seen, from) {
+    const n = faces[i].poly.length;
+    const step = dir * turn[i];
+    const out = [];
+    for (let t = 0; t < n; t += 1) {
+      const e = (((e0 + step * t) % n) + n) % n;
+      const start = step > 0 ? e : (e + 1) % n; // 그 변을 지나기 시작하는 꼭짓점
+      let mark = '-';
+      const other = link[i][e];
+      if (e === from) mark = 'P';
+      else if (other && seen.has(other.face)) mark = '^';
+      else if (other) {
+        seen.add(other.face);
+        mark = `[${walk(other.face, other.edge, dir, seen, other.edge)}]`;
+      }
+      out.push(`${sides[i][e]}/${corners[i][start]}${mark}`);
+    }
+    return `${roleOf(i)}(${out.join(',')})`;
+  }
+  // 시작할 면: 면의 종류를 넣으면 밑면만으로 충분하다(돌리기·뒤집기는 밑면을 밑면으로 옮긴다) — 빠르다
+  const roots = faces.map((_, i) => i).filter((i) => !roles || !faces.some((f) => f.role === 'base') || faces[i].role === 'base');
   let best = null;
-  // 기준으로 삼을 변: 면의 종류를 넣으면 밑면의 변만으로 충분하다(돌리기·뒤집기는 밑면을 밑면으로 옮긴다) — 빠르다
-  const anchors = roles && net.faces.some((f) => f.role === 'base') ? net.faces.filter((f) => f.role === 'base') : net.faces;
-  for (const anchor of anchors) {
-    anchor.poly.forEach((a, i) => {
-      const b = anchor.poly[(i + 1) % anchor.poly.length];
-      // 변의 두 방향 × 앞·뒤: 뒤집힌 전개도는 면의 꼭짓점이 거꾸로 돈다
-      for (const [p, q, mirror] of [[a, b, 1], [a, b, -1], [b, a, 1], [b, a, -1]]) {
-        const angle = Math.atan2(q[1] - p[1], q[0] - p[0]);
-        const [c, s] = [Math.cos(-angle), Math.sin(-angle)];
-        const move = ([x, y]) => {
-          const [dx, dy] = [x - p[0], y - p[1]];
-          return [dx * c - dy * s, mirror * (dx * s + dy * c)];
-        };
-        const txt = net.faces.map((f) => `${roles ? (f.role === 'base' ? 'B' : 'S') : ''}${polygonText(f.poly.map(move), digits)}`).sort().join(';');
+  for (const i of roots) {
+    for (let e = 0; e < faces[i].poly.length; e += 1) {
+      for (const dir of [1, -1]) {
+        const txt = walk(i, e, dir, new Set([i]), -1);
         if (best == null || txt < best) best = txt;
       }
-    });
+    }
   }
   return best;
 }

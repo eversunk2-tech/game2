@@ -150,11 +150,30 @@ async function resultXpSum(page) {
 
 // ── 밑면과 옆면: 입체의 면 누르기 ─────────────────────
 /**
+ * 그 점에서 면이 보는 사람 쪽을 향한 정도: |면의 법선 · 눈에서 그 점으로 오는 빛살|(코사인). 무대의 perspective · perspective-origin과
+ * 장면 · 면의 변환(DOM의 계산된 값)만으로 잰다(앱의 계산을 쓰지 않는다). 앱은 맨 앞 면이 0.12보다 작으면(거의 옆으로 선 면) 고르지 않는다
+ * — 검사는 0.2 넘는 면만 누른다(경계 근처를 피한다). page.evaluate 안에서 쓰도록 글로 넘긴다
+ */
+const FACING_AT = `(face, x, y) => {
+  const stage = document.querySelector('.fold-stage');
+  const r = stage.getBoundingClientRect();
+  const cs = getComputedStyle(stage);
+  const [ox, oy] = cs.perspectiveOrigin.split(' ').map(parseFloat);
+  const eye = [r.left + ox, r.top + oy, parseFloat(cs.perspective)];
+  const m = new DOMMatrix(getComputedStyle(document.querySelector('.net-scene')).transform).multiply(new DOMMatrix(getComputedStyle(face).transform));
+  const n = m.transformPoint(new DOMPoint(0, 0, 1, 0));
+  const d = [x - eye[0], y - eye[1], -eye[2]];
+  return Math.abs(n.x * d[0] + n.y * d[1] + n.z * d[2]) / Math.hypot(n.x, n.y, n.z) / Math.hypot(d[0], d[1], d[2]);
+}`;
+const FACING_MIN = 0.2;
+/**
  * 그 면을 누를 수 있는 화면의 점: 면의 종이(.face-paper)를 감싸는 상자 안에서, 그 점과 둘레 7px이 모두 그 면인(맨 앞) 곳 가운데 가장 안쪽.
- * 브라우저의 판정으로 고르지만 앱은 직접 계산(pickFace)으로 판정한다 — 둘이 같아야 누른 면이 골라진다(검사가 둘을 함께 본다)
+ * 브라우저의 판정으로 고르지만 앱은 직접 계산(pickFace)으로 판정한다 — 둘이 같아야 누른 면이 골라진다(검사가 둘을 함께 본다).
+ * 거의 옆으로 선 면(FACING_AT < 0.2)은 누를 수 없는 면이라 고르지 않는다(null → 더 돌린다)
  */
 async function facePoint(page, id) {
-  return page.evaluate((faceId) => {
+  return page.evaluate(([faceId, facingSrc, facingMin]) => {
+    const facingAt = (0, eval)(facingSrc);
     const el = document.querySelector(`.net-face[data-face="${faceId}"] .face-paper`);
     const r = el.getBoundingClientRect();
     let best = null;
@@ -163,16 +182,26 @@ async function facePoint(page, id) {
         const x = r.left + (r.width * i) / 14;
         const y = r.top + (r.height * j) / 14;
         if (![[0, 0], [7, 0], [-7, 0], [0, 7], [0, -7]].every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy) === el)) continue;
+        if (facingAt(el.closest('.net-face'), x, y) < facingMin) continue;
         const d = Math.hypot(i - 7, j - 7);
         if (!best || d < best.d) best = { x, y, d };
       }
     }
     return best;
-  }, id);
+  }, [id, FACING_AT, FACING_MIN]);
 }
-/** 그 면이 보일 때까지 조작판으로 돌린다(오른쪽으로 11번 = 330°, 그래도 없으면 아래쪽으로 한 번 더 기울여 다시) → 누를 점 */
+/** 입체의 움직임(돌리기 · 틀린 뒤 돌려 보여 주기)이 끝났는가: 두 화면 그리기 사이에 무대 변환이 그대로 */
+const sceneStill = (page) => page.locator('.net-scene').evaluate((el) => new Promise((done) => {
+  const a = el.style.transform;
+  requestAnimationFrame(() => requestAnimationFrame(() => done(a === el.style.transform)));
+}));
+/**
+ * 그 면이 보일 때까지 조작판으로 돌린다(오른쪽으로 11번 = 330°, 그래도 없으면 아래쪽으로 한 번 더 기울여 다시) → 누를 점.
+ * 누를 점은 움직임이 끝난 뒤에 잰다(돌아가는 중에 잰 점은 누를 때 다른 면 위일 수 있다 — 입체가 클수록 더 멀리 움직인다)
+ */
 async function showFace(page, id, { touch = false } = {}) {
   for (let k = 0; k < 60; k += 1) {
+    await expect.poll(() => sceneStill(page)).toBe(true);
     // 휴대폰은 판이 매트 아래에 있어 화면이 내려가 있을 수 있다: 무대가 화면 밖에 걸치면 매트를 화면 위쪽에 맞춘다(화면 밖의 점은 누를 수 없다)
     await page.evaluate(() => {
       const r = document.querySelector('.fold-stage').getBoundingClientRect();
@@ -358,6 +387,49 @@ test('밑면과 옆면 키보드만: Tab으로 면에 가서 Enter로 고르고,
   expect(errors).toEqual([]);
 });
 
+test('밑면과 옆면: 틀리면 고른 두 면이 보이게 입체를 돌려 준다 — 처음 보기에서 안 보이는 바닥 면을 키보드로 골라 틀려도 돌린 뒤 두 면이 모두 보이고, ✗는 화면에서 14px 넘게 크다(G1-7 · G1-6)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '키보드는 크롬북 화면에서');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  const seed = ['1', '2', '3', '4', '5', '6'].find((x) => questionsFor('prism-parts', x)[0].lying);
+  const [q] = questionsFor('prism-parts', seed);
+  await page.goto(STAGE_URL('prism-parts', '', seed));
+  async function tabTo(selector, n = 40) {
+    for (let i = 0; i < n; i += 1) {
+      await page.keyboard.press('Tab');
+      if (await page.evaluate((sel) => document.activeElement?.matches(sel), selector)) return;
+    }
+    throw new Error(`${selector}에 Tab으로 가지 못했어요`);
+  }
+  const still = () => sceneStill(page);
+  await expect.poll(still).toBe(true);
+  expect(await facePoint(page, q.ground), '처음 보기에서 바닥 면은 안 보인다').toBeNull();
+  for (const id of [q.ground, q.bases[0]]) {
+    await page.locator('.fold-stage').focus();
+    await tabTo(`.net-face[data-face="${id}"]`);
+    await page.keyboard.press('Enter');
+  }
+  const before = await page.locator('.net-scene').evaluate((el) => el.style.transform);
+  await tabTo('.parts-check');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.reason.is-wrong')).toContainText('바닥에 닿은 면이라고 밑면인 것은 아니에요.');
+  await expect.poll(() => page.locator('.net-scene').evaluate((el) => el.style.transform)).not.toBe(before);
+  await expect.poll(still).toBe(true);
+  await page.locator('.mat').evaluate((el) => el.scrollIntoView({ block: 'nearest' }));
+  for (const id of [q.ground, q.bases[0]]) {
+    expect(await facePoint(page, id), `${id} 면이 보인다`).not.toBeNull();
+    const glyph = await page.locator(`.net-face[data-face="${id}"] .face-mark`).evaluate((el) => {
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const r = range.getBoundingClientRect();
+      return { text: el.textContent, size: Math.sqrt(r.width * r.height) };
+    });
+    expect(glyph.text).toBe('✗');
+    expect(glyph.size, `${id} 면의 ✗ 크기`).toBeGreaterThan(14);
+  }
+  expect(errors).toEqual([]);
+});
+
 test('밑면과 옆면 터치(태블릿): 한 손가락으로 끌면 돌고, 짧게 누르면 고른다. 세 문항 끝까지', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 화면에서');
   test.setTimeout(150_000);
@@ -375,6 +447,77 @@ test('밑면과 옆면 터치(태블릿): 한 손가락으로 끌면 돌고, 짧
     await page.locator('.next-btn').tap();
   }
   await expect(page.getByText('3번 중 3번 맞힘')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test('밑면과 옆면 손가락 누르기: 면 경계에서 12px 안쪽(둘레 6px까지 같은 면)인 점을 손가락(반지름 8 · 14px)으로 눌러도 그 점 아래 면이 골라진다 — 브라우저가 옮긴 click 좌표가 아니라 누른 자리로(태블릿 · 휴대폰, review-prism-g1 G1-1)', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'tablet', '터치는 태블릿 화면에서');
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  const cdp = await page.context().newCDPSession(page);
+  const scene = () => page.locator('.net-scene');
+  const still = () => sceneStill(page);
+  const pickedIds = () => page.locator('.net-face.is-picked').evaluateAll((els) => els.map((el) => el.dataset.face));
+  const mismatches = [];
+  let pressed = 0;
+  for (const size of [SIZES.tablet, SIZES.phone]) {
+    await page.setViewportSize(size);
+    for (const seed of ['1', '4']) {
+      await page.goto(STAGE_URL('prism-parts', '', seed));
+      await expect(page.locator('.net-face').first()).toBeVisible();
+      // 조금 돌린 자세에서(면이 비스듬할수록 브라우저의 누르기 후보 상자가 이웃 면과 많이 겹친다)
+      await page.locator('.mat').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      const before = await scene().evaluate((el) => el.style.transform);
+      await page.locator('.view-pad').getByRole('button', { name: '오른쪽으로 돌려 보기' }).tap();
+      await expect.poll(() => scene().evaluate((el) => el.style.transform)).not.toBe(before);
+      await expect.poll(still).toBe(true);
+      await page.locator('.mat').evaluate((el) => el.scrollIntoView({ block: 'start' }));
+      await expect.poll(still).toBe(true);
+      // 누를 점: 그 점과 둘레 6px(8방향)이 모두 같은 면의 종이이고(브라우저의 판정), 12px 안에 다른 것이 있는 곳 — 서로 25px 넘게 떨어진 8곳
+      const points = await page.evaluate(([facingSrc, facingMin]) => {
+        const facingAt = (0, eval)(facingSrc);
+        const st = document.querySelector('.fold-stage').getBoundingClientRect();
+        const at = (x, y) => {
+          const el = document.elementFromPoint(x, y);
+          return el?.classList.contains('face-paper') ? el.closest('.net-face').dataset.face : null;
+        };
+        const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7071, 0.7071], [-0.7071, 0.7071], [0.7071, -0.7071], [-0.7071, -0.7071]];
+        const found = [];
+        for (let y = Math.max(st.top, 0) + 10; y < Math.min(st.bottom, innerHeight) - 10; y += 3) {
+          for (let x = st.left + 10; x < st.right - 10; x += 3) {
+            const id = at(x, y);
+            if (!id || !dirs.every(([dx, dy]) => at(x + 6 * dx, y + 6 * dy) === id)) continue;
+            if (facingAt(document.querySelector(`.net-face[data-face="${id}"]`), x, y) < facingMin) continue; // 거의 옆으로 선 면은 누를 수 없는 면
+            if (dirs.some(([dx, dy]) => at(x + 12 * dx, y + 12 * dy) !== id)) found.push({ x, y, id });
+          }
+        }
+        // 고르게 섞은 차례(정해진 곱셈 해시)에서 앞쪽부터 서로 25px 넘게 떨어진 것
+        const order = found.map((p, i) => [((i * 2654435761) >>> 0) % 1000003, p]).sort((a, b) => a[0] - b[0]).map(([, p]) => p);
+        const chosen = [];
+        for (const p of order) {
+          if (chosen.every((q) => Math.hypot(q.x - p.x, q.y - p.y) > 25)) chosen.push(p);
+          if (chosen.length >= 8) break;
+        }
+        return chosen;
+      }, [FACING_AT, FACING_MIN]);
+      expect(points.length, `${size.width}×${size.height} 시드 ${seed}: 누를 점`).toBeGreaterThanOrEqual(6);
+      for (const radius of [8, 14]) {
+        for (const p of points) {
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: p.x, y: p.y, radiusX: radius, radiusY: radius, force: 1, id: 1 }] });
+          await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+          await expect.poll(pickedIds).toHaveLength(1);
+          const [got] = await pickedIds();
+          pressed += 1;
+          if (got !== p.id) mismatches.push(`${size.width}×${size.height} 시드 ${seed} (${p.x}, ${p.y}) 반지름 ${radius}: ${p.id} → ${got}`);
+          // 풀기: 그 면을 키보드 길(Enter와 같은 click — 좌표 없음)로 한 번 더 눌러 다음 점은 빈 상태에서
+          await page.locator(`.net-face[data-face="${got}"]`).evaluate((el) => el.click());
+          await expect(page.locator('.net-face.is-picked')).toHaveCount(0);
+        }
+      }
+    }
+  }
+  expect(mismatches).toEqual([]);
+  expect(pressed).toBeGreaterThanOrEqual(48);
   expect(errors).toEqual([]);
 });
 

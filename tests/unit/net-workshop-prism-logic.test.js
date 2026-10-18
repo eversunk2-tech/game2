@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import { createRng } from '../../src/shared/core/random.js';
 import { createPlayReward, stageXp } from '../../src/shared/core/rewards.js';
 import { starsFromAccuracy } from '../../src/shared/core/progress.js';
-import { checkNet, foldNet } from '../../src/games/net-workshop/fold.js';
+import { checkNet, findHinges, foldNet } from '../../src/games/net-workshop/fold.js';
 import { LESSONS, STAGES } from '../../src/games/net-workshop/logic.js';
 import { BLOCK_LESSONS, BLOCK_STAGES } from '../../src/games/net-workshop/blocks/blocks-stages.js';
 import { BASES, REGULAR_KINDS, netBox } from '../../src/games/net-workshop/solids.js';
@@ -220,10 +220,14 @@ test('밑면과 옆면 채점: 두 밑면만 맞고(순서 상관없음), 그 �
   assert.match(judgeParts(q, q.bases).message, new RegExp(`${q.name}이에요\\. 옆면은 ${q.sides}개예요\\.$`));
 });
 
-test('맞닿는 선분 200판: 보기 4개(정답 · 바로 옆 선분 · 길이가 같은 선분 · 아무 선분), 정답은 독립으로 접은 입체에서 물음의 선분과 만나는 선분이고 바로 옆이 아니다. 정답 번호가 1~4에 고르게', () => {
+test('맞닿는 선분 200판: 보기 4개(정답 · 바로 옆 선분 · 길이가 같은 선분 · 아무 선분), 정답은 독립으로 접은 입체에서 물음의 선분과 만나는 선분. 판마다 한 문항만 정답이 바로 옆 선분(그때도 다른 바로 옆 선분이 오답 보기). 정답 번호가 1~4에 고르게', () => {
   const answerAt = [0, 0, 0, 0];
+  let nearAnswers = 0;
+  let skipNear = 0; // "바로 옆 보기는 빼고 남은 것에서 고르기"로 첫 시도에 맞힐 기대값(문항마다)
   for (const seed of SEEDS) {
-    for (const q of questionsOf('prism-edge', seed)) {
+    const round = questionsOf('prism-edge', seed);
+    assert.equal(round.filter((q) => q.nearAnswer).length, 1, String(seed));
+    for (const q of round) {
       const label = `${seed} ${q.itemId}`;
       assert.ok(checkNet(q.net).ok, label);
       assert.equal(q.options.length, 4);
@@ -245,8 +249,13 @@ test('맞닿는 선분 200판: 보기 4개(정답 · 바로 옆 선분 · 길이
         if (o.kind === 'near') assert.ok(touch(flatSeg(T), flatSeg(S)), label);
         if (o.kind === 'same') assert.ok(Math.abs(S.length - T.length) < 1e-6, label);
       }
-      assert.ok(!touch(flatSeg(T), flatSeg(q.segments[q.answer])), `${label}: 정답이 물음 바로 옆`);
-      assert.ok(q.options.some((o) => o.kind === 'near'), label); // 오개념 "가까이 있는 선분끼리 맞닿는다"
+      // 정답이 바로 옆(끝점을 함께 씀)인 것은 그 판의 한 문항뿐(G1-5)
+      assert.equal(touch(flatSeg(T), flatSeg(q.segments[q.answer])), q.nearAnswer, `${label}: 정답이 바로 옆인가`);
+      if (q.nearAnswer) nearAnswers += 1;
+      // 바로 옆이지만 맞닿지 않는 선분이 늘 오답 보기에 있다(오개념 "가까이 있는 선분끼리 맞닿는다")
+      assert.ok(q.options.some((o) => o.kind === 'near' && touch(flatSeg(T), flatSeg(q.segments[o.index]))), label);
+      const notNear = q.options.filter((o) => !touch(flatSeg(T), flatSeg(q.segments[o.index])));
+      skipNear += notNear.some((o) => o.index === q.answer) ? 1 / notNear.length : 0;
       for (const o of q.options) {
         const r = judgePrismEdge(q, o.index);
         checkResult(r, `${label} ${o.number}`);
@@ -256,6 +265,35 @@ test('맞닿는 선분 200판: 보기 4개(정답 · 바로 옆 선분 · 길이
     }
   }
   for (const n of answerAt) assert.ok(n > 600 * 0.2 && n < 600 * 0.3, `정답 번호 ${answerAt}`);
+  assert.equal(nearAnswers, 200); // 600문항 중 200(33%)
+  // 바로 옆 보기를 빼고 찍으면: 고치기 전(정답은 늘 바로 옆이 아님) 35% → 지금 27% 안팎 (아무렇게나 찍기 25%)
+  assert.ok(skipNear / 600 < 0.3, `바로 옆 빼고 찍기 ${(skipNear / 600).toFixed(3)}`);
+});
+
+test('판별 2,000판: 꼴만 보고 답하는 규칙으로는 찍기보다 크게 낫지 않다 — 안 되는 것 하나를 판의 절반쯤 낯선 꼴에서 만든다(G1-4)', () => {
+  // 꼴(독립): 옆면 가운데 다른 옆면과 이어지지 않은 것이 있으면 낯선 꼴
+  const isLone = (net) => {
+    const sides = net.faces.filter((f) => f.role === 'side');
+    const hinges = findHinges(net);
+    return sides.some((f) => !hinges.some((hg) => (hg.a === f.id || hg.b === f.id) && sides.some((g) => g.id !== f.id && (hg.a === g.id || hg.b === g.id))));
+  };
+  let total = 0;
+  let byShape = 0;
+  let loneBad = 0;
+  for (let seed = 0; seed < 2000; seed += 1) {
+    const qs = questionsOf('prism-judge', `shape${seed}`);
+    for (const q of qs) {
+      const lone = isLone(q.net);
+      assert.equal(lone, q.form === 'lone', q.itemId);
+      if (lone && !q.valid) loneBad += 1;
+      byShape += (lone ? 'yes' : 'no') === q.expected ? 1 : 0;
+      total += 1;
+    }
+  }
+  const rate = byShape / total;
+  // 늘 "돼요" 40% · 늘 "안 돼요" 60% · 고치기 전 "낯선 꼴은 돼요, 띠 꼴은 안 돼요" 80%
+  assert.ok(rate < 0.72, `꼴만 보고 ${rate}`);
+  assert.ok(loneBad > 2000 * 0.4 && loneBad < 2000 * 0.6, `낯선 꼴에서 만든 안 되는 것 ${loneBad}판`);
 });
 
 // ── 별 · 점수 (엔진 규칙 — 게임은 점수를 만들지 않는다) ─────────────

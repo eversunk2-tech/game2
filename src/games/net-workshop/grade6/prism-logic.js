@@ -62,19 +62,22 @@ const dir2 = (p, q) => {
 };
 
 /**
- * 띠 꼴 전개도의 두 끝 옆면: [{ face, end: 'left' | 'right', free: 그 면의 자유로운 세로 변의 두 꼭짓점 번호, next: 그 너머에 올 입체의 옆면 }]
- * 왼쪽 끝은 옆면 cut(꼭짓점 cut의 모서리가 왼쪽 변), 오른쪽 끝은 옆면 cut−1. 밑면이 붙은 끝은 뺀다(leaf만)
+ * 고칠 수 있는 끝 옆면: 이웃(경첩)이 하나뿐이고 그 경첩이 세로 변(옆면의 변 1 · 3)인 옆면 — 띠 꼴의 두 끝, 낯선 꼴의 줄 끝(밑면이 붙은 옆면은 뺀다).
+ * → [{ face, end: 'left' | 'right'(자유로운 세로 변이 어느 쪽), next: 그 너머에 올 입체의 옆면, nextIndex }]
+ * 옆면 i의 꼭짓점은 [P_i 아래, P_i+1 아래, P_i+1 위, P_i 위] 차례라 변 1은 꼭짓점 i+1의 세로 변, 변 3은 꼭짓점 i의 세로 변이다
  */
-function stripEnds(net, { cut, top, bottom }) {
+function sideLeaves(net) {
   const n = net.sides;
+  const hinges = findHinges(net);
   const out = [];
-  const leftId = `s${cut}`;
-  const rightId = `s${(cut + n - 1) % n}`;
-  const carried = new Set([`s${top}`, `s${bottom}`]);
-  const left = net.faces.find((f) => f.solid === leftId);
-  const right = net.faces.find((f) => f.solid === rightId);
-  if (left && !carried.has(leftId)) out.push({ face: left, end: 'left', next: `s${(cut + n - 1) % n}`, nextIndex: (cut + n - 1) % n });
-  if (right && right !== left && !carried.has(rightId)) out.push({ face: right, end: 'right', next: `s${cut}`, nextIndex: cut });
+  for (const f of net.faces.filter((x) => x.role === 'side' && x.exact !== false)) {
+    const mine = hinges.filter((hg) => hg.a === f.id || hg.b === f.id);
+    if (mine.length !== 1) continue;
+    const edge = mine[0].a === f.id ? mine[0].ea : mine[0].eb;
+    const i = Number(f.solid.slice(1));
+    if (edge === 3) out.push({ face: f, end: 'right', next: `s${(i + 1) % n}`, nextIndex: (i + 1) % n });
+    else if (edge === 1) out.push({ face: f, end: 'left', next: `s${(i + n - 1) % n}`, nextIndex: (i + n - 1) % n });
+  }
   return out;
 }
 
@@ -103,21 +106,25 @@ function addSide(net, end, base) {
   return clean(withFaces(net, [...net.faces, extra]));
 }
 
-/** 두 밑면을 같은 쪽으로: 아래 밑면을 떼고, 위 밑면과 같은 면을 옆면 m의 위쪽 변에 붙인다 */
-function sameSideBases(net, m) {
-  const top = net.faces.find((f) => f.solid === 'b1');
-  const side = net.faces.find((f) => f.solid === `s${m}`);
-  const bottom = net.faces.find((f) => f.solid === 'b0');
-  if (!top || !side || !bottom) return null;
+/**
+ * 두 밑면을 같은 쪽으로: 이웃이 하나뿐인 밑면 하나를 떼고, 남는 밑면(keep)과 같은 면을 옆면 m의 같은 쪽 변(keep이 위 밑면이면 위쪽 변, 아래 밑면이면 아래쪽 변)에 붙인다.
+ * 위 밑면 b1의 꼭짓점 k는 P_k, 아래 밑면 b0의 꼭짓점 k는 P_(n−k)(바깥에서 보아 반시계라 거꾸로 돈다)
+ */
+function sameSideBases(net, keepId, m) {
   const n = net.sides;
-  // 위 밑면의 변 m(꼭짓점 m → m+1)을 옆면 m의 위쪽 변(꼭짓점 3 → 2)에 맞추는 돌림 + 옮김 (뒤집지 않는다)
-  const [a, b] = [top.poly[m], top.poly[(m + 1) % n]];
-  const [a2, b2] = [side.poly[3], side.poly[2]];
+  const keep = net.faces.find((f) => f.solid === keepId);
+  const drop = net.faces.find((f) => f.role === 'base' && f.solid !== keepId);
+  const side = net.faces.find((f) => f.solid === `s${m}`);
+  if (!keep || !side || !drop) return null;
+  if (findHinges(net).filter((hg) => hg.a === drop.id || hg.b === drop.id).length !== 1) return null; // 떼어도 다른 면이 떨어지지 않게
+  const at = (k) => (keepId === 'b1' ? k % n : (((n - k) % n) + n) % n);
+  const [a, b] = [keep.poly[at(m)], keep.poly[at(m + 1)]];
+  const [a2, b2] = keepId === 'b1' ? [side.poly[3], side.poly[2]] : [side.poly[0], side.poly[1]];
   const turn = Math.atan2(b2[1] - a2[1], b2[0] - a2[0]) - Math.atan2(b[1] - a[1], b[0] - a[0]);
   const [c, s] = [Math.cos(turn), Math.sin(turn)];
-  const poly = top.poly.map(([x, y]) => [a2[0] + (x - a[0]) * c - (y - a[1]) * s, a2[1] + (x - a[0]) * s + (y - a[1]) * c]);
-  const moved = { ...bottom, solid: 'b1', poly, exact: true };
-  return clean(withFaces(net, net.faces.map((f) => (f.id === bottom.id ? moved : f))));
+  const poly = keep.poly.map(([x, y]) => [a2[0] + (x - a[0]) * c - (y - a[1]) * s, a2[1] + (x - a[0]) * s + (y - a[1]) * c]);
+  const moved = { ...drop, solid: keepId, poly, exact: true };
+  return clean(withFaces(net, net.faces.map((f) => (f.id === drop.id ? moved : f))));
 }
 
 /** 끝 옆면의 가로를 delta(cm)만큼 바꾼다(직사각형 그대로, 이웃과 이은 변은 그대로) */
@@ -295,50 +302,45 @@ function settle(net, rng) {
 /** 띠 꼴 트리의 아무 갈래 */
 const stripParams = (rng, n) => ({ cut: rng.int(0, n - 1), top: rng.int(0, n - 1), bottom: rng.int(0, n - 1) });
 
-/** 판별 문항 하나: intended — null(띠 꼴) · 'lone'(낯선 꼴) · 'count' · 'same' · 'length' · 'shape' */
-function makeJudgeNet(rng, intended, kind) {
+/**
+ * 판별 문항 하나: intended — null(되는 전개도) · 'count' · 'same' · 'length' · 'shape'. form — 바탕 꼴 'strip'(띠 꼴) · 'lone'(낯선 꼴).
+ * 안 되는 전개도도 낯선 꼴에서 만들 수 있다(사용자 결정 15-20 G1-4 — 꼴만 보고 답하지 못하게)
+ */
+function makeJudgeNet(rng, intended, kind, form = 'strip') {
   for (let guard = 0; guard < 400; guard += 1) {
     const base = pickBase(rng, kind);
     const height = rng.pick(PRISM_HEIGHTS);
     const solid = prismSolid({ base: base.poly, height });
     const n = solid.sides;
+    let net = null;
+    if (form === 'lone') {
+      const tree = loneTree(solid, { lone: rng.int(0, n - 1), via: rng.pick(['b0', 'b1']), link: rng.int(0, n - 1), other: rng.int(0, n - 1) });
+      if (tree) net = prismNet(solid, tree);
+    } else net = prismNet(solid, stripTree(solid, stripParams(rng, n)));
+    if (!net || !flatOk(net)) continue;
+    const ends = sideLeaves(net);
+    const end = ends.length > 0 ? rng.pick(ends) : null;
     let made = null;
-    if (intended === 'lone') {
-      const params = { lone: rng.int(0, n - 1), via: rng.pick(['b0', 'b1']), link: rng.int(0, n - 1), other: rng.int(0, n - 1) };
-      const tree = loneTree(solid, params);
-      if (tree) made = clean(prismNet(solid, tree));
-    } else {
-      const params = stripParams(rng, n);
-      const net = prismNet(solid, stripTree(solid, params));
-      if (!flatOk(net)) continue;
-      const ends = stripEnds(net, params);
-      if (!intended) made = net;
-      else if (intended === 'count') {
-        const end = ends.length > 0 ? rng.pick(ends) : null;
-        // 옆면은 늘 4개라는 생각을 만나게: 삼각기둥은 하나 더(4개), 오각기둥·육각기둥은 하나 빼기, 사각기둥은 둘 중 하나
-        const add = n === 3 || (n === 4 && rng.int(0, 1) === 0);
-        if (end) made = add ? addSide(net, end, base) : dropSide(net, end);
-      } else if (intended === 'same') {
-        const m = rng.int(0, n - 1);
-        if (m !== params.top) made = sameSideBases(net, m);
-      } else if (intended === 'length') {
-        const end = ends.length > 0 ? rng.pick(ends) : null;
-        if (end) made = resizeSide(net, end, rng.pick([-1, 1]));
-      } else if (intended === 'shape') {
-        const end = ends.length > 0 ? rng.pick(ends) : null;
-        if (end) made = leanSide(net, end, rng.pick([-1, 1]));
-      }
-    }
+    if (!intended) made = net;
+    else if (intended === 'count') {
+      // 옆면은 늘 4개라는 생각을 만나게: 삼각기둥은 하나 더(4개), 오각기둥·육각기둥은 하나 빼기, 사각기둥은 둘 중 하나
+      const add = n === 3 || (n === 4 && rng.int(0, 1) === 0);
+      if (end) made = add ? addSide(net, end, base) : dropSide(net, end);
+    } else if (intended === 'same') made = sameSideBases(net, rng.pick(['b0', 'b1']), rng.int(0, n - 1));
+    else if (intended === 'length') made = end ? resizeSide(net, end, rng.pick([-1, 1])) : null;
+    else if (intended === 'shape') made = end ? leanSide(net, end, rng.pick([-1, 1])) : null;
     if (!made) continue;
-    const net = settle(made, rng);
-    if (!net) continue;
-    const { problems } = checkNet(net);
-    const want = intended === 'lone' ? null : intended;
-    if (!matchesIntent(problems, want)) continue;
-    return { base, height, net, problems };
+    const settled = settle(made, rng);
+    if (!settled) continue;
+    const { problems } = checkNet(settled);
+    if (!matchesIntent(problems, intended)) continue;
+    return { base, height, net: settled, problems };
   }
-  throw new Error(`각기둥 판별 문항(${intended ?? 'strip'})을 만들지 못했어요.`);
+  throw new Error(`각기둥 판별 문항(${intended ?? 'valid'} · ${form})을 만들지 못했어요.`);
 }
+
+/** 판에서 안 되는 전개도 하나를 낯선 꼴에서 만들 확률(사용자 결정 15-20 G1-4 "가끔" — 검토가 권한 "판의 절반쯤") */
+export const LONE_INVALID_SHARE = 0.5;
 
 /**
  * 판별(prism-judge) 5문항: 되는 것 2(띠 꼴 1 + 낯선 꼴 1) · 안 되는 것 3(옆면의 수 · 두 밑면이 같은 쪽 · 길이가 다른 선분 또는 직사각형이 아닌 옆면).
@@ -346,23 +348,25 @@ function makeJudgeNet(rng, intended, kind) {
  */
 function makeJudgeQuestions(stage, rng) {
   const plan = rng.shuffle(['strip', 'lone', 'count', 'same', rng.pick(['length', 'shape'])]);
+  // 판의 절반쯤은 안 되는 셋 가운데 하나를 낯선 꼴에서 만든다(G1-4)
+  const loneBad = rng.next() < LONE_INVALID_SHARE ? rng.pick(plan.filter((t) => t !== 'strip' && t !== 'lone')) : null;
   const used = new Set();
   return plan.map((type, i) => {
-    const intended = type === 'strip' || type === 'lone' ? (type === 'lone' ? 'lone' : null) : type;
-    let pool = type === 'length' ? [...REGULAR_KINDS] : KIND_ORDER.filter((k) => k !== 'rect' || type !== 'lone');
+    const valid = type === 'strip' || type === 'lone';
+    const form = type === 'lone' || type === loneBad ? 'lone' : 'strip';
+    const pool = type === 'length' ? [...REGULAR_KINDS] : KIND_ORDER.filter((k) => k !== 'rect' || form !== 'lone');
     const fresh = pool.filter((k) => !used.has(k));
     const kind = rng.pick(fresh.length > 0 ? fresh : pool);
     used.add(kind);
-    const made = makeJudgeNet(rng, intended, kind);
-    const valid = type === 'strip' || type === 'lone';
+    const made = makeJudgeNet(rng, valid ? null : type, kind, form);
     return {
       kind: 'pjudge',
       number: i + 1,
-      itemId: `${stage.id}:${i + 1}:${made.base.id}-h${made.height}-${type}`,
+      itemId: `${stage.id}:${i + 1}:${made.base.id}-h${made.height}-${type}${!valid && form === 'lone' ? '-lone' : ''}`,
       base: made.base.id,
       height: made.height,
       net: made.net,
-      form: type === 'lone' ? 'lone' : 'strip',
+      form,
       valid,
       intended: valid ? null : type,
       problems: made.problems,
@@ -492,25 +496,31 @@ const cyclicNear = (i, j, n) => (i - j + n) % n === 1 || (j - i + n) % n === 1;
 
 /**
  * 맞닿는 선분 3문항: 되는 전개도(띠 꼴 · 낯선 꼴)에서 경첩이 아닌 선분 하나를 물음으로, 보기 4개(정답 · 바로 옆 선분 · 길이가 같은 다른 선분 · 아무 선분).
- * 바로 옆 선분과 맞닿는 선분은 묻지 않는다(가까이 있는 선분끼리 맞닿는다는 생각으로는 맞힐 수 없게). 보기 번호는 테두리를 도는 차례이고,
+ * 판마다 한 문항만 바로 옆 선분이 정답이고(그때도 다른 바로 옆 선분은 오답 보기), 나머지는 정답이 바로 옆이 아니다 — 가까이 있다는 것만으로는
+ * 맞히지도 지우지도 못하게(사용자 결정 15-20 G1-5). 보기 번호는 테두리를 도는 차례이고,
  * 정답이 놓일 번호는 먼저 고르게 뽑는다(번호로 찍어 맞힐 수 없게)
  */
 function makeEdgeQuestions(stage, rng) {
   const kinds = rng.shuffle(KIND_ORDER).slice(0, stage.count);
+  // 판마다 한 문항(자리는 무작위)은 바로 옆 선분이 정답(사용자 결정 15-20 G1-5 — 바로 옆 선분도 맞닿을 수 있다. 접어 봐야 안다).
+  // 그 문항에도 바로 옆의 다른 선분(맞닿지 않는 쪽)은 보기에 남아 4절 "만나는 선분" 오개념을 만난다
+  const nearAt = rng.int(0, stage.count - 1);
   return kinds.map((kind, i) => {
+    const nearAnswer = i === nearAt;
     for (let guard = 0; guard < 200; guard += 1) {
       const form = rng.pick(['strip', 'strip', 'lone']);
-      const made = makeJudgeNet(rng, form === 'lone' ? 'lone' : null, kind);
+      const made = makeJudgeNet(rng, null, kind, form);
       const { net } = made;
       const ring = outline(net, SEGMENT_NAMES);
       if (!ring) continue;
       const { segments } = ring;
       const pairs = prismMeetingPairs(net, segments);
       const n = segments.length;
-      const far = segments.map((_, t) => t).filter((t) => pairs[t] >= 0 && !cyclicNear(t, pairs[t], n));
-      if (far.length === 0) continue;
       const othersOf = (t) => segments.map((_, k) => k).filter((k) => k !== t && k !== pairs[t]);
       const nearOf = (t) => othersOf(t).filter((k) => cyclicNear(k, t, n));
+      // 물음이 될 선분: 보통은 맞닿는 선분이 바로 옆이 아닌 것, 바로 옆 문항은 맞닿는 선분이 바로 옆이고 다른 바로 옆 선분(오답 보기)이 있는 것
+      const far = segments.map((_, t) => t).filter((t) => pairs[t] >= 0 && cyclicNear(t, pairs[t], n) === nearAnswer && nearOf(t).length > 0);
+      if (far.length === 0) continue;
       const sameOf = (t) => othersOf(t).filter((k) => !cyclicNear(k, t, n) && Math.abs(segments[k].length - segments[t].length) < 1e-6);
       const want = rng.int(0, 3);
       let chosen = null;
@@ -548,6 +558,7 @@ function makeEdgeQuestions(stage, rng) {
         pairs,
         target,
         answer,
+        nearAnswer,
         options,
       };
     }
@@ -562,7 +573,8 @@ export function judgePrismEdge(question, index) {
   const answer = question.options.find((o) => o.index === question.answer);
   const expected = `${answer.number}번`;
   if (index === question.answer) {
-    return { correct: true, expected, tag: null, message: `맞아요! 접으면 표시한 선분과 ${answer.number}번 선분이 맞닿아 한 모서리가 돼요. 맞닿는 두 선분은 길이가 같아요.` };
+    const close = question.nearAnswer ? ' 바로 옆에 있는 선분도 접으면 맞닿을 수 있어요.' : '';
+    return { correct: true, expected, tag: null, message: `맞아요! 접으면 표시한 선분과 ${answer.number}번 선분이 맞닿아 한 모서리가 돼요. 맞닿는 두 선분은 길이가 같아요.${close}` };
   }
   let message;
   if (option.kind === 'near') message = `${option.number}번 선분은 표시한 선분 바로 옆에 있지만, 접으면 맞닿지 않아요. 가까이 있다고 맞닿는 것은 아니에요.`;

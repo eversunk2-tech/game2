@@ -12,6 +12,7 @@ import { createNetView, createWorkbench } from '../view3d.js';
 import { PRISM_FIT, judgeParts, toastText } from './prism-logic.js';
 
 const UNFOLD_AFTER = 700; // 맞힌 뒤 이름을 읽을 틈(ms) — 그다음 펼친다(움직임 줄이기에서는 바로 펼친 모습)
+export const PARTS_GROW = 1.5; // 접은 입체의 처음 크기(자동 맞춤의 배수)
 
 export function playParts(stage, ctx, questions) {
   const { h } = ctx;
@@ -56,7 +57,8 @@ export function playParts(stage, ctx, questions) {
     tried = new Set();
     clearTimeout(timer);
     // 입체를 놓는 자세(q.pose)와 처음 보기를 정해 준다: 펼친 전개도의 1 cm 크기는 문항마다 같다(fitBox)
-    view.setNet(q.net, { fitBox: PRISM_FIT, model: q.pose, view: { turn: 0, tilt: TILT } });
+    // 입체의 처음 크기는 자동 맞춤의 1.5배(사용자 결정 15-20 G1-3 — 면이 작았다). 감싸는 공이 무대 짧은 쪽의 약 79%라 돌려도 무대 안
+    view.setNet(q.net, { fitBox: PRISM_FIT, model: q.pose, view: { turn: 0, tilt: TILT }, grow: PARTS_GROW });
     bench.setQuestion(index + 1, '밑면 두 개를 찾아 눌러 고른 다음 [확인]을 눌러요.');
     view.setT(1);
     bench.lockFold(true, { view: true }); // 접기·펴기는 맞힌 뒤에, 돌려 보기·크게 작게는 지금도
@@ -108,6 +110,8 @@ export function playParts(stage, ctx, questions) {
         faceEl.classList.add('is-missed');
         faceEl.querySelector('.face-mark').textContent = '✗';
       }
+      // 고른 두 면이 보이게 입체를 돌린다(바닥 면처럼 처음 보기에서 안 보이는 면도 — 4절 "고른 두 면이 평행하지 않음을 입체에서 보여 줌")
+      view.showFaces(picked);
       picked = [];
       sync();
       bench.showBounce({ retry: true });
