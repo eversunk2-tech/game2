@@ -996,9 +996,17 @@ export function judgeDrawing(q, drawings, { from = 'picture' } = {}) {
   const where = q.kinds.length > 1 ? `${wrong.map((p) => VIEW_NAMES[p.kind]).join(', ')}에서 본 모양에 다른 칸이 있어요. ` : '';
   return { correct: false, tag: lead.tag, diff, wrongKinds: wrong.map((p) => p.kind), expected: q.expected, message: `${where}${lead.note}` };
 }
+/** 층별 모양만 보고 앞·옆을 칠할 때 앞과 옆을 바꿔 칠한 힌트의 첫마디(4절 "앞과 옆" — 층별 모양의 어느 쪽에서 보는지) */
+const LAYER_SWAP_HINT = {
+  front: '칠한 것은 옆에서 본 모양이에요. 층별 모양의 아래쪽이 앞이에요.',
+  side: '칠한 것은 앞에서 본 모양이에요. 층별 모양의 오른쪽에서 봐요.',
+};
+
 /**
  * 그리는 문항의 힌트(같은 문항을 두 번 틀린 뒤): 처음으로 다른 그림의 한 곳을 말로.
- * 앞·옆은 왼쪽부터 처음으로 다른 세로줄의 높이, 위는 쌓인 자리의 수(자리 하나를 알려 주면 위에서 본 모양 전체가 거의 드러나 수만 알려 준다)
+ * 앞·옆은 왼쪽부터 처음으로 다른 세로줄의 높이, 위는 쌓인 자리의 수(자리 하나를 알려 주면 위에서 본 모양 전체가 거의 드러나 수만 알려 준다).
+ * 층별 모양을 보고 칠할 때(from 'layers'): 앞과 옆을 바꿔 칠했으면 어느 쪽에서 보는지부터 말하고, 그 세로줄이 목표에서 비어 있으면
+ * "가장 높은 층은 0층" 대신 칠해진 칸이 없다고 말한다(review-blocks-s3 S3-2)
  */
 export function drawHint(q, drawings, { from = 'picture' } = {}) {
   for (const kind of q.kinds) {
@@ -1017,13 +1025,19 @@ export function drawHint(q, drawings, { from = 'picture' } = {}) {
       return `수를 쓴 그림에서 ${where}의 가장 큰 수는 ${josa(want[col], '이에요/예요')}. ${viewTitle(kind)}에서는 그만큼 보여요.`;
     }
     if (from === 'layers') {
+      const other = q.views[kind === 'front' ? 'side' : 'front'];
+      if (mine && other && !sameView(other, target, kind) && sameView(mine, other, kind)) {
+        const line = kind === 'front' ? `앞에서 보면 왼쪽부터 ${col + 1}번째 세로줄은` : `옆에서 보면 앞줄부터 ${col + 1}번째 줄은`;
+        return `${LAYER_SWAP_HINT[kind]} ${line} ${want[col] > 0 ? `${want[col]}층까지 보여요.` : '비어 있어요.'}`;
+      }
       const where = kind === 'front' ? `왼쪽부터 ${col + 1}번째 세로줄` : `${col + 1}줄(앞줄부터)`;
+      if (want[col] === 0) return `층별 모양에서 ${where}에는 칠해진 칸이 없어요. ${viewTitle(kind)}에서는 그 세로줄이 비어 있어요.`;
       return `층별 모양에서 ${where}에 칠해진 칸이 있는 가장 높은 층은 ${want[col]}층이에요. ${viewTitle(kind)}에서는 그만큼 보여요.`;
     }
     const first = want.findIndex((v) => v > 0);
     return `${viewTitle(kind)}에서 왼쪽 끝부터 ${col - first + 1}번째 세로줄은 ${want[col]}층까지 보여요.`;
   }
-  return '위, 앞, 옆에서 본 모양을 다시 살펴봐요.';
+  return from === 'layers' ? '층별 모양을 다시 살펴봐요.' : '위, 앞, 옆에서 본 모양을 다시 살펴봐요.';
 }
 
 const VIEW_DONE = {
@@ -1547,7 +1561,7 @@ function makeLayerViewQuestions(stage, rng) {
     const base = { itemId: `${stage.id}:${i + 1}`, target, layers, total: count(target) };
     if (kind === 'count') {
       const [c1, , c3] = layers.map(count);
-      // 함정 값: 1·2층만 센 수(맨 위층을 빠뜨림) · 1층 모양의 칸 수(위에서 본 모양의 칸 수 = 개수라고 생각함). 보기의 자리·값 규칙은 모두 몇 개일까?와 같다
+      // 함정 값: 1·2층만 센 수(맨 위층을 빠뜨림) · 1층 모양의 칸 수(위에서 본 모양의 칸 수 = 개수라고 생각함). 보기는 정답 자리와 상관없이 같은 꼴(S3-1)
       return { ...base, kind: 'count', counts: layers.map(count), options: layerCountOptions(rng, { total: base.total, top: c3, floor: c1 }), expected: base.total };
     }
     const views = Object.fromEntries(['top', 'front', 'side'].map((k) => [k, viewCells(target, k)]));
@@ -1556,26 +1570,24 @@ function makeLayerViewQuestions(stage, rng) {
 }
 
 /**
- * 층별 모양만 보고 개수 고르기의 보기 넷(작은 수부터): 모두 몇 개일까?(countOptions)와 같은 틀 — 정답의 자리(작은 보기의 수)를 먼저 뽑고,
- * 작은 쪽에 함정 값(맨 위층을 빠뜨린 수 total − top · 1층 모양의 칸 수 floor), 큰 쪽에 같은 거리만큼 떨어진 수(total + top · total + (total − floor))를 넣는다.
- * 맨 위층은 한두 칸이라 함정 값이 정답 바로 아래(−1)에 자주 오는데, 큰 쪽에도 +1이 같은 만큼 와야 "바로 아래 수가 있는 보기" 같은 규칙으로 풀리지 않는다.
- * 모자라면 위·아래 같은 거리 분포(FILL_GAPS)로 채운다
+ * 층별 모양만 보고 개수 고르기의 보기 넷(작은 수부터).
+ * 함정 값은 늘 정답보다 작은 두 수다: 맨 위층을 빠뜨린 수(total − top, 맨 위층은 한두 칸이라 정답 바로 아래가 잦다)와 1층 모양의 칸 수(floor).
+ * 정답의 자리를 먼저 뽑고 남는 칸을 따로 채우면, 함정 값이 늘 정답 바로 아래·조금 아래에 있어 보기의 간격만 보고도 정답 자리가 드러난다
+ * (예전 방법은 큰 쪽에 함정 값의 거울 total + top · total + (total − floor)를 두어 정답이 "다른 두 보기의 한가운데인 수"인 때가 많았다 —
+ * 그 꼴만 따라 고르면 47~53%, 간격 셋으로 배운 표는 70% — review-blocks-s3 S3-1).
+ * 그래서 보기 넷을 늘 같은 꼴 {x, x + top, x + d, x + top + d}(d = total − floor: 1층 위에 쌓인 수)로 만들고, 그 네 자리 가운데
+ * 정답이 놓일 자리를 고르게 뽑는다. 꼴은 정답의 자리와 상관없이 같으므로 보기의 값과 간격만 보고 고르는 어떤 규칙도 찍기(25%)와 같고,
+ * 함정은 정답이 가장 큰 수이면 둘 다, 둘째로 큰 수이면 1층 모양의 칸 수, 둘째로 작은 수이면 맨 위층을 빠뜨린 수가 들고, 가장 작은 수이면 없다(함정 든 문항 75%).
+ * top < d(맨 위층은 1층 위에 쌓인 것의 일부)라 네 수는 늘 서로 다르다. 모두 1 이상이 되지 않는 자리(floor ≤ top)는 뽑지 않는다
  */
 export function layerCountOptions(rng, { total, top, floor }) {
-  const rank = rng.int(0, 3);
-  const used = new Set([total]);
-  const below = [];
-  const above = [];
-  const add = (list, value) => {
-    if (value <= 0 || used.has(value)) return;
-    list.push(value);
-    used.add(value);
-  };
-  for (const trap of [total - top, floor]) if (below.length < rank && trap < total) add(below, trap);
-  for (const far of rng.shuffle([top, total - floor])) if (above.length < 3 - rank) add(above, total + far);
-  for (let guard = 0; below.length < rank && guard < 60; guard += 1) add(below, total - rng.pick(FILL_GAPS));
-  for (let guard = 0; below.length + above.length < 3 && guard < 60; guard += 1) add(above, total + rng.pick(FILL_GAPS));
-  return [...below, total, ...above].sort((a, b) => a - b);
+  const d = total - floor;
+  const slots = [[0, top, d, top + d], [-top, 0, d - top, d], [-d, top - d, 0, top], [-top - d, -d, -top, 0]]
+    .map((offsets) => offsets.map((k) => total + k))
+    .filter((values) => values.every((v) => v > 0) && new Set(values).size === 4);
+  // (이 단계의 모양은 3층까지 쌓여 있어 늘 네 자리가 모두 된다. 아니면 되는 자리에서, 하나도 없으면 정답부터 이어진 수)
+  const values = slots.length === 4 ? slots[rng.int(0, 3)] : slots.length ? rng.pick(slots) : [0, 1, 2, 3].map((k) => total + k);
+  return [...values].sort((a, b) => a - b);
 }
 
 /**

@@ -401,8 +401,9 @@ test('blocks-layer-build 문제 만들기·채점 (시드 300개): 좌우로 뒤
 
 test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 · 옆 칠하기. 개수 보기의 자리·값 규칙은 찍기(25%)에서 ±10%p 안, 함정 값(1층만 · 3층을 빠뜨림)의 까닭', () => {
   const pos = [0, 0, 0, 0];
-  const rules = { largest: 0, smallest: 0, secondLargest: 0, median: 0, run: 0, afterPair: 0, beforePair: 0, beforeGap: 0, maxMinus3: 0, even: 0 };
+  const rules = { largest: 0, smallest: 0, secondLargest: 0, median: 0, run: 0, afterPair: 0, beforePair: 0, beforeGap: 0, maxMinus3: 0, even: 0, middle: 0 };
   let traps = 0;
+  const gapItems = []; // 간격 셋 → 정답 자리 (앞 절반으로 배운 표를 뒤 절반에 — review-blocks-s3 S3-1)
   for (let seed = 1; seed <= 1000; seed += 1) {
     const [cnt, front, side] = questions('blocks-layer-views', seed);
     assert.deepEqual([cnt.kind, front.kind, front.kinds, side.kind, side.kinds], ['count', 'paint', ['front'], 'paint', ['side']]);
@@ -432,6 +433,10 @@ test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 ·
     rules.beforeGap += share([gaps.indexOf(Math.max(...gaps))]);
     rules.maxMinus3 += share(idx.filter((k) => o[k] >= o[3] - 3).slice(0, 1));
     rules.even += share(idx.filter((k) => o[k] % 2 === 0));
+    // 다른 두 보기의 한가운데인 수(없으면 넷 중 찍기) — S3-1: 예전 보기는 이 꼴로 47~53%
+    const middles = idx.filter((k) => idx.some((j) => j !== k && idx.some((l) => l !== k && l !== j && o[j] - o[k] === o[k] - o[l] && o[j] > o[k])));
+    rules.middle += middles.length ? share(middles) : 0.25;
+    gapItems.push({ gaps: gaps.join(','), at });
     const [c1, , c3] = cnt.layers.map((g) => g.flat().filter(Boolean).length);
     if (cnt.options.includes(c1) || cnt.options.includes(cnt.total - c3)) traps += 1;
     for (const v of cnt.options) {
@@ -455,13 +460,81 @@ test('blocks-layer-views (시드 1,000개): 개수 고르기 · 앞 칠하기 ·
       assert.match(swapped.message, /층별 모양의 (아래쪽이 앞이에요|오른쪽에서 봐요)\.$/);
       const under = judgeDrawing(q, { [kind]: [[1, 1, 1], [0, 0, 0], [0, 0, 0]] }, { from: 'layers' });
       if (under.tag === BLOCK_TAGS.tallest) assert.match(under.message, /가장 높은 층/);
-      assert.match(drawHint(q, { [kind]: [[1, 0, 0], [0, 0, 0], [0, 0, 0]] }, { from: 'layers' }), /^층별 모양에서 .*가장 높은 층은 \d층이에요\. (앞|옆)에서 본 모양에서는 그만큼 보여요\.$/);
+      // 힌트: 그 세로줄에 칠해진 칸이 있으면 가장 높은 층(1~3층), 없으면 비어 있다고(S3-2: "0층"이라고 하지 않는다)
+      assert.match(drawHint(q, { [kind]: [[1, 0, 0], [0, 0, 0], [0, 0, 0]] }, { from: 'layers' }), /^층별 모양에서 (.*에 칠해진 칸이 있는 가장 높은 층은 [1-3]층이에요\. (앞|옆)에서 본 모양에서는 그만큼 보여요|.*에는 칠해진 칸이 없어요\. (앞|옆)에서 본 모양에서는 그 세로줄이 비어 있어요)\.$/);
     }
   }
   for (const p of pos) assert.ok(p / 1000 > 0.2 && p / 1000 < 0.3, `정답 자리 ${pos}`);
   // 보기의 값만 보고 고르는 규칙은 찍기(25%)보다 10%p 넘게 높지 않다(낮은 규칙은 그것을 피해도 남은 셋 가운데 찍기라 33%를 넘지 않는다)
   for (const [name, v] of Object.entries(rules)) assert.ok(v / 1000 < 0.35, `${name} ${v}`);
+  // 간격 셋으로 배운 표: 앞 500판에서 간격 꼴마다 가장 잦았던 정답 자리를 뒤 500판에 고른다(S3-1: 예전 보기는 70%)
+  const table = new Map();
+  for (const { gaps, at } of gapItems.slice(0, 500)) {
+    const m = table.get(gaps) ?? [0, 0, 0, 0];
+    m[at] += 1;
+    table.set(gaps, m);
+  }
+  const learned = gapItems.slice(500).reduce((sum, { gaps, at }) => {
+    const m = table.get(gaps);
+    if (!m) return sum + 0.25;
+    const best = m.filter((v) => v === Math.max(...m)).length;
+    return sum + (m[at] === Math.max(...m) ? 1 / best : 0);
+  }, 0);
+  assert.ok(learned / 500 < 0.35, `간격 표 ${learned}`);
   assert.ok(traps / 1000 > 0.6, `함정 값이 든 문항 ${traps}`);
+});
+
+test('층별 모양만 보고 칠하기의 힌트 (시드 2,000개, review-blocks-s3 S3-2): 앞과 옆을 바꿔 칠했으면 어느 쪽에서 보는지부터 말하고, 비어 있는 세로줄을 "0층"이라고 하지 않는다 — 말한 높이는 독립 계산과 같다', () => {
+  // 독립: 앞에서 보면 세로줄(칸 x)마다 가장 높은 쌓기나무, 옆(오른쪽)에서 보면 줄(앞줄부터 y)마다 가장 높은 쌓기나무
+  const columnHeights = (h, kind) => (kind === 'front' ? R.map((x) => Math.max(...R.map((y) => h[y][x]))) : R.map((y) => Math.max(...h[y])));
+  const rng = createRng('layer-hint');
+  const seen = { swap: 0, swapEmpty: 0, empty: 0, tall: 0, same: 0 };
+  for (let seed = 1; seed <= 2000; seed += 1) {
+    for (const q of questions('blocks-layer-views', seed)) {
+      if (q.kind !== 'paint') continue;
+      const [kind] = q.kinds;
+      const other = kind === 'front' ? 'side' : 'front';
+      const heights = columnHeights(q.target, kind);
+      // 앞과 옆을 바꿔 칠함 (가장 흔한 틀림)
+      const swapped = drawHint(q, { [kind]: q.views[other] }, { from: 'layers' });
+      const lead = kind === 'front' ? '칠한 것은 옆에서 본 모양이에요. 층별 모양의 아래쪽이 앞이에요. 앞에서 보면 왼쪽부터 ' : '칠한 것은 앞에서 본 모양이에요. 층별 모양의 오른쪽에서 봐요. 옆에서 보면 앞줄부터 ';
+      const m = swapped.match(/(\d)번째 (?:세로줄|줄)은 (?:(\d)층까지 보여요|(비어 있어요))\.$/);
+      assert.ok(swapped.startsWith(lead) && m, swapped);
+      assert.doesNotMatch(swapped, /0층/);
+      const col = Number(m[1]) - 1;
+      if (m[3]) {
+        assert.equal(heights[col], 0, swapped);
+        seen.swapEmpty += 1;
+      } else assert.equal(Number(m[2]), heights[col], swapped);
+      seen.swap += 1;
+      // 아무렇게나 칠한 그림 여럿: 칠해진 칸이 있는 가장 높은 층은 1~3층, 없으면 "칠해진 칸이 없어요"
+      for (let k = 0; k < 6; k += 1) {
+        const mine = R.map(() => R.map(() => (rng.next() < 0.45 ? 1 : 0)));
+        if (mine.flat().every((v) => v === 0)) continue;
+        const hint = drawHint(q, { [kind]: mine }, { from: 'layers' });
+        assert.doesNotMatch(hint, /0층/);
+        const where = kind === 'front' ? /왼쪽부터 (\d)번째 세로줄/ : /(\d)줄\(앞줄부터\)|앞줄부터 (\d)번째 줄/;
+        if (hint === '층별 모양을 다시 살펴봐요.') {
+          seen.same += 1;
+          continue;
+        }
+        const w = hint.match(where);
+        assert.ok(w, hint);
+        const c = Number(w[1] ?? w[2]) - 1;
+        const tall = hint.match(/가장 높은 층은 (\d)층이에요|(\d)층까지 보여요/);
+        if (tall) {
+          assert.equal(Number(tall[1] ?? tall[2]), heights[c], hint);
+          seen.tall += 1;
+        } else {
+          assert.match(hint, /칠해진 칸이 없어요\. (앞|옆)에서 본 모양에서는 그 세로줄이 비어 있어요\.$|비어 있어요\.$/);
+          assert.equal(heights[c], 0, hint);
+          seen.empty += 1;
+        }
+      }
+    }
+  }
+  // 바뀐 길이 모두 실제로 지나갔다
+  assert.ok(seen.swap === 4000 && seen.swapEmpty > 300 && seen.empty > 300 && seen.tall > 1000, JSON.stringify(seen));
 });
 
 // ── 도전: 더 붙여서 만들기 ───────────────────
