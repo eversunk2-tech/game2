@@ -11,7 +11,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로, 2026-10-17 연결) |
 | `origin/main`(사이트) | **`04b589a`**(2026-10-18): c4까지(`6156875`) + **B0d** 사이트 맨 위 주소 = 인트로, 게임 모음 → 선생님용 안내(`teacher.html`, 카드 → `?intro=0` 학년 고르기, 예시 게임 카드 뺌), 학년 고르기 시안 A "큰 두 칸" + 오른쪽 아래 [선생님용 안내], 저작권 줄(학년 고르기·학년 화면·안내 페이지), 개발 서버도 같게. 배포 성공 · **GitHub CI 통과** · 두 사이트에서 길(맨 위 → 인트로 → 학년 고르기 → 안내 → 카드 → 학년 고르기)·저작권 줄·예시 게임 빠짐·응답 400 이상 0·콘솔 오류 0 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다 |
-| 지금 도는 것 | **S3 Build**(쌓기나무 5차시 + 도전 + 쌓기나무 도장 셋 — `.worktrees/blocks`) ∥ **G1 Build**(각기둥 1 — 바탕 + 1~3단계 — `.worktrees/cuboid`) — 2-0절 |
+| 지금 도는 것 | **S3 Review**(`track/blocks` `f101282`, 포트 5354, 결과 `review-blocks-s3.md`) ∥ **G1 Review**(`track/cuboid` `0b51d0b`, 포트 5363, 결과 `review-prism-g1.md`) — 2-0절 |
 
 ## 2. 진행 중인 일
 
@@ -21,6 +21,7 @@
 - **S3** 쌓기나무 5차시(`blocks-layer` 세 단계) + 도전 `blocks-add` + 쌓기나무 도장 셋(도장판 13 → 16) + 15-8(앞과 뒤 오개념 보기를 판마다) + S2b-2. 지침 [build-brief-s3.md](games/net-workshop/build-brief-s3.md). `.worktrees/blocks` · `track/blocks`(`0a4b3a6`에서), 포트 5302·e2e 5352~5353, scratchpad `build-s3/`.
 - **G1** 각기둥 바탕(`solids.js`·다각형 면·이면각·면 누르기) + `prism-parts`·`prism-judge`·`prism-edge` + 직육면체 검토가 남긴 이름표 손질. 지침 [build-brief-g1.md](games/net-workshop/build-brief-g1.md). `.worktrees/cuboid` · `track/cuboid`(`0a4b3a6`에서), 포트 5301·e2e 5361~5362, scratchpad `build-g1/`. 각기둥 차시는 1~3단계만 등록(4단계는 G2).
 - 줄 몫: `main.js` — S3는 쌓기나무 차시·도전·도장 줄과 도장 수를 세는 검사, G1은 각기둥 영역·차시 줄. 끝나면 트랙마다 별도 Review(지침은 그때 씀).
+- 진행(10-18): 두 Build 끝(S3 `f101282` — 단위 349·e2e 506·0 / G1 `0b51d0b` — 단위 356·e2e 503·0, 둘 다 보통·글꼴 흉내). Build가 올린 물음 둘에 사용자 결정(**15-17**: 숨겨진 쌓기나무 도장은 "처음에 맞힌 수 − 2"로, 6학년 "여기부터!"는 각기둥). 두 트랙 `merge-tree` 충돌 0. Review 지침 [review-brief-s3.md](games/net-workshop/review-brief-s3.md)·[review-brief-g1.md](games/net-workshop/review-brief-g1.md). 통과하면 S3 → G1 차례로(또는 함께) 합쳐 올림.
 - 쓰지 않은 것: 원기둥 먼저를 위한 Plan 지침(쓰다가 사용자가 원래 순서로 정해 지움), 그때 만든 `.worktrees/cylinder`(비어 있어 지움).
 
 ### 2-1. (끝남, 올림 `0b1bb57`) B0b 빌드 바탕
