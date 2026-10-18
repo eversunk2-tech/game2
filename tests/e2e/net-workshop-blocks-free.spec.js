@@ -354,6 +354,27 @@ test('쌓기·색·저장(결정 5·6): 고른 색으로 쌓이고(색 이름도
   expect(errors).toEqual([]);
 });
 
+test('[기록 모두 지우기]는 자유 쌓기 작품을 지우지 않는다(사용자 결정 2026-10-18 "지금처럼 따로" — 새로는 [모두 치우기])', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '한 번만');
+  const errors = collectErrors(page);
+  const work = JSON.stringify({ v: 1, h: Array.from({ length: 14 }, (_, y) => Array.from({ length: 14 }, (__, x) => (x === 2 && y === 3 ? 4 : 0))), c: [] });
+  await page.addInitScript(([k, v]) => {
+    if (sessionStorage.getItem('clear-test-started')) return;
+    sessionStorage.setItem('clear-test-started', '1');
+    localStorage.setItem(k, v);
+  }, [KEY14, work]);
+  await page.goto(fileUrl(FILE, '?sound=off&intro=0'));
+  await page.getByRole('button', { name: '학습 기록' }).first().click();
+  const clear = page.getByRole('button', { name: '기록 모두 지우기' });
+  await clear.click();
+  await page.getByRole('button', { name: '한 번 더 누르면 지워져요' }).click();
+  await expect(page.locator('.toast')).toContainText('기록을 지웠어요.');
+  expect(await page.evaluate((k) => localStorage.getItem(k), KEY14)).toBe(work);
+  await openFree(page);
+  await expect(page.locator('.blk-free-count b')).toHaveText('4');
+  expect(errors).toEqual([]);
+});
+
 test('막힌 저장소(사생활 보호 모드처럼 localStorage가 오류): 오류 없이 쌓고, 그 판 동안만 남는다', async ({ page }, testInfo) => {
   const errors = collectErrors(page);
   await page.addInitScript(() => {
