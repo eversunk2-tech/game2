@@ -242,14 +242,22 @@ test('④ 크기는 막지 않고 보고: 게임마다 처음 받는 크기(gzip
     assert.equal(info.firstLoad.gzip, total, info.name);
   }
   const nw = files.find((f) => f.name === 'net-workshop.html');
-  assert.equal(nw.lazy.length, 1);
-  assert.match(nw.lazy[0].entry, /^assets\/blocks-play-[A-Z0-9]{8}\.js$/);
-  assert.ok(nw.lazy[0].files.includes(nw.lazy[0].entry));
-  for (const rel of nw.lazy[0].files) assert.ok(!nw.firstLoad.files.includes(rel), `${rel}: 늦게 받는 파일이 처음 받는 파일에 있음`);
-  assert.ok(nw.lazy[0].gzip > 10 * 1024, `늦게 받는 묶음 ${nw.lazy[0].gzip} B`);
+  // 늦게 받는 묶음: 쌓기나무(B0b) · 각기둥(G1 — 6학년 전개도, grade6/prism-play.js)
+  assert.deepEqual(nw.lazy.map((b) => b.entry.replace(/-[A-Z0-9]{8}\.js$/, '')), ['assets/blocks-play', 'assets/prism-play']);
+  const blocksLazy = nw.lazy[0];
+  assert.match(blocksLazy.entry, /^assets\/blocks-play-[A-Z0-9]{8}\.js$/);
+  for (const bundle of nw.lazy) {
+    assert.ok(bundle.files.includes(bundle.entry));
+    for (const rel of bundle.files) assert.ok(!nw.firstLoad.files.includes(rel), `${rel}: 늦게 받는 파일이 처음 받는 파일에 있음`);
+  }
+  assert.ok(blocksLazy.gzip > 10 * 1024, `늦게 받는 묶음 ${blocksLazy.gzip} B`);
   // 쌓기나무의 문제 만들기·화면 코드(blocks-logic.js의 makeBlockQuestions 등)는 처음 받는 JS에 없다 — 화면 글자 하나로 확인(놀이 화면의 버튼 글)
   const first = (await Promise.all(nw.js.map((rel) => read(outDir, rel)))).join('\n');
-  const lazy = (await Promise.all(nw.lazy[0].files.map((rel) => read(outDir, rel)))).join('\n');
+  const lazy = (await Promise.all(blocksLazy.files.map((rel) => read(outDir, rel)))).join('\n');
+  // 각기둥의 문제 만들기·판정·화면(prism-logic.js · solids.js)도 처음 받는 JS에 없다 — 까닭 칩의 글자로 확인. 단계 목록은 처음 받는 JS에
+  const prismLazy = (await Promise.all(nw.lazy[1].files.map((rel) => read(outDir, rel)))).join('\n');
+  assert.ok(prismLazy.includes('옆면이 직사각형이 아니에요') && !first.includes('옆면이 직사각형이 아니에요'), '각기둥 판별의 까닭 글은 늦게 받는 묶음에만');
+  assert.ok(first.includes('각기둥이 될까?'), '각기둥의 단계 목록은 처음 받는 JS에');
   assert.ok(lazy.includes('여기는 ') && !first.includes('판 밖에는 놓을 수 없어요.'), '쌓기 판의 안내 글은 늦게 받는 묶음에만');
   assert.ok(first.includes('어느 방향에서 보았을까'), '쌓기나무의 차시·단계 목록은 처음 받는 JS에');
   for (const name of [GUIDE_PAGE, 'sample-divisor-sort.html']) assert.deepEqual(files.find((f) => f.name === name).lazy, [], name);

@@ -22,6 +22,9 @@ import { heroArt, miniNet, stageThumb } from './thumbs.js';
 import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES } from './blocks/index.js'; // 쌓기나무 영역(6학년): 차시·단계 목록(바탕 묶음)
 // 쌓기나무의 플레이(문제 만들기·판정·화면)는 그 영역의 단계에 들어갈 때 받는다 — 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(spec-grade6 7-4절, B0b)
 const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));
+import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES } from './grade6/index.js'; // 각기둥의 전개도 영역(6학년): 차시·단계 목록(바탕 묶음)
+// 각기둥의 플레이(문제 만들기·판정·화면)도 그 영역의 단계에 들어갈 때 받는다(쌓기나무와 같은 방법 — Build G1)
+const PRISM_PLAY = lazyModule(() => import('./grade6/prism-play.js'));
 
 const SCREENS = { judge: playJudge, opposite: playPick, complete: playPlace, free: playFree, dex: playFree, dice: playDice };
 Object.assign(SCREENS, CUBOID_SCREENS); // 직육면체의 전개도 차시: edge · face · cjudge · cfree (cuboid-main.js)
@@ -138,7 +141,7 @@ const GRADES = [
 const AREAS = [
   { id: 'cube', grade: 5, title: '정육면체의 전개도', note: '5학년 2학기 · 직육면체와 정육면체', lessons: ['cube'], art: areaArt('cube'), howTo: CUBE_HOW_TO },
   { id: 'cuboid', grade: 5, title: '직육면체의 전개도', note: '5학년 2학기 · 직육면체와 정육면체', lessons: ['cuboid'], art: areaArt('cuboid'), howTo: CUBOID_HOW_TO },
-  { id: 'prism', grade: 6, title: '각기둥의 전개도', note: '6학년 1학기 · 각기둥과 각뿔', lessons: ['prism'], art: areaArt('prism') },
+  { id: 'prism', grade: 6, title: '각기둥의 전개도', note: '6학년 1학기 · 각기둥과 각뿔', lessons: ['prism'], art: areaArt('prism'), howTo: PRISM_HOW_TO },
   {
     id: 'blocks',
     grade: 6,
@@ -186,17 +189,18 @@ createGameApp({
     '영역마다 하는 방법은 단계를 고르는 화면의 [놀이 방법]에서 볼 수 있어요.',
   ],
   heroArt,
-  lessons: [...LESSONS, ...BLOCK_LESSONS],
+  lessons: [...LESSONS, ...BLOCK_LESSONS, ...PRISM_LESSONS],
   rewards: {
     ranks: ['견습생', '솜씨꾼', '접기 장인', '설계 장인', '공방 명장'],
     badges: BADGES,
   },
   collections: COLLECTIONS,
-  stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES],
-  preload: [BLOCKS_PLAY.preload],
+  stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES, ...PRISM_STAGES],
+  preload: [BLOCKS_PLAY.preload, PRISM_PLAY.preload],
   playStage(stage, ctx) {
     // 쌓기나무 단계는 blocks/가 문항도 화면도 만든다(받은 뒤에 — 받는 동안은 엔진의 "불러오는 중")
     if (stage.area === 'blocks') return BLOCKS_PLAY.play(ctx, (blocks) => blocks.playBlockStage(stage, ctx));
+    if (stage.area === 'prism') return PRISM_PLAY.play(ctx, (prism) => prism.playPrismStage(stage, ctx)); // 각기둥: grade6/가 문항도 화면도 만든다
     // 문항을 가장 먼저 만든다: 같은 ?seed=면 같은 문항 (e2e 테스트도 이것으로 정답을 안다)
     const questions = makeQuestions(stage, ctx.rng);
     return SCREENS[stage.kind](stage, ctx, questions);

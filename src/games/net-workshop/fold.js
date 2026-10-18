@@ -9,6 +9,7 @@
  */
 import {
   EPS,
+  add,
   applyDir,
   applyPoint,
   bounds,
@@ -210,9 +211,18 @@ export function spanningTree(net, allHinges = findHinges(net)) {
   return { parent, order, treeHinges: [...parent.values()] };
 }
 
-/** 경첩을 접는 각도(라디안). 정육면체는 모두 90°. */
-export function hingeAngle(/* net, hinge */) {
-  return Math.PI / 2;
+/**
+ * 경첩을 접는 각도(라디안). 정육면체·직육면체는 모두 90°.
+ * 입체를 펼쳐 만든 전개도(각기둥 — net.folds가 있다)는 입체의 이면각에서 온다(spec-grade6 6-2절): 두 면이 입체에서 맞닿는 모서리의
+ * 접는 각도 = 180° − 그 모서리의 이면각(옆면-옆면 = 밑면의 그 꼭짓점의 바깥각, 밑면-옆면 = 90°). 면마다 입체의 어느 면인지(face.solid)를 갖고,
+ * net.folds['면|면'](입체의 면 id를 글자 순으로 이은 열쇠)에 접는 각도가 있다. 입체에서 이웃이 아닌 두 면이 붙었으면 null(접을 수 없는 경첩)
+ */
+export function hingeAngle(net, hinge) {
+  if (!net?.folds) return Math.PI / 2;
+  const a = net.faces.find((f) => f.id === hinge.a)?.solid;
+  const b = net.faces.find((f) => f.id === hinge.b)?.solid;
+  const angle = a != null && b != null ? net.folds[[a, b].sort().join('|')] : undefined;
+  return Number.isFinite(angle) ? angle : null;
 }
 
 const structureCache = new WeakMap();
@@ -245,7 +255,7 @@ export function foldNet(net, t = 1, { tOf = null } = {}) {
     const wPerp = sub(w, scale(d, dot(w, d)));
     const side = Math.sign(cross(d, wPerp)[2]) || 1;
     const amount = tOf ? tOf(hinge, t) : t;
-    const angle = -side * hingeAngle(net, hinge) * amount;
+    const angle = -side * (hingeAngle(net, hinge) ?? 0) * amount; // 접을 수 없는 경첩(null)은 펼친 채로 둔다
     matrices.set(id, multiply(matrices.get(parentId), rotationAbout(p, d, angle)));
   }
   const faces = net.faces.map((f) => {
@@ -420,13 +430,60 @@ export function unpairedFaces(net) {
   return [...out, ...waiting.values()];
 }
 
+// ── 각기둥 전개도의 면 검사 (spec-grade6 6-3절 — 면이 다각형인 전개도) ──────────
+const edgeVectors = (poly) => poly.map((p, i) => sub(to3(poly[(i + 1) % poly.length]), to3(p)));
+
+/** 다각형이 직사각형인가 (꼭짓점 넷, 이웃한 두 변이 모두 직각) */
+export function isRectangle(poly, eps = 1e-6) {
+  if (poly.length !== 4) return false;
+  const v = edgeVectors(poly);
+  return v.every((a, i) => Math.abs(dot(normalize(a), normalize(v[(i + 1) % 4]))) < eps);
+}
+
+/**
+ * 두 볼록 다각형이 합동인가: 꼭짓점마다 (그 꼭짓점에서 나가는 변의 길이, 그 꼭짓점의 각)을 차례로 견준다 — 돌리기(차례를 밀기)와
+ * 뒤집기(한쪽을 거꾸로 돈 차례). 전개도의 두 밑면은 서로 뒤집힌 모습으로 그려진다
+ */
+export function congruentPolygons(p, q, eps = 1e-6) {
+  if (p.length !== q.length || p.length < 3) return false;
+  const shape = (poly) => edgeVectors(poly).map((e, i) => [length(e), interiorAngle(poly, i)]);
+  const a = shape(p);
+  const n = a.length;
+  const same = (x, y) => Math.abs(x[0] - y[0]) < eps && Math.abs(x[1] - y[1]) < eps;
+  for (const b of [shape(q), shape([...q].reverse())]) {
+    for (let k = 0; k < n; k += 1) if (a.every((x, i) => same(x, b[(i + k) % n]))) return true;
+  }
+  return false;
+}
+
+/**
+ * 각기둥 전개도의 면 검사: 밑면 2 · 옆면 = 한 밑면의 변의 수(net.sides) · 옆면은 직사각형 · 두 밑면은 합동 · 입체에서 이웃이 아닌 두 면을 이은 경첩.
+ * (판정 순서와 문장은 각기둥 차시의 규칙 — grade6/prism-logic.js)
+ */
+function prismFaceProblems(net, tree) {
+  const out = [];
+  const bases = net.faces.filter((f) => f.role === 'base');
+  const sides = net.faces.filter((f) => f.role === 'side');
+  if (bases.length !== 2 || sides.length !== net.sides) {
+    out.push({ type: 'face-count', count: net.faces.length, expected: net.sides + 2, bases: bases.length, sides: sides.length, expectedSides: net.sides });
+  }
+  const bent = sides.filter((f) => !isRectangle(f.poly)).map((f) => f.id);
+  if (bent.length > 0) out.push({ type: 'side-shape', faces: bent });
+  if (bases.length === 2 && !congruentPolygons(bases[0].poly, bases[1].poly)) out.push({ type: 'base-mismatch', faces: bases.map((f) => f.id) });
+  for (const hg of tree.treeHinges) if (hingeAngle(net, hg) == null) out.push({ type: 'wrong-hinge', faces: [hg.a, hg.b] });
+  return out;
+}
+
 /**
  * 전개도가 입체로 접히는지 검사한다.
  * 돌려주는 값: { ok, problems: [{ type, faces?, edges?, lengths?, vertex?, count? }] }
  * type: 'face-count' | 'disconnected' | 'vertex-full' | 'overlap' | 'face-pair' | 'gap' | 'edge-length'
+ *       (각기둥만) 'side-shape' | 'base-mismatch' | 'wrong-hinge'
  *   edge-length: 맞닿는 두 변의 길이가 다르다 — edges: [{ face, edge }, { face, edge }] 그 두 변, lengths: 두 변의 길이,
  *     hinge: 펼친 전개도에서 이어 붙인 두 변(경첩)이면 true, shifted: 길이는 같은데 어긋나게 붙었으면 true
  *   face-pair: 직육면체인데 크기가 같은 면이 두 장씩이 아니다 — faces: 짝이 없는 면
+ *   각기둥(net.kind 'prism'): face-count는 밑면이 2개가 아니거나 옆면의 수가 한 밑면의 변의 수와 다를 때(bases · sides · expectedSides),
+ *     side-shape: 직사각형이 아닌 옆면, base-mismatch: 두 밑면이 합동이 아님, wrong-hinge: 입체에서 이웃이 아닌 두 면을 이은 경첩
  */
 export function checkNet(net) {
   const problems = [];
@@ -436,6 +493,7 @@ export function checkNet(net) {
   }
 
   const { tree } = structureOf(net);
+  if (net.kind === 'prism') problems.push(...prismFaceProblems(net, tree));
   if (tree.order.length < net.faces.length) {
     problems.push({ type: 'disconnected', faces: net.faces.map((f) => f.id).filter((id) => !tree.order.includes(id)) });
   }
@@ -574,8 +632,97 @@ export function missingSlots(net, folded = foldNet(net, 1)) {
       });
     });
   }
+  if (net.kind === 'prism') return solidSlots(net, folded).filter((s) => !slotCovered(s, folded));
   if (net.kind !== 'cube') return [];
   return cubeSlots(net).filter((s) => !folded.faces.some((f) => samePoint(f.center, s.center, 1e-4)));
+}
+
+/**
+ * 입체를 펼쳐 만든 전개도(각기둥 — net.solidFaces: 입체의 면 [{ id, role, points }])의 자리: 입체의 면마다 접은 모습의 좌표로.
+ * 접은 모습과 입체를 잇는 기준 면은 바닥 면(root)이고, 그 면이 고친 면(exact: false)이거나 같은 입체 면이 둘이면 접는 차례로 다음 면.
+ * 자리마다 { name(입체의 면 id), role, center, normal, u, v, size: [u 쪽, v 쪽](자리를 감싸는 직사각형), clip: 그 직사각형 안 다각형([u, v]) }
+ */
+export function solidSlots(net, folded = foldNet(net, 1)) {
+  if (!Array.isArray(net.solidFaces)) return [];
+  const counts = new Map();
+  for (const f of net.faces) counts.set(f.solid, (counts.get(f.solid) ?? 0) + 1);
+  const trusted = (id) => {
+    const f = net.faces.find((x) => x.id === id);
+    return f && f.exact !== false && counts.get(f.solid) === 1 && net.solidFaces.some((s) => s.id === f.solid);
+  };
+  const refId = [net.root, ...structureOf(net).tree.order].find((id) => id != null && trusted(id));
+  if (refId == null) return [];
+  const ref = net.faces.find((f) => f.id === refId);
+  const src = net.solidFaces.find((s) => s.id === ref.solid).points;
+  const dst = folded.faces.find((f) => f.id === refId).points;
+  const frame = (pts) => {
+    const e1 = normalize(sub(pts[1], pts[0]));
+    const e3 = normalize(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+    return [e1, cross(e3, e1), e3];
+  };
+  const [a1, a2, a3] = frame(src);
+  const [b1, b2, b3] = frame(dst);
+  // 입체 좌표 → 접은 모습의 좌표: 기준 면의 틀(세 축)을 그대로 옮기는 돌림 + 옮김
+  const move = (p) => {
+    const d = sub(p, src[0]);
+    const [x, y, z] = [dot(d, a1), dot(d, a2), dot(d, a3)];
+    return [0, 1, 2].map((k) => dst[0][k] + b1[k] * x + b2[k] * y + b3[k] * z);
+  };
+  return net.solidFaces.map((s) => {
+    const pts = s.points.map(move);
+    const normal = normalize(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+    const u = normalize(sub(pts[1], pts[0]));
+    const v = cross(normal, u);
+    const local = pts.map((p) => [dot(sub(p, pts[0]), u), dot(sub(p, pts[0]), v)]);
+    const { min, max } = bounds(local);
+    const size = [max[0] - min[0], max[1] - min[1]];
+    const corner = add(add(pts[0], scale(u, min[0])), scale(v, min[1]));
+    const center = add(add(corner, scale(u, size[0] / 2)), scale(v, size[1] / 2));
+    return { name: s.id, role: s.role, center, normal, u, v, size, clip: local.map(([x, y]) => [x - min[0], y - min[1]]), points: pts };
+  });
+}
+
+/** 그 자리의 평면에 놓여 자리 넓이의 4분의 1 넘게 덮은 면이 있나 (크기가 조금 다른 면이 와도 찬 것으로 본다 — 길이는 따로 짚는다) */
+function slotCovered(slot, folded) {
+  const corner = sub(sub(slot.center, scale(slot.u, slot.size[0] / 2)), scale(slot.v, slot.size[1] / 2));
+  const mine = slot.points.map((p) => [dot(sub(p, corner), slot.u), dot(sub(p, corner), slot.v)]);
+  const whole = convexIntersectionArea(mine, mine);
+  return folded.faces.some((f) => {
+    if (Math.abs(Math.abs(dot(f.normal, slot.normal)) - 1) > 1e-6 || Math.abs(dot(slot.normal, sub(f.points[0], slot.center))) > 1e-6) return false;
+    const poly = f.points.map((p) => [dot(sub(p, corner), slot.u), dot(sub(p, corner), slot.v)]);
+    return convexIntersectionArea(mine, poly) > 0.25 * whole;
+  });
+}
+
+/**
+ * 화면의 한 점에서 맨 앞에 보이는 면 (입체 상태의 면 누르기 — spec-grade6 6-1절 끝: 브라우저의 누르기 판정 대신 직접 계산).
+ * faces: [{ id, points: [[x, y, z], …] }] 화면 좌표(px, x 오른쪽 · y 아래 · z 보는 사람 쪽, 무대 가운데 기준)의 볼록 다각형
+ * point: [x, y] 누른 점(무대 가운데 기준 px, 화면 평면 z = 0) · eye: 눈의 자리(같은 좌표 — CSS perspective)
+ * minFacing: 눈에서 오는 빛살과 면의 법선이 이루는 각의 코사인이 이보다 작으면(거의 옆으로 선 면) 누를 수 없는 면으로 본다
+ * → 면 id 또는 null
+ */
+export function pickFace(faces, point, { eye, minFacing = 0.12 } = {}) {
+  const dir = normalize(sub([point[0], point[1], 0], eye));
+  let best = null;
+  for (const f of faces) {
+    const pts = f.points;
+    if (!pts || pts.length < 3) continue;
+    const n = normalize(cross(sub(pts[1], pts[0]), sub(pts[2], pts[0])));
+    const facing = dot(n, dir);
+    if (Math.abs(facing) < minFacing) continue;
+    const dist = dot(n, sub(pts[0], eye)) / facing;
+    if (!(dist > 0)) continue;
+    const hit = add(eye, scale(dir, dist));
+    let sign = 0;
+    const inside = pts.every((p, i) => {
+      const s = dot(n, cross(sub(pts[(i + 1) % pts.length], p), sub(hit, p)));
+      if (Math.abs(s) < 1e-9) return true;
+      if (sign === 0) sign = Math.sign(s);
+      return Math.sign(s) === sign;
+    });
+    if (inside && (!best || dist < best.dist)) best = { id: f.id, dist };
+  }
+  return best?.id ?? null;
 }
 
 /**
