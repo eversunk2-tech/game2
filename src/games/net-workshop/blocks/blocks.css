@@ -564,6 +564,9 @@
    칸이 48px보다 작은 것은 이 판만의 예외(사용자 요청). 칸 안 수는 13px, 초점(고른 칸)은 굵은 잉크 테두리 + 노랑 둘레로 또렷하게 */
 .blk-padbox.is-compact .blk-pad-grid, .blk-padbox.is-compact .blk-pad-row { gap: 1px; }
 .blk-padbox.is-compact .blk-cell { width: var(--free-cell, 24px); height: var(--free-cell, 24px); border-width: 1px; border-radius: 3px; font-size: var(--free-cell-font, 13px); }
+/* 작은 칸(가장 작게 13px — 낮은 매트)에서도 "10"이 한 줄로 칸 안에(F1b-2): 줄을 바꾸지 않고, 두 자리 수만 글자 사이를 좁힌다(글자는 12px 그대로) */
+.blk-padbox.is-compact .blk-cell { white-space: nowrap; }
+.blk-padbox.is-compact .blk-cell.is-two .blk-cell-n { letter-spacing: -0.12em; margin-right: -0.12em; }
 /* 낮은 매트(폭 901~1000px 가로 화면 등 — F1b): 제목 줄을 감춰 칸 높이를 번다(제목은 화면 읽기 이름에 남는다) */
 .blk-padbox.is-compact.is-low .blk-pad-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .blk-padbox.is-compact .blk-cell.is-on { box-shadow: inset 0 -2px 0 rgb(30 33 64 / 22%); }

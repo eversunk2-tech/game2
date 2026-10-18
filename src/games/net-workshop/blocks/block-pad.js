@@ -103,6 +103,7 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
       const n = map[c.y][c.x];
       c.button.firstChild.textContent = n > 0 ? String(n) : '';
       c.button.classList.toggle('is-on', n > 0);
+      if (maxH > 9) c.button.classList.toggle('is-two', n > 9); // 두 자리 수(10층 — 자유 쌓기): 작은 칸에서도 한 줄로(blocks.css)
       // 맨 위 쌓기나무의 색(자유 쌓기 — 색 이름은 화면 읽기에)
       if (cubes) c.button.style.setProperty('--cell-face', n > 0 ? `var(${cubes[c.y][c.x][n - 1]})` : '');
       c.button.setAttribute('aria-label', `${spotName(c.x, c.y)}, 쌓기나무 ${n}개`);

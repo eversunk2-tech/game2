@@ -721,3 +721,34 @@ test('펼친 채 창 크기·화면 방향 바꾸기(F1b-1): 무대가 새 크�
     await context.close();
   }
 });
+
+test('가장 작은 칸(960×600 — 13px, F1b-2): "10"과 "9"가 한 줄로 칸 안에 든다(보통·글꼴 흉내 실행 둘 다 — 글자 12px, 두 자리 수만 글자 사이를 좁힘)', async ({ browser }, testInfo) => {
+  test.skip(isTouch(testInfo), '한 번만(크롬북 묶음에서 연다)');
+  const context = await browser.newContext({ viewport: { width: 960, height: 600 } });
+  const work = { v: 1, h: Array.from({ length: 14 }, (_, y) => Array.from({ length: 14 }, (__, x) => [10, 9, 0][(x + y) % 3])), c: [] };
+  await context.addInitScript((v) => localStorage.setItem('edu:net-workshop:free-14x14', v), JSON.stringify(work));
+  const page = await context.newPage();
+  const errors = collectErrors(page);
+  await openFree(page);
+  await page.locator('.blk-free-pad').click();
+  await settled(page);
+  const m = await page.evaluate(() => {
+    const cells = [...document.querySelectorAll('.blk-free-slot .blk-cell.is-on')];
+    let bad = 0;
+    for (const c of cells) {
+      const cb = c.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(c.querySelector('.blk-cell-n'));
+      const r = range.getBoundingClientRect();
+      if (range.getClientRects().length !== 1 || r.left < cb.left + 0.5 || r.right > cb.right - 0.5 || r.top < cb.top || r.bottom > cb.bottom) bad += 1;
+    }
+    const first = cells[0];
+    return { n: cells.length, bad, size: Math.round(first.getBoundingClientRect().width), font: parseFloat(getComputedStyle(first).fontSize), texts: [...new Set(cells.map((c) => c.textContent))].sort() };
+  });
+  expect(m.size).toBe(13); // 가장 작은 칸(사용자 결정 15-23 — 낮은 화면은 13px까지 줄여 한눈에)
+  expect(m.font).toBeGreaterThanOrEqual(12);
+  expect(m.texts).toEqual(['10', '9']);
+  expect([m.n, m.bad]).toEqual([131, 0]);
+  expect(errors).toEqual([]);
+  await context.close();
+});
