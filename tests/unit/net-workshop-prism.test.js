@@ -23,6 +23,7 @@ import {
   triangleBySides,
 } from '../../src/games/net-workshop/solids.js';
 import { createRng } from '../../src/shared/core/random.js';
+import { rotationMatrix, turnVector, uprightAngle } from '../../src/games/net-workshop/orbit.js';
 import { E, edgesOfPoly, fold3d, foldAngle, rotate, v, verdict } from './net-workshop-prism-indep.js';
 
 // ── 입체 ─────────────────────────────────
@@ -238,3 +239,36 @@ test('pickFace(입체 상태의 면 누르기): 무작위 보기 2,000개에서 
   assert.ok(hits > 500, `${hits}`); // 빈 곳을 누른 경우만 있는 검사가 아니다
 });
 
+
+test('띠 이름표의 끊김 없는 바로 세우기(uprightAngle — 각기둥): 무작위 자세 5,000개에서 글줄이 화면 가로·오른쪽, 글자의 아래가 화면 아래 (뒤집은 면은 좌우를 뒤집은 채로)', () => {
+  const rng = createRng('upright');
+  let checked = 0;
+  for (let k = 0; k < 5000; k += 1) {
+    // 무작위 자세(세 축 둘레 돌림의 곱)와 면 위의 두 축(오른쪽·아래)
+    const pose = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].reduce((m, ax) => {
+      const r = rotationMatrix(ax, rng.next() * 360);
+      const out = new Array(9).fill(0);
+      for (let i = 0; i < 3; i += 1) for (let j = 0; j < 3; j += 1) for (let t = 0; t < 3; t += 1) out[i * 3 + j] += r[i * 3 + t] * m[t * 3 + j];
+      return out;
+    }, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    const a = rng.next() * 2 * Math.PI;
+    const right = [Math.cos(a), Math.sin(a), 0];
+    const down = [-Math.sin(a), Math.cos(a), 0];
+    const r = turnVector(pose, right);
+    const d = turnVector(pose, down);
+    // 화면에서 면이 뒤집혀 보이나(두 축이 화면에서 도는 방향이 바뀜) — 무대는 그런 면의 글자를 좌우로 뒤집는다
+    const back = r[0] * d[1] - r[1] * d[0] < 0;
+    const theta = uprightAngle(right, down, pose, back);
+    if (theta == null) continue;
+    if (Math.hypot(r[0] * d[1] - r[1] * d[0]) < 0.05) continue; // 거의 옆으로 선 면(글자가 거의 안 보인다)은 빼고 본다
+    const t = (theta * Math.PI) / 180;
+    const sign = back ? -1 : 1; // 뒤집은 면: 글줄은 돌린 x축의 반대
+    const line = [sign * (Math.cos(t) * r[0] + Math.sin(t) * d[0]), sign * (Math.cos(t) * r[1] + Math.sin(t) * d[1])];
+    const below = [-Math.sin(t) * r[0] + Math.cos(t) * d[0], -Math.sin(t) * r[1] + Math.cos(t) * d[1]];
+    assert.ok(Math.abs(line[1]) < 1e-9 * Math.max(1, Math.abs(line[0])) + 1e-9, `${k} 글줄이 가로가 아님 ${line}`);
+    assert.ok(line[0] > 0, `${k} 글줄이 왼쪽으로`);
+    assert.ok(below[1] > 0, `${k} 글자의 아래가 화면 위쪽`);
+    checked += 1;
+  }
+  assert.ok(checked > 4000, `${checked}`);
+});

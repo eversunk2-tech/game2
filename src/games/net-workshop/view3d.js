@@ -65,6 +65,7 @@ import {
   tiltZone,
   turnBy,
   turnVector,
+  uprightAngle,
   uprightTurn,
   viewDir,
   viewLimits,
@@ -452,6 +453,11 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
       if (!f) continue;
       const turned = uprightTurn(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose);
       if (turned !== tag.turn) placeTag(tag, turned);
+      // 각기둥: 이름표("5 cm")는 90° 단위가 아니라 끊김 없이 돌려 글줄을 늘 화면 가로로 — 돌려 본 자세에서도 눕지 않는다(자리는 위의 90° 단위 그대로)
+      if (net.kind === 'prism') {
+        const exact = uprightAngle(applyDir(f.matrix, [1, 0, 0]), applyDir(f.matrix, [0, 1, 0]), pose, faceEls.get(f.id)?.classList.contains('is-back'));
+        tag.el.style.setProperty('--tag-turn', `${(exact ?? turned).toFixed(2)}deg`);
+      }
     }
     el.classList.toggle('is-flat', t <= 1e-6);
     lastScene = { folded, center, pose, px: look.px };

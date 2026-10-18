@@ -292,6 +292,25 @@ export function uprightTurn(right, down, pose) {
   return best;
 }
 
+/**
+ * 면 위의 글자를 화면에서 똑바로(글줄이 가로, 오른쪽으로) 읽히게 돌릴 각도(도, 끊김 없이 — CSS rotate). uprightTurn은 90° 단위라 비스듬한 면에서
+ * 글자가 45°보다 더 눕기도 한다(직육면체 검토 M2b-5: 돌려 본 자세에서 띠 이름표 2.6%가 90° 넘게 누움). 각기둥의 띠 이름표("5 cm")가 쓴다.
+ * right·down: 면의 '오른쪽'·'아래' 방향(모델 좌표), back: 종이 안쪽이 보여 글자를 좌우로 뒤집은 면(scaleX(-1)).
+ * 글자를 θ만큼 돌리면 글줄은 면 위에서 cos θ × right + sin θ × down을 향한다 — 그 화면 위의 방향이 수평(y = 0)이고 오른쪽(뒤집은 면은 왼쪽)이 되는 θ.
+ * 면이 거의 옆으로 서서 정할 수 없으면 null
+ */
+export function uprightAngle(right, down, pose, back = false) {
+  const r = turnVector(pose, right);
+  const d = turnVector(pose, down);
+  if (Math.hypot(r[1], d[1]) < 1e-6) return 0; // 두 축이 모두 수평: 돌리지 않아도 글줄이 가로
+  let theta = Math.atan2(-r[1], d[1]);
+  const x = Math.cos(theta) * r[0] + Math.sin(theta) * d[0];
+  if (Math.abs(x) < 1e-6) return null;
+  if ((x > 0) === back) theta += Math.PI;
+  const out = deg(theta) % 360;
+  return out < 0 ? out + 360 : out;
+}
+
 // ── 보는 방향·크기를 말로 (화면 읽기 알림) ─────────
 export const TILT_WORDS = [
   '위에서 본 모습이에요.',
