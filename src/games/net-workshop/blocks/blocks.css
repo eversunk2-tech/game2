@@ -355,6 +355,11 @@
   .blk-paint-bench .blk-panel.has-paints > .order-head { grid-column: 2; }
   .blk-paint-bench .blk-panel.has-paints > .blk-answer { grid-row: 1 / span 8; }
 }
+/* 그 낮춘 매트에서 수만 보고 알아내기를 답한 뒤의 수를 쓴 그림 카드는 매트 왼쪽(방향 버튼 아래 — 이 단계에서는 비어 있다)에 둔다:
+   오른쪽(조작판 아래)에 두면 카드 아래쪽이 [확인하기] 띠에 가린다 (review-blocks-s2 S2b-2 — 960×768에서 39px, 960×680에서 79px) */
+@media (max-width: 1000px) and (min-width: 561px) and (max-height: 820px) {
+  .blk-paint-bench:not(.blk-s3) .blk-mat > .blk-card { left: 14px; right: auto; top: 84px; }
+}
 /* 901~1000px는 알림이 매트 안 도구 띠 위에 뜬다 — 낮춘 매트에서도 그 자리(띠 위 54px)는 비워 두고 무대를 넓힌다 */
 @media (max-width: 1000px) and (min-width: 901px) and (max-height: 820px) {
   .blk-paint-bench .blk-stage { inset: 14px 0 120px; }
@@ -466,9 +471,65 @@
 .blk-options.blk-pictures.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .blk-options.blk-pictures.is-answered .answer-btn.blk-option { min-height: 0; }
 .blk-options.blk-pictures.is-answered .blk-picture { width: 56px; }
+/* 답한 뒤 56px로 줄인 보기 그림에서는 "앞"·"옆" 칩·화살표를 숨긴다 — 글자가 8.5px로 작아져 읽기 어렵고, 무대에 판과 큰 글자가 나온다 (review-blocks-s2 S2b-4) */
+.blk-options.blk-pictures.is-answered .blk-picture.has-edges .blk-edge,
+.blk-options.blk-pictures.is-answered .blk-picture.has-edges .blk-arrow { display: none; }
 /* 그림 아래 띠의 "앞"·"옆" 칩(그림이 92px로 줄어도 글자 14px 안팎) */
 .blk-picture.has-edges .blk-chip text { font-size: 16px; }
 .blk-picture.has-edges .blk-chip rect { stroke-width: 1.5; }
 /* 수를 쓴 위에서 본 모양을 매트 가운데에 크게(수만 보고 알아내기 — 답하기 전) */
 .blk-plan-card .blk-figure { padding: 10px 14px 8px; }
 .blk-plan-card .blk-grid-pic { width: 216px; }
+
+/* ══ S3: 5차시(층별로 나타내기) · 도전(더 붙여서 만들기) ══════════════════ */
+/* 층 숫자: 층마다 다른 색과 함께(답한 뒤에만 — 색만으로 구분하지 않는다). 쌓기나무마다 가장 넓게 보이는 면 하나에 */
+.blk-face-num { fill: var(--ink); font-family: var(--font-display); font-weight: 700; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+/* 매트 아래 띠 왼쪽의 [층별로 벌려 보기] (오른쪽 끝은 [확인하기]) */
+.blk-tools .blk-apart.blk-apart-left { margin-left: 0; }
+/* 붙인 쌓기나무(도전 — 답한 뒤 보기 그림): 파랑 굵은 점선 */
+.blk-picture .blk-face.is-added { stroke: var(--primary); stroke-width: 3; stroke-dasharray: 5 3; }
+/* 예상하기 전(도전): 쌓기 도구 띠는 자리만 두고 비워 둔다(내 판은 예상한 뒤에 열린다) */
+.blk-tools.is-waiting > * { visibility: hidden; }
+
+/* 1층 모양(층별 모양 그리기의 주어진 그림) */
+.blk-floor-slot { display: flex; justify-content: center; }
+.blk-floor-slot:empty { display: none; }
+.blk-floor-fig .blk-grid-pic { width: 110px; }
+/* 층별 모양 셋을 매트 가운데에 크게(층별 모양만 보고 알아내기 — 답하기 전) */
+.blk-layer-plan .blk-layer-row { display: grid; grid-template-columns: repeat(3, minmax(0, 156px)); gap: 12px; justify-content: center; align-items: end; width: calc(100% - 28px); }
+.blk-layer-plan .blk-figure { padding: 8px 10px 6px; }
+.blk-layer-plan .blk-grid-pic { width: 100%; }
+/* 답한 뒤 매트 오른쪽의 층별 모양 카드(작게 한 줄) */
+.blk-card .blk-layer-strip { width: 165px; }
+
+/* 도전: 보기 넷(모두 고르기) · 판정 글 */
+.blk-add-options .answer-btn.blk-option { gap: 1px; }
+.blk-verdict { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 2px; font-family: var(--font); font-size: 0.78rem; font-weight: 800; line-height: 1.2; text-align: center; }
+.blk-verdict > span { white-space: nowrap; }
+.blk-verdict .icon { flex: none; width: 1em; height: 1em; stroke-width: 3; }
+.blk-verdict.is-yes { color: var(--correct); }
+.blk-verdict.is-no { color: var(--wrong); }
+.blk-add-option.is-made { border: 2px solid var(--primary); }
+.blk-add-submit { width: 100%; flex: none; }
+/* 답한 뒤 보기 넷을 한 줄로: 그림은 조금 크게(붙인 쌓기나무의 점선이 보이게) */
+.blk-options.blk-pictures.blk-add-options.is-answered .blk-picture { width: 66px; }
+
+/* 5차시·도전(.blk-s3)은 폭 901~1000px에서도 판을 매트 옆에(280px) 둔다 — 판이 아래로 가면 960×768에서 모눈·그림·쪽지가 화면을 넘친다.
+   3·4차시까지의 판 아래 배치(위 max-width: 1000px 규칙들)를 이 단계에서만 되돌린다. 쌓기나무 한 변은 960px에서 40px */
+@media (min-width: 901px) and (max-width: 1000px) {
+  .workbench.blk-bench.blk-s3 { grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; height: var(--bench-h); }
+  .blk-s3 .mat.blk-mat, .blk-s3.blk-paint-bench .mat.blk-mat { height: auto; }
+  .blk-s3 .blk-panel.net-panel { display: flex; height: var(--bench-h); overflow: hidden auto; gap: 8px; padding: 14px 14px 12px; }
+  .blk-s3 .blk-panel > *, .blk-s3 .blk-panel.has-paints > *, .blk-bench.blk-s3 .blk-panel.has-paints > .blk-answer { grid-column: auto; grid-row: auto; }
+  .blk-s3 .blk-panel .blk-prompt { font-size: 1.2rem; }
+  .blk-s3 .blk-options, .blk-s3 .blk-options.is-answered { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .blk-s3 .blk-options.blk-pictures.is-answered { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .blk-s3 .blk-view-fig { padding: 4px 4px 3px; }
+  .blk-s3 .blk-view-fig .blk-grid-pic.is-top { width: 70px; }
+  .blk-s3 .blk-given.is-done { display: none; }
+  /* 매트가 좁다(606px 안팎): [되돌리기]·[모두 치우기]는 그림만(1001~1180px와 같다) — 도구 띠가 매트 밖으로 나가 매트가 옆으로 밀리지 않게 */
+  .blk-s3 .blk-tools .blk-undo, .blk-s3 .blk-tools .blk-clear { min-width: var(--tap); padding: 6px 12px; }
+  .blk-s3 .blk-tools .blk-undo span, .blk-s3 .blk-tools .blk-clear span { display: none; }
+}
+/* 고르기 전에는 보기 그림을 크게(그림 틀이 판 3×3×3 전체라 모양은 그 가운데 일부다) */
+.blk-options.blk-pictures.blk-add-options:not(.is-answered) .blk-picture { width: 112px; }

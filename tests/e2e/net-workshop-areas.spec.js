@@ -338,7 +338,7 @@ test('옛 저장 값(학년·영역이 없던 때의 기록)으로 열어도 별
   // 내 공방 카드: 게임 하나에 하나 — 일반 단계의 별 합(도전 주문서 별은 빼는 엔진 규칙 그대로), 칭호, 도감, 도장
   await expect(page.locator('.rank-chip')).toContainText('접기 장인'); // 112점: 셋째 칭호(100점부터)
   await expect(page.locator('.rank-chip small')).toHaveText('112점');
-  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 13']); // 도장판 13칸: 직육면체 도감 완성(spec 16-17)
+  await expect(page.locator('.workshop-meta .chip')).toHaveText([`별 11 / ${grade(5).max + grade(6).max}`, '도감 2 / 11', '도장 2 / 16']); // 도장판 16칸: 직육면체 도감 완성(spec 16-17) + 쌓기나무 도장 셋(spec-grade6 8절 — S3)
   // 학년 카드의 별: 5학년 3 + 2 + 1, 6학년 3 + 2. "지난번 영역" 값이 없으니 첫 학년에 "여기부터!"
   await expect(gradeCard(page, 5)).toHaveAccessibleName(gradeName(grade(5), 6, true));
   await expect(gradeCard(page, 6)).toHaveAccessibleName(gradeName(grade(6), 5, false));

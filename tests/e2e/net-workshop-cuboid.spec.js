@@ -1755,7 +1755,7 @@ test('길이까지 살펴요의 크기형 까닭 문장: 문장이 말한 두 �
 
 test('한 차시만 열었을 때의 도감 칩: ?lesson=cube는 지금까지처럼 내 공방 카드에 "도감 0 / 11", 차시 머리에 도감·노트 칩. 차시를 고르지 않은 화면도 그대로다 (?lesson=cuboid는 위 검사)', async ({ page }) => {
   await page.goto(fileUrl(FILE, '?lesson=cube&seed=1&sound=off'));
-  await expect(page.locator('.workshop-meta .chip')).toHaveText(['별 0 / 12', '도감 0 / 11', '도장 0 / 13']); // 도장판 13칸: 직육면체 도감 완성(spec 16-17)
+  await expect(page.locator('.workshop-meta .chip')).toHaveText(['별 0 / 12', '도감 0 / 11', '도장 0 / 16']); // 도장판 16칸: 직육면체 도감 완성(spec 16-17) + 쌓기나무 도장 셋(spec-grade6 8절 — S3)
   await page.getByRole('button', { name: '시작하기' }).click();
   await expect(page.locator('.head-chips .collection-chip')).toHaveCount(0);
   await expect(page.locator('.lesson-group[data-lesson="cube"] .collection-chip')).toHaveText(['도감 0 / 11', '노트 0 / 24']);

@@ -101,13 +101,14 @@ const fixedByLook = (h) => new Set(BY_LOOK.get(LOOK[indexOf(h)]).map((j) => COUN
 /** 그림과 위에서 본 모양이 같은 쌓기 전부 */
 const alikesOf = (h) => BY_PIC_TOP.get(`${PIC[indexOf(h)]}|${mapKey(topView(h))}`).map((j) => ALL[j]);
 
-test('단계 목록: 교과서 1~4차시와 짝지은 네 차시 × 세 단계, id가 전개도 단계와 겹치지 않는다', () => {
-  // S2(2026-10-16)에서 3·4차시가 뒤에 더해졌다 — 1·2차시의 줄은 그대로
+test('단계 목록: 교과서 1~5차시와 짝지은 다섯 차시 × 세 단계 + 5차시의 도전 주문서 하나, id가 전개도 단계와 겹치지 않는다', () => {
+  // S2(2026-10-16)에서 3·4차시가, S3(2026-10-18)에서 5차시와 도전 주문서가 뒤에 더해졌다 — 앞 차시의 줄은 그대로
   assert.deepEqual(BLOCK_LESSONS.map((l) => [l.id, l.title]), [
     ['blocks-look', '어느 방향에서 보았을까'],
     ['blocks-top', '만든 모양과 위에서 본 모양'],
     ['blocks-three', '위, 앞, 옆에서 본 모양'],
     ['blocks-number', '위에서 본 모양에 수 쓰기'],
+    ['blocks-layer', '층별로 나타내기'],
   ]);
   assert.deepEqual(BLOCK_STAGES.map((s) => [s.id, s.lesson, s.kind, s.count]), [
     ['blocks-play', 'blocks-look', 'play', 3],
@@ -122,34 +123,44 @@ test('단계 목록: 교과서 1~4차시와 짝지은 네 차시 × 세 단계, 
     ['blocks-write', 'blocks-number', 'write', 3],
     ['blocks-fromnum', 'blocks-number', 'fromnum', 2],
     ['blocks-numviews', 'blocks-number', 'numviews', 3],
+    ['blocks-layer-draw', 'blocks-layer', 'layerdraw', 3],
+    ['blocks-layer-build', 'blocks-layer', 'layerbuild', 3],
+    ['blocks-layer-views', 'blocks-layer', 'layerviews', 3],
+    ['blocks-add', 'blocks-layer', 'add', 3],
   ]);
   assert.deepEqual(BLOCK_STAGES.map((s) => s.title), [
     '쌓기 놀이터', '어느 방향에서 보았을까?', '이쪽에서 보면?', '똑같이 만들기', '모두 몇 개일까?', '숨겨진 쌓기나무',
     '앞과 뒤, 오른쪽과 왼쪽', '위, 앞, 옆에서 본 모양 그리기', '위, 앞, 옆을 보고 쌓기', '자리마다 몇 개?', '수를 보고 쌓기', '수만 보고 알아내기',
+    '층별 모양 그리기', '층별 모양을 보고 쌓기', '층별 모양만 보고 알아내기', '더 붙여서 만들기',
   ]);
-  assert.deepEqual(BLOCK_STAGES.map((s) => s.order), ['연습 주문', '관찰 주문', '관찰 주문', '따라 쌓기 주문', '셈 주문', '탐정 주문', '관찰 주문', '기록 주문', '설계 주문', '기록 주문', '설계 주문', '추리 주문']);
+  assert.deepEqual(BLOCK_STAGES.map((s) => s.order), ['연습 주문', '관찰 주문', '관찰 주문', '따라 쌓기 주문', '셈 주문', '탐정 주문', '관찰 주문', '기록 주문', '설계 주문', '기록 주문', '설계 주문', '추리 주문', '기록 주문', '설계 주문', '추리 주문', '증축 주문']);
   // 단계 지도에 보이는 차시 칩(교과서의 차시 번호)·시간 어림·단원 — 엔진의 차시 선택 값
   assert.deepEqual(BLOCK_LESSONS.map((l) => [l.chip, l.minutes, l.note]), [
     ['쌓기나무 1차시', 6, '6학년 2학기 · 공간과 입체'],
     ['쌓기나무 2차시', 8, '6학년 2학기 · 공간과 입체'],
     ['쌓기나무 3차시', 10, '6학년 2학기 · 공간과 입체'],
     ['쌓기나무 4차시', 7, '6학년 2학기 · 공간과 입체'],
+    ['쌓기나무 5차시', 9, '6학년 2학기 · 공간과 입체'],
   ]);
   assert.equal(BLOCK_UNIT, '6학년 2학기 · 공간과 입체');
-  // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) 다음에 쌓기·돌려 보기 두 줄이 맨 끝(처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
-  assert.equal(BLOCK_HOW_TO.length, 4);
+  // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) · 5차시의 층별 모양과 도전 주문서(S3) 다음에 쌓기·돌려 보기 두 줄이 맨 끝
+  // (처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
+  assert.equal(BLOCK_HOW_TO.length, 6);
   for (const line of BLOCK_HOW_TO) assert.match(line, /요\.$/);
   for (const line of BLOCK_HOW_TO.slice(-2)) assert.match(line, /쌓기나무.*요\.$/);
-  for (const line of BLOCK_HOW_TO.slice(0, 2)) assert.doesNotMatch(line, /쌓기나무/);
+  for (const line of BLOCK_HOW_TO.slice(0, 4)) assert.doesNotMatch(line, /쌓기나무/);
   assert.match(BLOCK_HOW_TO[0], /모눈의 칸을 눌러 칠하고/);
   assert.match(BLOCK_HOW_TO[1], /1, 2, 3.*\[내리기\] \[올리기\]/);
-  // 별을 틀린 횟수로 정하는 단계: 한 번만 틀려도 정답률로 바로 ★1이 되는 단계(사용자 결정 2026-10-11, spec-grade6 15-3) — S1의 둘 + S2의 셋.
-  // 나머지는 엔진의 정답률 기준(S2 단계는 net-workshop-blocks-s2.test.js의 "별(S2)"이 모든 답 순서를 나열해 고정한다)
-  assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy === 'wrong').map((s) => [s.id, s.count]), [['blocks-scene', 3], ['blocks-copy', 2], ['blocks-flip', 3], ['blocks-fromnum', 2], ['blocks-numviews', 3]]);
+  assert.match(BLOCK_HOW_TO[2], /^층별 모양은/);
+  assert.match(BLOCK_HOW_TO[3], /도전 주문서\(더 붙여서 만들기\)/);
+  // 별을 틀린 횟수로 정하는 단계: 한 번만 틀려도 정답률로 바로 ★1이 되는 단계(사용자 결정 2026-10-11, spec-grade6 15-3) — S1의 둘 + S2의 셋 + S3의 하나.
+  // 나머지는 엔진의 정답률 기준(S2·S3 단계는 -s2·-s3 검사의 "별"이 모든 답 순서를 나열해 고정한다)
+  assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy === 'wrong').map((s) => [s.id, s.count]), [['blocks-scene', 3], ['blocks-copy', 2], ['blocks-flip', 3], ['blocks-fromnum', 2], ['blocks-numviews', 3], ['blocks-layer-views', 3]]);
   assert.deepEqual(BLOCK_STAGES.filter((s) => s.starsBy != null && s.starsBy !== 'wrong'), []);
+  // 도전 주문서는 5차시의 "더 붙여서 만들기" 하나(별 합계에 넣지 않고 시간 재기는 켠 학생만 — 정육면체 주사위 주문과 같다)
+  assert.deepEqual(BLOCK_STAGES.filter((s) => s.challenge).map((s) => [s.id, s.lesson, s.timer]), [['blocks-add', 'blocks-layer', 'optional']]);
   for (const s of BLOCK_STAGES) {
     assert.equal(s.area, 'blocks', s.id);
-    assert.ok(!s.challenge, s.id);
     assert.ok(s.goal.length > 8 && s.goal.endsWith('요.'), s.id);
   }
   // 전개도 차시·단계와 id가 겹치지 않는다 (main.js가 둘을 이어 붙인다)
@@ -158,7 +169,7 @@ test('단계 목록: 교과서 1~4차시와 짝지은 네 차시 × 세 단계, 
   const lessons = [...LESSONS, ...BLOCK_LESSONS].map((l) => l.id);
   assert.equal(new Set(lessons).size, lessons.length);
   for (const s of BLOCK_STAGES) assert.ok(BLOCK_LESSONS.some((l) => l.id === s.lesson), s.id);
-  for (const l of BLOCK_LESSONS) assert.equal(BLOCK_STAGES.filter((s) => s.lesson === l.id).length, 3, l.id);
+  for (const l of BLOCK_LESSONS) assert.equal(BLOCK_STAGES.filter((s) => s.lesson === l.id && !s.challenge).length, 3, l.id);
 });
 
 test('같은 시드면 같은 문항, 문항마다 itemId가 다르다', () => {
@@ -460,8 +471,8 @@ test('blocks-hidden 채점: 맞게 쌓기 → 예상 → 다른 개수로 한 �
 });
 
 test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교과서 말("만든 모양")을 쓴다', () => {
-  // S2에서 "수의 뜻"(4절 표, blocks-write·blocks-fromnum)이 더해졌다
-  assert.deepEqual(Object.values(BLOCK_TAGS).sort(), ['가장 높은 층', '개수가 여러 가지', '바닥에 닿은 면', '보는 방향', '보이지 않는 쌓기나무', '수의 뜻', '앞과 옆', '좌우 뒤집힘'].sort());
+  // S2에서 "수의 뜻"(4절 표, blocks-write·blocks-fromnum)이, S3에서 "층별 모양"·"위층은 아래층 위에"·"더 붙인 모양"(5차시·도전)이 더해졌다
+  assert.deepEqual(Object.values(BLOCK_TAGS).sort(), ['가장 높은 층', '개수가 여러 가지', '바닥에 닿은 면', '보는 방향', '보이지 않는 쌓기나무', '수의 뜻', '앞과 옆', '좌우 뒤집힘', '층별 모양', '위층은 아래층 위에', '더 붙인 모양'].sort());
   const texts = BLOCK_STAGES.flatMap((s) => [s.title, s.goal, s.order]);
   for (const seed of SEEDS.slice(0, 40)) {
     for (const q of questions('blocks-where', seed)) for (const dir of AROUND) texts.push(judgeDirection(q, dir).message);
