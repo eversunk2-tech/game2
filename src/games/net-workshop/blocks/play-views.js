@@ -71,12 +71,12 @@ const VIEW_SHORT = { top: '위', front: '앞', side: '옆' };
  * paint: 모눈을 칠하는 단계(그리기·수만 보고) — 판이 매트 아래로 가는 낮은 화면(960×768 등)에서 매트를 낮춰 모눈과 [확인하기]가 한 화면에 들어오게 한다
  * (판의 폭·매트의 높이는 단계 안에서 바뀌지 않는다 — 머리와 매트가 움직이지 않게)
  */
-function wideBench(bench, { paint = false } = {}) {
+export function wideBench(bench, { paint = false } = {}) {
   bench.mat.parentElement.classList.add('blk-wide');
   if (paint) bench.mat.parentElement.classList.add('blk-paint-bench');
 }
 /** 판이 매트 옆에 있는 두 칸 배치(blocks.css와 같은 1001px) */
-const TWO_COLUMNS = '(min-width: 1001px)';
+export const TWO_COLUMNS = '(min-width: 1001px)';
 
 /** 내가 그린 그림을 목표가 놓인 자리로 옮겨 무대에 겹칠 칸: [{ r, c, state }] */
 function overlayCells(mine, target, kind) {
@@ -107,7 +107,7 @@ function givenOverlay(mine, target, kind) {
  * 자리마다 쌓기나무를 아래부터 하나씩 세어 보인다(굵은 테두리 + 그 자리에서 센 수). 움직임 줄이기·?fx=low면 끝 모습을 바로.
  * map: 무대에 놓인 높이 지도 · spots: 셀 자리 [[x, y]](차례대로) → 다 세면 done(n)
  */
-function countUp(bench, map, spots, done) {
+export function countUp(bench, map, spots, done) {
   const { view } = bench;
   const cubes = spots.flatMap(([x, y]) => Array.from({ length: map[y][x] }, (_, z) => [x, y, z]));
   const show = (n) => {
@@ -131,7 +131,7 @@ function countUp(bench, map, spots, done) {
   tick();
 }
 /** 쌓인 자리를 앞줄부터, 왼쪽부터 */
-const spotsOf = (map) => {
+export const spotsOf = (map) => {
   const out = [];
   map.forEach((row, y) => row.forEach((v, x) => {
     if (v > 0) out.push([x, y]);
@@ -228,7 +228,7 @@ function playFlip(stage, ctx, questions) {
  * (위·앞·옆을 한 문항에 모두 그릴 때 작업 지시서 한 곳에는 세 장과 까닭 쪽지가 함께 들어가지 않는다 — 1366×680).
  * onCheck: 단계가 채점한다. → { grids, topBox, paintRow, show(kinds), reset(), lock(), get(kinds), showDiff(diff), clearDiff() }
  */
-function createPaints({ ctx, bench }) {
+export function createPaints({ ctx, bench }) {
   const { h } = ctx;
   const grids = Object.fromEntries(['top', 'front', 'side'].map((kind) => [kind, createPaintGrid({ ctx, kind })]));
   const topBox = h('div', { class: 'blk-padbox blk-paintbox', hidden: true }, grids.top.el);
@@ -304,7 +304,7 @@ function wrongTurns(result, kinds) {
  * state: { solved, checked } · reveal(): 입체를 보이는 단계의 일 · from: 'picture' | 'numbers'
  * → 맞혔으면 true
  */
-function checkPaint({ ctx, bench, paints, checker, q, state, reveal, from }) {
+export function checkPaint({ ctx, bench, paints, checker, q, state, reveal, from }) {
   const { view } = bench;
   const drawings = paints.get(q.kinds);
   const result = judgeDrawing(q, drawings, { from });

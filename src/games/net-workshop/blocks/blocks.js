@@ -356,6 +356,59 @@ export function isConnectedTop(h) {
   return seen.size === spots.length;
 }
 
+// ── 더 붙여서 만들기 (도전 blocks-add — spec-grade6.md 2-4·6-3절) ──────────
+const SIDE_NEIGHBORS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+/**
+ * 쌓기나무 하나를 더 붙인 모든 모양(서로 다른 것, 판 안·3층까지): 쌓인 자리의 맨 위, 또는 쌓인 자리와 변으로 이웃한 빈 자리의 바닥.
+ * 뜬 쌓기나무는 없다(놓으면 아래로 내려앉는다)
+ */
+export function addOne(h) {
+  const out = [];
+  for (let y = 0; y < ROWS; y += 1) {
+    for (let x = 0; x < COLS; x += 1) {
+      const v = h[y][x];
+      if (v >= MAX_H) continue;
+      if (v === 0 && !SIDE_NEIGHBORS.some(([dx, dy]) => (h[y + dy]?.[x + dx] ?? 0) > 0)) continue;
+      const g = cloneMap(h);
+      g[y][x] += 1;
+      out.push(g);
+    }
+  }
+  return out;
+}
+
+/** 판 위에서 통째로 옮긴 자리들(쌓인 자리가 모두 판 안에 남는 것 — 그대로 둔 것 포함) */
+export function boardShifts(h) {
+  const out = [];
+  for (let dy = -(ROWS - 1); dy < ROWS; dy += 1) {
+    for (let dx = -(COLS - 1); dx < COLS; dx += 1) {
+      const g = emptyMap();
+      let inside = true;
+      h.forEach((row, y) => row.forEach((v, x) => {
+        if (v === 0) return;
+        if (!inBoard(g, x + dx, y + dy)) inside = false;
+        else g[y + dy][x + dx] = v;
+      }));
+      if (inside) out.push(g);
+    }
+  }
+  return out;
+}
+
+/** a의 쌓기나무가 모두 b에 있는가(자리마다 a ≤ b) */
+export const within = (a, b) => a.every((row, y) => row.every((v, x) => v <= b[y][x]));
+
+/**
+ * shape가 base에 쌓기나무 n개를 더 붙여 만든 모양인가: 놓인 방향 그대로(판 위에서 통째로 옮긴 것은 같다고 본다 — 돌리거나 뒤집은 것은 아니다),
+ * base의 쌓기나무가 모두 그 자리에 있고, 개수가 n개 많고, 붙인 것이 떨어져 있지 않다(자리가 변으로 이어진다).
+ * (뜬 것이 없는 높이 지도에서는 "이어진 모양 + 개수 + base를 품음"이면 한 개씩 붙여 가며 만들 수 있다 — 단위 검사가 한 개씩 붙여 본 묶음과 전부 견준다)
+ */
+export function madeFrom(base, shape, n) {
+  if (count(shape) - count(base) !== n || count(base) === 0 || !isConnectedTop(shape)) return false;
+  return boardShifts(base).some((b) => within(b, shape));
+}
+
 // ── 놓기·빼기 ────────────────────────────
 /** 면의 바깥쪽 방향 [dx, dy] (옆면만) */
 const SIDE_STEP = { front: [0, -1], back: [0, 1], left: [-1, 0], right: [1, 0] };

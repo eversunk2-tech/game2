@@ -418,9 +418,10 @@ test('blocks-flip 보기의 자리와 꼴 (시드 1,000개 · 3,000문항): 정�
   assert.equal(n, 3000);
   for (const p of pos) assert.ok(p / n > 0.25 && p / n < 0.42, `정답 자리 ${pos}`);
   for (const [name, v] of Object.entries(rules)) assert.ok(v / n > 0.2333 && v / n < 0.4333, `${name} ${(v / n).toFixed(3)}`);
-  // 꼴의 비율(주머니 24개 가운데): 좌우가 같은 그림 3 · "주어진 그림 그대로" 보기가 있는 문항 7
-  assert.ok(kinds.pal / n > 0.08 && kinds.pal / n < 0.17, JSON.stringify(kinds));
-  assert.ok(withSame / n > 0.24 && withSame / n < 0.35, `${withSame}`);
+  // 꼴의 비율: 판마다 한 문항은 "주어진 그림 그대로" 보기가 든 문항(15-8), 나머지 둘은 주머니 19개(좌우가 같은 그림 3 · 그대로 2 · 짝 3 · 짝 아님 11)에서
+  // → 좌우가 같은 그림 2/3 × 3/19 ≈ 10.5% · "그대로" 보기가 든 문항 1/3 + 2/3 × 2/19 ≈ 40.4% (전에는 29% — review-blocks-s2 S2b-1)
+  assert.ok(kinds.pal / n > 0.08 && kinds.pal / n < 0.14, JSON.stringify(kinds));
+  assert.ok(withSame / n > 0.36 && withSame / n < 0.45, `${withSame}`);
   assert.ok(rng);
 });
 
