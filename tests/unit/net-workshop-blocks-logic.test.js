@@ -54,6 +54,7 @@ import {
   BLOCK_HOW_TO,
   BLOCK_UNIT,
   WHERE_REPEAT_MAX,
+  COUNT_BY_SPOTS,
   countOptions,
   drawDirections,
   starNoteByWrong,
@@ -368,12 +369,12 @@ test('blocks-count: 네 문항 모두 그림과 위에서 본 모양으로 쌓�
       assert.deepEqual(q.top, topView(q.target));
       assert.equal(q.seen, q.expected - q.hidden.length);
       assert.equal(q.spots, count(q.top));
-      // 보기 넷: 서로 다른 자연수, 작은 수부터, 정답이 들어 있다. 보기의 값은 모두 이 단계의 정답 값(5~10개)에서 뽑는다 — 보기 값의 크기만 보고는
-      // 정답이 드러나지 않게(review-blocks-r1 R1-1. 전에는 정답보다 작은 보기에 함정 값을 먼저 넣고 큰 쪽은 함정과 같은 꼴로 떨어진 수 — 꼴은 고르게 됐지만
-      // 정답이 좁은 범위에 몰려 값의 크기 규칙이 52~61%. 함정이 드는 비율은 아래 "보기의 자리와 값" 검사)
+      // 보기 넷: 서로 다른 자연수, 작은 수부터, 정답이 들어 있다. 보기의 값은 위에서 본 모양의 칸 수(함정)가 아니면 이 단계의 정답 값(5~10개)에서 뽑는다 —
+      // 보기 값의 크기만 보고는 정답이 드러나지 않게(review-blocks-r1 R1-1. 전에는 정답보다 작은 보기에 함정 값을 먼저 넣고 큰 쪽은 함정과 같은 꼴로 떨어진 수 —
+      // 꼴은 고르게 됐지만 정답이 좁은 범위에 몰려 값의 크기 규칙이 52~61%. 함정이 드는 비율은 아래 "보기의 자리와 값" 검사)
       assert.equal(q.options.length, 4);
       assert.deepEqual(q.options, [...new Set(q.options)].sort((a, b) => a - b));
-      assert.ok(q.options.every((n) => Number.isInteger(n) && n >= 5 && n <= 10), `${seed} ${q.options}`);
+      assert.ok(q.options.every((n) => Number.isInteger(n) && (n === q.spots || (n >= 5 && n <= 10))), `${seed} ${q.options}`);
       assert.ok(q.options.includes(q.expected), `${seed}`);
       // 함정 값은 늘 정답보다 작다(2층 이상이 있으므로 칸 수 < 개수)
       assert.ok(q.spots < q.expected && q.seen <= q.expected);
@@ -489,8 +490,8 @@ test('채점 tag는 모두 기획서 4절 표의 말이고, 화면 문장은 교
   }
 });
 
-test('보기의 자리와 값(blocks-count, 시드 2,000개): 정답이 네 자리에 고르게 나오고, 한 자리만 누르거나 보기의 꼴·값의 크기만 보는 규칙으로는 찍기(25%)에서 ±10%p 안', () => {
-  const SEEDS = 2000;
+test('보기의 자리와 값(blocks-count, 시드 3,000개): 판마다 "위에서 본 모양의 칸 수" 보기를 한 번 이상 만나고, 정답이 네 자리에 고르게 나오며, 한 자리만 누르거나 보기의 꼴·값의 크기만 보는 규칙으로는 찍기(25%)에서 ±10%p 안', () => {
+  const SEEDS = 3000;
   const position = [0, 0, 0, 0];
   const perfect = [0, 0, 0, 0]; // 늘 그 자리만 눌렀을 때 네 문항이 모두 맞는 판의 수
   const rules = { run: 0, gap: 0, median: 0, beforeGap: 0, largest: 0, smallest: 0, secondLargest: 0, maxMinus3: 0, minPlus3: 0 };
@@ -501,6 +502,8 @@ test('보기의 자리와 값(blocks-count, 시드 2,000개): 정답이 네 자�
   const valueItems = [];
   for (let seed = 1; seed <= SEEDS; seed += 1) {
     const qs = questions('blocks-count', seed);
+    // 오개념 "바닥에 닿은 면"(위에서 본 모양의 칸 수 = 개수)을 판마다 한 번 이상(spec-grade6 4절·15-8 — R1-1 뒤 45.7%의 판에서 한 번도 없었다)
+    assert.ok(qs.some((q) => q.options.includes(q.spots)), `${seed} 칸 수 보기가 없는 판`);
     const at = qs.map((q) => q.options.indexOf(q.expected));
     for (let p = 0; p < 4; p += 1) if (at.every((i) => i === p)) perfect[p] += 1;
     qs.forEach((q, k) => {
@@ -561,7 +564,7 @@ test('보기의 자리와 값(blocks-count, 시드 2,000개): 정답이 네 자�
     assert.ok(rate < 0.35, `${name}로 배운 표 ${rate}`);
   }
   // 오개념 함정: 숨겨진 쌓기나무가 있는 문항의 70% 이상에 "보이는 것만 센 수"(이 단계의 중심 오개념), 함정이 하나라도 든 문항은 45% 이상
-  // (R1-1 전에는 함정이 든 문항 75% — 위에서 본 칸 수는 이 단계의 정답 범위보다 작을 때가 많아, 값만 보고 지울 수 있는 그 수는 이제 보기에 드물다)
+  // (위에서 본 칸 수는 판마다 한 문항에 꼭 넣고 — 위 — 나머지 셋은 그 칸 수가 보일 때의 정답 분포에서 뽑아 값만 보고는 지울 수 없게)
   assert.ok(seenShown / hiddenItems >= 0.7, `보이는 것만 센 수가 든 문항 ${seenShown} / ${hiddenItems}`);
   assert.ok(trapShown / total >= 0.45, `함정이 든 문항 ${trapShown}`);
 });
@@ -597,6 +600,18 @@ test('countOptions(R1-1): 보기 넷은 서로 다른 1 이상의 수(작은 수
       assert.deepEqual(options, [...new Set(options)].sort((a, b) => a - b));
       assert.equal(options.length, 4);
     }
+  }
+  // withSpots: 위에서 본 모양의 칸 수를 꼭 넣고, 나머지 셋은 그 칸 수가 보일 때 나올 수 있는 정답 값(COUNT_BY_SPOTS)에서
+  for (let n = 0; n < 2000; n += 1) {
+    const spots = rng.int(3, 6);
+    const support = Object.keys(COUNT_BY_SPOTS[spots]).map(Number);
+    const total = rng.pick(support);
+    const seen = rng.next() < 0.5 ? total : total - 1;
+    const options = countOptions(rng, { total, seen, spots, withSpots: true });
+    assert.equal(options.length, 4);
+    assert.deepEqual(options, [...new Set(options)].sort((a, b) => a - b));
+    assert.ok(options.includes(spots) && options.includes(total), `${options}`);
+    assert.ok(options.every((v) => v === spots || support.includes(v)), `${spots} ${options}`);
   }
 });
 

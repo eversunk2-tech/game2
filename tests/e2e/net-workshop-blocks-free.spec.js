@@ -2,7 +2,7 @@
  * F1 쌓기나무 "자유 쌓기" — 브라우저 검사. 기획서: spec-grade6.md 15-18·15-19(결정 1~9), plan-rotate-free.md 5절, build-brief-f1.md
  * - 자리: 쌓기나무 영역 단계 지도의 1차시 위 넓은 카드(차시 번호·별·잠금·"여기부터!" 없음), 모은 별·차시 칩은 그대로, 한 차시 주소에는 없다
  * - 판: 크롬북·태블릿 14×14칸·10층, 휴대폰 6×6칸·6층. 처음 보기에서 판과 3층 높이가 무대에 꽉 차게
- * - 오른쪽 좁은 세로 띠(버튼 한 줄), [위에서 본 판]은 처음에 숨김 → 누르면 펼침(머리에서 네 쪽 고르기, 앞이 아래) → 다시 누르면 접힘(결정 7·8)
+ * - 오른쪽 좁은 세로 띠(버튼 한 줄), [위에서 본 판]은 처음에 숨김 → 누르면 펼침(14×14 전체가 작은 칸으로 한눈에, 앞이 아래) → 다시 누르면 접힘(결정 7·8, 덧붙임 2)
  * - 펼쳐서 판이 가려지면 판 옮기기: 무대 가장자리 버튼 · Shift+방향키 · 두 손가락으로 함께 끌기. 접으면 처음 자리(결정 9)
  * - 저장: 판 크기마다 하나, 다시 들어오면 이어서, [모두 치우기]로 새로, 막힌 저장소에서도 오류 없이. 점수·별·학습 기록 없음
  * 정해진 시간으로 기다리지 않는다: 움직임이 끝난 것은 getAnimations로, 무대 그리기는 화면 프레임 두 번으로 본다.
@@ -27,7 +27,6 @@ async function openFree(page, extra = '') {
 }
 const stage = (page) => page.locator('.blk-free .blk-stage');
 const padButton = (page) => page.locator('.blk-free-strip .blk-free-pad');
-const quad = (page, name) => page.locator('.blk-free-quads .blk-quad', { hasText: name });
 const cell = (page, x, y) => page.locator(`.blk-free-slot .blk-cell[data-x="${x}"][data-y="${y}"]`);
 const panPrev = (page) => page.locator('.blk-free-pan.is-prev');
 const panNext = (page) => page.locator('.blk-free-pan.is-next');
@@ -41,7 +40,6 @@ const board = (page) => page.evaluate(() => {
   const slot = slotEl && !slotEl.hidden && getComputedStyle(slotEl).position === 'absolute' ? slotEl.getBoundingClientRect() : null;
   const rect = (sel) => [...stageEl.querySelectorAll(sel)].map((p) => p.getBoundingClientRect());
   const tiles = rect('polygon.blk-tile');
-  const region = rect('polygon.blk-tile.is-region');
   const inside = (b, R) => {
     const cx = b.left + b.width / 2;
     const cy = b.top + b.height / 2;
@@ -56,9 +54,6 @@ const board = (page) => page.evaluate(() => {
     y1: Math.max(...tiles.map((b) => b.bottom)),
     out: tiles.filter((b) => !inside(b, S)).length,
     hidden: slot ? tiles.filter((b) => inside(b, slot)).length : 0,
-    region: region.length,
-    regionHidden: slot ? region.filter((b) => inside(b, slot)).length : 0,
-    regionOut: region.filter((b) => !inside(b, S)).length,
     first: stageEl.querySelector('polygon.blk-tile[data-x="0"][data-y="0"]')?.getAttribute('points'), // 판의 왼쪽 앞 모서리 칸
     stage: { w: S.width, h: S.height },
   };
@@ -126,7 +121,7 @@ test('판(결정 4·7): 14×14칸, 처음 보기 맞춤 한 변, 오른쪽 좁�
   expect(errors).toEqual([]);
 });
 
-test('위에서 본 판(결정 8): 띠의 버튼 하나로 펼치고 접는다. 머리에서 네 쪽을 고르고(앞이 아래), 방향키로 쪽 경계를 넘으면 저절로 다음 쪽. 10층까지', async ({ page }, testInfo) => {
+test('위에서 본 판(결정 8·덧붙임 2): 띠의 버튼 하나로 펼치고 접는다. 14×14 전체가 작은 칸으로 한눈에(앞이 아래, 네 쪽 고르기 없음), 방향키가 판 전체를 움직이고 10층까지', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '키보드·마우스 — 크롬북에서 본다');
   const errors = collectErrors(page);
   await page.addInitScript((key) => localStorage.removeItem(key), KEY14);
@@ -135,51 +130,63 @@ test('위에서 본 판(결정 8): 띠의 버튼 하나로 펼치고 접는다. 
   await settled(page);
   await expect(padButton(page)).toHaveAttribute('aria-expanded', 'true');
   await expect(page.locator('.blk-free-slot')).toBeVisible();
-  await expect(page.locator('.blk-free-quads .blk-quad')).toHaveText(['왼쪽 앞', '오른쪽 앞', '왼쪽 뒤', '오른쪽 뒤']);
-  await expect(quad(page, '왼쪽 앞')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('.blk-free-slot .blk-cell:visible')).toHaveCount(49);
-  for (const size of await page.locator('.blk-free-slot .blk-cell:visible').evaluateAll((els) => els.map((el) => Math.min(el.getBoundingClientRect().width, el.getBoundingClientRect().height)))) expect(size).toBeGreaterThanOrEqual(48);
-  // 앞쪽이 아래로: 앞줄(줄 0)이 아래, 왼쪽(칸 0)이 왼쪽, "앞" 글자가 판 아래
+  await expect(page.locator('.blk-free-quads, .blk-quad')).toHaveCount(0); // 네 쪽 고르기는 없다
+  await expect(page.locator('.blk-free .blk-stage polygon.blk-tile.is-region')).toHaveCount(0);
+  await expect(page.locator('.blk-free-slot .blk-pad-title')).toHaveText('위에서 본 판');
+  // 196칸이 모두 펼친 판 안에 보이고(가린 칸 없음), 칸은 약 24px, 칸 안 수 글자는 12px 이상
+  await expect(page.locator('.blk-free-slot .blk-cell:visible')).toHaveCount(196);
+  const m = await page.evaluate(() => {
+    const slot = document.querySelector('.blk-free-slot').getBoundingClientRect();
+    const cells = [...document.querySelectorAll('.blk-free-slot .blk-cell')].map((el) => el.getBoundingClientRect());
+    const out = cells.filter((r) => r.left < slot.left - 0.5 || r.right > slot.right + 0.5 || r.top < slot.top - 0.5 || r.bottom > slot.bottom + 0.5).length;
+    const font = parseFloat(getComputedStyle(document.querySelector('.blk-free-slot .blk-cell')).fontSize);
+    return { w: Math.min(...cells.map((r) => r.width)), h: Math.min(...cells.map((r) => r.height)), max: Math.max(...cells.map((r) => r.width)), out, font, slot: { w: slot.width, h: slot.height } };
+  });
+  expect(m.out).toBe(0);
+  expect(m.w).toBeGreaterThanOrEqual(22);
+  expect(m.max).toBeLessThanOrEqual(26);
+  expect(m.font).toBeGreaterThanOrEqual(12);
+  expect(m.slot.w).toBeLessThan(420); // 펼친 판의 크기는 전과 같다(7×7 48px 칸 때 388×408)
+  // 앞쪽이 아래로: 앞줄(줄 0)이 아래, 왼쪽(칸 0)이 왼쪽, "앞" 글자가 판 아래, "옆" 글자가 오른쪽
   const at = async (x, y) => cell(page, x, y).boundingBox();
-  expect((await at(0, 0)).y).toBeGreaterThan((await at(0, 6)).y);
-  expect((await at(0, 0)).x).toBeLessThan((await at(6, 0)).x);
+  expect((await at(0, 0)).y).toBeGreaterThan((await at(0, 13)).y);
+  expect((await at(0, 0)).x).toBeLessThan((await at(13, 0)).x);
   expect((await page.locator('.blk-free-slot .blk-pad-front').boundingBox()).y).toBeGreaterThan((await at(0, 0)).y);
-  expect((await board(page)).region).toBe(49); // 무대의 판에 고른 쪽(옅은 파랑)
-  await quad(page, '오른쪽 앞').click();
-  await expect(quad(page, '오른쪽 앞')).toHaveAttribute('aria-pressed', 'true');
-  await expect(quad(page, '왼쪽 앞')).toHaveAttribute('aria-pressed', 'false');
-  await expect(cell(page, 7, 0)).toBeVisible();
-  await expect(cell(page, 6, 0)).toBeHidden();
-  // 방향키: 왼쪽 앞의 오른쪽 끝(6, 0)에서 → 는 오른쪽 앞(7, 0), 그다음 ↑ 일곱 번이면 오른쪽 뒤(7, 7)
-  await quad(page, '왼쪽 앞').click();
-  await cell(page, 6, 0).focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(quad(page, '오른쪽 앞')).toHaveAttribute('aria-pressed', 'true');
-  await expect(cell(page, 7, 0)).toBeFocused();
-  for (let i = 0; i < 7; i += 1) await page.keyboard.press('ArrowUp');
-  await expect(quad(page, '오른쪽 뒤')).toHaveAttribute('aria-pressed', 'true');
-  await expect(cell(page, 7, 7)).toBeFocused();
-  await expect(page.locator('.blk-free-slot .blk-pad-grid')).toHaveAttribute('aria-label', /^위에서 본 판, 오른쪽 뒤\. .*숫자 0부터 9은 그 높이로/);
-  // 숫자 9 → 9층, Enter → 10층(화면 읽기 "8줄 8칸에 쌓았어요. 모두 10개"), 한 번 더 → 10층까지라는 알림
+  expect((await page.locator('.blk-free-slot .blk-pad-side').boundingBox()).x).toBeGreaterThan((await at(13, 7)).x);
+  // 방향키: (0, 0)에서 → 13번이면 (13, 0), ↑ 13번이면 (13, 13) — 판 전체를 움직인다. 고른 칸은 또렷하게(굵은 테두리)
+  await cell(page, 0, 0).focus();
+  for (let i = 0; i < 13; i += 1) await page.keyboard.press('ArrowRight');
+  await expect(cell(page, 13, 0)).toBeFocused();
+  for (let i = 0; i < 13; i += 1) await page.keyboard.press('ArrowUp');
+  await expect(cell(page, 13, 13)).toBeFocused();
+  expect(await cell(page, 13, 13).evaluate((el) => parseFloat(getComputedStyle(el).outlineWidth))).toBeGreaterThanOrEqual(2);
+  await expect(page.locator('.blk-free-slot .blk-pad-grid')).toHaveAttribute('aria-label', /^위에서 본 판\. .*숫자 0부터 9은 그 높이로/);
+  // 숫자 9 → 9층, Enter → 10층(화면 읽기 "14줄 14칸에 쌓았어요. 모두 10개"), 한 번 더 → 10층까지라는 알림
   await page.keyboard.press('9');
-  await expect(cell(page, 7, 7)).toHaveAccessibleName('8줄 8칸, 쌓기나무 9개');
+  await expect(cell(page, 13, 13)).toHaveAccessibleName('14줄 14칸, 쌓기나무 9개');
+  await expect(cell(page, 13, 13)).toHaveText('9');
   await page.keyboard.press('Enter');
-  await expect(cell(page, 7, 7)).toHaveAccessibleName('8줄 8칸, 쌓기나무 10개');
-  await expect(live(page)).toHaveText('8줄 8칸에 쌓았어요. 모두 10개');
+  await expect(cell(page, 13, 13)).toHaveAccessibleName('14줄 14칸, 쌓기나무 10개');
+  await expect(cell(page, 13, 13)).toHaveText('10');
+  await expect(live(page)).toHaveText('14줄 14칸에 쌓았어요. 모두 10개');
   await expect(stage(page)).toHaveAttribute('data-count', '10');
   await page.keyboard.press('Enter');
   await expect(page.locator('.toast')).toContainText('여기는 10층까지 쌓을 수 있어요.');
   await expect(stage(page)).toHaveAttribute('data-count', '10');
   await expect(page.locator('.blk-free-count b')).toHaveText('10');
-  // 다시 누르면 접힘: 판·표시가 사라진다
+  // "10"도 칸 안에 들어간다
+  expect(await cell(page, 13, 13).evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  // 마우스로 칸을 누르면 쌓인다
+  await cell(page, 6, 6).click();
+  await expect(stage(page)).toHaveAttribute('data-count', '11');
+  // 다시 누르면 접힘
   await padButton(page).click();
   await expect(padButton(page)).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('.blk-free-slot')).toBeHidden();
-  expect((await board(page)).region).toBe(0);
   expect(errors).toEqual([]);
 });
 
-test('판 옮기기(결정 9, 크롬북 1366×768 · 가로 태블릿 1024×768): 펼치면 고른 쪽이 다 보이게 판이 비키고, 가려진 쪽은 가장자리 버튼·Shift+방향키로 본다. 접으면 처음 자리', async ({ page }, testInfo) => {
+test('판 옮기기(결정 9, 크롬북 1366×768 · 가로 태블릿 1024×768): 펼치면 판이 무대 안에서 비키고, 펼친 판에 가린 쪽은 가장자리 버튼·Shift+방향키로 본다. 접으면 처음 자리', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '마우스·키보드 — 크롬북에서 본다(두 손가락은 아래)');
   test.setTimeout(120_000);
   const errors = collectErrors(page);
@@ -190,41 +197,41 @@ test('판 옮기기(결정 9, 크롬북 1366×768 · 가로 태블릿 1024×768)
     await padButton(page).click();
     await settled(page);
     const open = await board(page);
-    // 고른 쪽(왼쪽 앞)은 칸에 가리지 않고 무대 안에 다 있다. 판은 오른쪽으로 비켰다(크기 그대로)
-    expect([open.region, open.regionHidden, open.regionOut]).toEqual([49, 0, 0]);
+    // 판은 오른쪽으로 비켰다(크기 그대로, 무대 밖으로 나가지 않을 만큼). 그래도 왼쪽 끝이 펼친 판에 가린다
     expect(open.x0).toBeGreaterThan(home.x0);
     expect(open.x1 - open.x0).toBeCloseTo(home.x1 - home.x0, 0);
     expect(open.unit).toBe(home.unit);
-    // 판 끝이 무대 밖으로 나갔으니 옮기기 버튼: 왼쪽 보기는 끝(꺼짐), 오른쪽 보기는 켜짐
-    expect(open.out).toBeGreaterThan(0);
+    expect(open.out).toBe(0);
+    expect(open.hidden).toBeGreaterThan(0);
+    // 옮기기 버튼: 왼쪽 보기는 켜짐, 오른쪽 보기는 끝(꺼짐 — 판 오른쪽은 이미 다 보인다)
     await expect(panPrev(page)).toBeVisible();
     await expect(panPrev(page)).toHaveAccessibleName('판 왼쪽 보기');
     await expect(panNext(page)).toHaveAccessibleName('판 오른쪽 보기');
-    await expect(panPrev(page)).toBeDisabled();
-    await expect(panNext(page)).toBeEnabled();
+    await expect(panPrev(page)).toBeEnabled();
+    await expect(panNext(page)).toBeDisabled();
     for (const box of [await panPrev(page).boundingBox(), await panNext(page).boundingBox()]) expect(Math.min(box.width, box.height)).toBeGreaterThanOrEqual(48);
-    // 오른쪽 보기를 끝까지: 판의 오른쪽 끝이 무대 안으로
+    // 왼쪽 보기를 끝까지: 판의 왼쪽 끝이 펼친 판 밖으로(가린 판 칸 0)
     let n = 0;
-    while (await panNext(page).isEnabled()) {
-      await panNext(page).click();
+    while (await panPrev(page).isEnabled()) {
+      await panPrev(page).click();
       n += 1;
       expect(n).toBeLessThan(6);
     }
     await settled(page);
     await frames(page);
-    const right = await board(page);
-    expect(right.out).toBe(0);
-    expect(right.x0).toBeLessThan(open.x0);
-    await expect(panPrev(page)).toBeEnabled();
-    await expect(live(page)).toContainText('판 오른쪽을 보도록 옮겼어요. 끝까지 옮겼어요.');
-    // Shift+← (무대에서) = 왼쪽 보기 → 판이 오른쪽으로. 그냥 ←은 돌리기(판이 옮겨지지 않는다)
+    const left = await board(page);
+    expect(left.hidden).toBe(0);
+    expect(left.x0).toBeGreaterThan(open.x0);
+    await expect(panNext(page)).toBeEnabled();
+    await expect(live(page)).toContainText('판 왼쪽을 보도록 옮겼어요. 끝까지 옮겼어요.');
+    // Shift+→ (무대에서) = 오른쪽 보기 → 판이 왼쪽으로. 그냥 →는 돌리기(판이 옮겨지지 않는다)
     await stage(page).focus();
-    await page.keyboard.press('Shift+ArrowLeft');
+    await page.keyboard.press('Shift+ArrowRight');
     await settled(page);
     await frames(page);
     const back = await board(page);
-    expect(back.x0).toBeGreaterThan(right.x0 + 20);
-    expect(back.first).not.toBe(right.first);
+    expect(back.x0).toBeLessThan(left.x0 - 20);
+    expect(back.first).not.toBe(left.first);
     // 접으면 처음 자리(판 칸의 점이 처음과 같다)
     await padButton(page).click();
     await settled(page);
@@ -248,7 +255,7 @@ test('판 옮기기(결정 9, 태블릿 세로 820×1180): 펼친 칸은 매트 
   await padButton(page).tap();
   await settled(page);
   const open = await board(page);
-  expect([open.region, open.regionHidden, open.regionOut]).toEqual([49, 0, 0]);
+  await expect(page.locator('.blk-free-slot .blk-cell:visible')).toHaveCount(196);
   expect(open.y0).toBeLessThan(home.y0); // 위로 비켰다
   await expect(panPrev(page)).toHaveAccessibleName('판 위쪽 보기');
   await expect(panNext(page)).toHaveAccessibleName('판 아래쪽 보기');
@@ -464,7 +471,7 @@ test('배치(다섯 크기, 처음·위에서 본 판 펼침·층별로 벌림):
     await page.locator('.blk-free-pad').click();
     await settled(page);
     await check('펼침');
-    if (!phone) expect([(await board(page)).regionHidden, (await board(page)).regionOut], `${w}×${h}`).toEqual([0, 0]);
+    await expect(page.locator('.blk-free-slot .blk-cell:visible'), `${w}×${h}`).toHaveCount(phone ? 36 : 196); // 판 전체가 한눈에
     await page.locator('.blk-free-pad').click();
     await page.locator('.blk-free-apart').click();
     await settled(page);

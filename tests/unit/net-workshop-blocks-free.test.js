@@ -4,7 +4,7 @@ import { createRng } from '../../src/shared/core/random.js';
 import { MAX_H, emptyMap, place, setHeight, targetOf } from '../../src/games/net-workshop/blocks/blocks.js';
 import { HOME_MARGIN, homeApartFit, homeUnitFor, sceneShapes } from '../../src/games/net-workshop/blocks/block-view.js';
 import { homeTurn, poseOf } from '../../src/games/net-workshop/blocks/turn-view.js';
-import { FREE_BOARDS, FREE_COLORS, QUARTERS, boardFor, freeKey, quarterAt, quarterBox, readSaved, toSaved } from '../../src/games/net-workshop/blocks/play-free-build.js';
+import { FREE_BOARDS, FREE_COLORS, boardFor, freeKey, readSaved, toSaved } from '../../src/games/net-workshop/blocks/play-free-build.js';
 import { BLOCK_FREE_STAGES, BLOCK_STAGES } from '../../src/games/net-workshop/blocks/blocks-stages.js';
 
 // ── F1 자유 쌓기 (spec-grade6 15-18·15-19, plan-rotate-free 5절): 판 크기·저장·네 쪽·높이 한도·처음 보기 맞춤 ──
@@ -20,8 +20,9 @@ test('자유 단계: 쌓기나무 영역의 자유 단계 하나(free: true, 차
 });
 
 test('판 크기(결정 4): 화면의 짧은 변이 600px 미만이면 휴대폰 6×6칸·6층, 아니면 14×14칸·10층. 저장 열쇠는 판 크기마다', () => {
-  assert.deepEqual(FREE_BOARDS.wide, { cols: 14, rows: 14, maxH: 10, quarter: 7 });
-  assert.deepEqual(FREE_BOARDS.phone, { cols: 6, rows: 6, maxH: 6, quarter: 0 });
+  // compact: 넓은 판의 "위에서 본 판"은 작은 칸으로 14×14 전체를 한눈에(덧붙임 2 — 네 쪽으로 나누지 않는다), 휴대폰 6×6은 48px 칸
+  assert.deepEqual(FREE_BOARDS.wide, { cols: 14, rows: 14, maxH: 10, compact: true });
+  assert.deepEqual(FREE_BOARDS.phone, { cols: 6, rows: 6, maxH: 6, compact: false });
   const cases = [[1366, 768, 'wide'], [1366, 680, 'wide'], [1024, 768, 'wide'], [820, 1180, 'wide'], [600, 600, 'wide'], [390, 844, 'phone'], [844, 390, 'phone'], [599, 1200, 'phone'], [1200, 599, 'phone']];
   for (const [w, h, name] of cases) assert.equal(boardFor(w, h), FREE_BOARDS[name], `${w}×${h}`);
   assert.equal(freeKey(FREE_BOARDS.wide), 'free-14x14');
@@ -65,25 +66,6 @@ test('저장 값이 판과 맞지 않으면 빈 판으로 시작한다(다른 �
   const h = emptyMap(6, 6);
   h[0][0] = 2;
   assert.deepEqual(readSaved({ v: 1, h, c: [['39']] }, phone).cubes[0][0], ['--face-3', '--face-1']); // 9는 모르는 색
-});
-
-test('위에서 본 판의 네 쪽(결정 8): 14×14의 모든 칸이 꼭 한 쪽(7×7)에 들고, 고르는 차례는 왼쪽 앞·오른쪽 앞·왼쪽 뒤·오른쪽 뒤(앞 = 줄 0쪽)', () => {
-  assert.deepEqual(QUARTERS.map((q) => q.name), ['왼쪽 앞', '오른쪽 앞', '왼쪽 뒤', '오른쪽 뒤']);
-  const seen = new Map();
-  for (const q of QUARTERS) {
-    const box = quarterBox(q.id, 7);
-    assert.deepEqual([box.w, box.h], [7, 7]);
-    // 독립: 왼쪽 = 칸 0~6, 오른쪽 = 7~13 · 앞 = 줄 0~6, 뒤 = 7~13
-    assert.equal(box.x0, q.name.startsWith('왼쪽') ? 0 : 7);
-    assert.equal(box.y0, q.name.endsWith('앞') ? 0 : 7);
-    for (let y = box.y0; y < box.y0 + 7; y += 1) for (let x = box.x0; x < box.x0 + 7; x += 1) seen.set(`${x},${y}`, (seen.get(`${x},${y}`) ?? 0) + 1);
-  }
-  assert.equal(seen.size, 196);
-  assert.ok([...seen.values()].every((n) => n === 1));
-  for (let y = 0; y < 14; y += 1) for (let x = 0; x < 14; x += 1) {
-    const box = quarterBox(quarterAt(x, y, 7).id, 7);
-    assert.ok(x >= box.x0 && x < box.x0 + 7 && y >= box.y0 && y < box.y0 + 7, `${x},${y}`);
-  }
 });
 
 test('높이 한도: 차시는 3층 그대로, 자유 쌓기는 10층(휴대폰 6층) — 쌓기·높이 맞추기·놓일 자리', () => {

@@ -281,7 +281,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let mode = 'add';
   let apart = false;
   let hover = null; // 마우스가 올라가 있거나 손가락이 누르고 있는 곳(hit)
-  let marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [], region: null };
+  let marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [] };
   let overlay = []; // 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다 [{ dir: 'top' | 'front' | 'side', cells: [{ r, c, state }] }]
   let layerLook = false; // 층별 색과 층 숫자(5차시 — 답한 뒤에만): 1층 노랑 · 2층 파랑 · 3층 초록 + 쌓기나무마다 층 숫자(색만으로 구분하지 않는다)
   let layerOverlay = []; // 내가 칠한 층 모양을 층별로 벌린 무대의 그 층 위에 겹친다 [{ z(0 = 1층), cells: [{ r(줄), c(칸), state }] }]
@@ -382,9 +382,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       let cls;
       if (s.kind === 'tile') {
         const goal = marks.goal && marks.goal[0] === s.x && marks.goal[1] === s.y;
-        const r = marks.region; // 자유 쌓기: 펼친 "위에서 본 판"의 쪽 { x0, y0, x1, y1 }(끝 칸 포함)
-        const inRegion = r && s.x >= r.x0 && s.x <= r.x1 && s.y >= r.y0 && s.y <= r.y1;
-        cls = `blk-tile${(s.x + s.y) % 2 ? ' is-odd' : ''}${d[2] < 0 ? ' is-under' : ''}${goal ? ' is-goal' : ''}${inRegion ? ' is-region' : ''}`;
+        cls = `blk-tile${(s.x + s.y) % 2 ? ' is-odd' : ''}${d[2] < 0 ? ' is-under' : ''}${goal ? ' is-goal' : ''}`;
       } else {
         const cell = `${s.x},${s.y},${s.z}`;
         cls = `blk-face blk-${s.face}${hiddenSet.has(cell) ? ' is-hidden-cube' : ''}${diffSet.has(`${cell},${s.face}`) ? ' is-diff' : ''}${countedSet.has(cell) ? ' is-counted' : ''}`;
@@ -1074,7 +1072,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
      * · layers(벌렸을 때 층별 개수) · counted(센 쌓기나무 [x, y, z]들 — 굵은 테두리) · tally(자리마다 센 수 [{ x, y, z(맨 위 층), n }])
      */
     setMarks(next = {}) {
-      marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [], region: null, ...next };
+      marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [], ...next };
       render();
     },
     /** 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다: [{ dir, cells: [{ r, c, state }] }] (빈 목록이면 지운다) */

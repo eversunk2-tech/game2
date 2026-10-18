@@ -399,13 +399,14 @@ test('blocks-layer-build 문제 만들기·채점 (시드 300개): 좌우로 뒤
   }
 });
 
-test('blocks-layer-views (시드 2,000개): 개수 고르기 · 앞 칠하기 · 옆 칠하기. 개수 보기의 자리·꼴·값의 크기 규칙은 찍기(25%)에서 +10%p 안, 함정 값(1층만 · 3층을 빠뜨림)의 까닭', () => {
+test('blocks-layer-views (시드 3,000개): 개수 고르기 · 앞 칠하기 · 옆 칠하기. 판마다 "1층 칸 수" 보기, 외우지 않는 자리·꼴·값 규칙은 42% 아래, 외워 배운 표는 피할 수 없는 한계(+3%p) 안, 함정 값의 까닭', () => {
   const pos = [0, 0, 0, 0];
   const rules = { largest: 0, smallest: 0, secondLargest: 0, median: 0, run: 0, afterPair: 0, beforePair: 0, beforeGap: 0, maxMinus3: 0, even: 0, middle: 0 };
   let traps = 0;
   const gapItems = []; // 간격 셋 → 정답 자리 (앞 절반으로 배운 표를 뒤 절반에 — review-blocks-s3 S3-1)
   const valueItems = []; // 보기 값 · 정답 (값의 크기만 보는 규칙 — review-blocks-r1 R1-1)
-  const SEEDS = 2000;
+  const floorTotals = new Map(); // 1층 칸 수 → 정답마다 수 (독립: 문항의 층별 모양에서 셈 — 피할 수 없는 한계를 잰다)
+  const SEEDS = 3000;
   for (let seed = 1; seed <= SEEDS; seed += 1) {
     const [cnt, front, side] = questions('blocks-layer-views', seed);
     assert.deepEqual([cnt.kind, front.kind, front.kinds, side.kind, side.kinds], ['count', 'paint', ['front'], 'paint', ['side']]);
@@ -441,7 +442,12 @@ test('blocks-layer-views (시드 2,000개): 개수 고르기 · 앞 칠하기 ·
     gapItems.push({ gaps: gaps.join(','), at });
     valueItems.push({ o: [...cnt.options], at });
     const [c1, , c3] = cnt.layers.map((g) => g.flat().filter(Boolean).length);
-    if (cnt.options.includes(cnt.total - c3)) traps += 1; // 맨 위층을 빠뜨린 수(R1-1부터: 1층 모양의 칸 수는 정답 범위 밖일 때가 많아 드물다)
+    // 오개념 "바닥에 닿은 면"을 판마다 한 번 이상(spec-grade6 4절·15-8): 개수 문항이 한 판에 하나라 늘 "1층 칸 수" 보기가 든다
+    assert.ok(cnt.options.includes(c1), `${seed} ${cnt.options} 1층 ${c1}`);
+    if (cnt.options.includes(cnt.total - c3)) traps += 1; // 맨 위층을 빠뜨린 수(지금처럼 유지)
+    const row = floorTotals.get(c1) ?? new Map();
+    row.set(cnt.total, (row.get(cnt.total) ?? 0) + 1);
+    floorTotals.set(c1, row);
     for (const v of cnt.options) {
       const r = judgeLayerCount(cnt, v);
       assert.equal(r.correct, v === cnt.expected);
@@ -467,11 +473,19 @@ test('blocks-layer-views (시드 2,000개): 개수 고르기 · 앞 칠하기 ·
       assert.match(drawHint(q, { [kind]: [[1, 0, 0], [0, 0, 0], [0, 0, 0]] }, { from: 'layers' }), /^층별 모양에서 (.*에 칠해진 칸이 있는 가장 높은 층은 [1-3]층이에요\. (앞|옆)에서 본 모양에서는 그만큼 보여요|.*에는 칠해진 칸이 없어요\. (앞|옆)에서 본 모양에서는 그 세로줄이 비어 있어요)\.$/);
     }
   }
-  for (const p of pos) assert.ok(p / SEEDS > 0.2 && p / SEEDS < 0.3, `정답 자리 ${pos}`);
-  // 보기의 값만 보고 고르는 규칙은 찍기(25%)보다 10%p 넘게 높지 않다(낮은 규칙은 그것을 피해도 남은 셋 가운데 찍기라 33%를 넘지 않는다)
-  for (const [name, v] of Object.entries(rules)) assert.ok(v / SEEDS < 0.35, `${name} ${v}`);
-  // 값의 크기만 보는 규칙(R1-1 — 고치기 전: "9.5에 가장 가까운 보기" 56.2%, 가장 작은·가장 큰 보기로 배운 표 76.9%, 값마다 정답이던 비율로 고름 60.2%)
-  for (const [name, rate] of Object.entries(valueRules(valueItems))) assert.ok(rate < 0.35, `${name} ${rate}`);
+  // 정답은 1층 칸 수보다 늘 크므로 가장 작은 자리에는 오지 않는다. 나머지 자리는 42% 아래(셋 가운데 찍기 33%)
+  assert.equal(pos[0], 0);
+  for (const p of pos.slice(1)) assert.ok(p / SEEDS < 0.42, `정답 자리 ${pos}`);
+  // 외우지 않는 꼴·자리 규칙은 42% 아래
+  for (const [name, v] of Object.entries(rules)) assert.ok(v / SEEDS < 0.42, `${name} ${v}`);
+  // 피할 수 없는 한계: 1층 칸 수가 보이면 이 단계의 모양에서는 정답이 좁혀진다 — 1층 칸 수마다 가장 흔한 정답을 외우면 맞히는 비율(독립 계산, 약 49%).
+  // 보기를 어떻게 골라도 이보다 낮출 수 없다(늘 그 수를 고르면 그만큼 맞는다). R1-1 전에는 이것과 상관없이 배운 표가 77%였다
+  const bound = [...floorTotals.values()].reduce((sum, row) => sum + Math.max(...row.values()), 0) / SEEDS;
+  assert.ok(bound > 0.4 && bound < 0.55, `한계 ${bound}`);
+  const value = valueRules(valueItems);
+  assert.ok(value.nearest < 0.4, `가까운 수 ${value.nearest}`); // R1-1 전 56.2%
+  assert.ok(value.frequency < 0.42, `값마다 정답이던 비율 ${value.frequency}`); // R1-1 전 60.2%
+  for (const name of ['smallestTable', 'largestTable', 'bothTable']) assert.ok(value[name] < bound + 0.03, `${name} ${value[name]} (한계 ${bound})`); // R1-1 전 62.7 · 52.6 · 76.9%
   // 간격 셋으로 배운 표: 앞 절반에서 간격 꼴마다 가장 잦았던 정답 자리를 뒤 절반에 고른다(S3-1: 예전 보기는 70%)
   const half = SEEDS / 2;
   const table = new Map();
@@ -486,9 +500,9 @@ test('blocks-layer-views (시드 2,000개): 개수 고르기 · 앞 칠하기 ·
     const best = m.filter((v) => v === Math.max(...m)).length;
     return sum + (m[at] === Math.max(...m) ? 1 / best : 0);
   }, 0);
-  assert.ok(learned / half < 0.35, `간격 표 ${learned}`);
-  // 함정: 맨 위층을 빠뜨린 수가 든 문항(R1-1 전에는 이 값 51% · 1층 모양의 칸 수 50% — 둘 중 하나 75%. 지금은 정답 범위 안의 값만 보기에 넣는다)
-  assert.ok(traps / SEEDS > 0.45, `맨 위층을 빠뜨린 수가 든 문항 ${traps}`);
+  assert.ok(learned / half < bound + 0.03, `간격 표 ${learned / half} (한계 ${bound})`);
+  // 함정: 맨 위층을 빠뜨린 수가 든 문항(R1-1 전 51%) — 1층 칸 수가 보일 때의 정답 분포 안에 자주 있어 저절로 든다
+  assert.ok(traps / SEEDS > 0.5, `맨 위층을 빠뜨린 수가 든 문항 ${traps}`);
 });
 
 /**

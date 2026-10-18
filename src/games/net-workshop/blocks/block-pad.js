@@ -21,17 +21,15 @@ export const EMPTY_TEXT = '여기에는 뺄 쌓기나무가 없어요.';
  * → { band(매트 아래 띠), pad(위에서 본 판), buttons, getMap, load(지도 — 기록을 비우고 새로 시작), lock, setGoal, onChange, undo, destroy }
  * onChange(fn): 쌓기가 바뀔 때마다 fn({ map, kind: 'add' | 'remove' | 'set' | 'clear' | 'undo', x, y })
  * 판 크기(cols × rows, maxH층)를 주지 않으면 차시의 3×3칸·3층(지금 그대로). 자유 쌓기(spec-grade6 15-19)는 14×14칸·10층, 휴대폰 6×6칸·6층에
- * colorful(쌓기나무마다 색 — 지금 고른 색으로 쌓는다)과 setWindow(넓은 판의 한 쪽만 보이기 — 14×14를 7×7 네 쪽으로 나눔)를 쓴다.
+ * colorful(쌓기나무마다 색 — 지금 고른 색으로 쌓는다)과 compact(작은 칸 — 14×14 전체를 한눈에, spec-grade6 15-19 덧붙임 2)를 쓴다.
  */
-export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = MAX_H, colorful = false, title = '위에서 본 판', head = null }) {
+export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = MAX_H, colorful = false, title = '위에서 본 판', compact = false }) {
   const { h } = ctx;
   let map = emptyMap(cols, rows);
   // 쌓기나무마다 색(colorful): [줄][칸] = 층마다 토큰. 높이 지도와 한 쌍으로 기록·되돌리기
   const emptyCubes = () => Array.from({ length: rows }, () => Array.from({ length: cols }, () => []));
   let cubes = colorful ? emptyCubes() : null;
   let paintToken = '--face-1';
-  let windowBox = null; // 보이는 쪽 { x0, y0, w, h } (null = 판 전체)
-  let onWindowEdge = null; // 방향키로 보이는 쪽 밖으로 나가려 할 때 (x, y) → 그 칸이 든 쪽을 펼친다
   let history = [];
   let mode = 'add';
   let locked = false;
@@ -76,15 +74,15 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
       cells.push({ x, y, button });
       row.push(button);
     }
-    rowEls.push(h('div', { class: 'blk-pad-row', role: 'row', dataset: { y } }, row));
+    rowEls.push(h('div', { class: 'blk-pad-row', role: 'row' }, row));
   }
   const topDigit = Math.min(9, maxH); // 숫자 키 0 ~ 9 (10층은 9층에서 Enter로 하나 더)
   const gridLabel = (text) => `${text}. 방향키로 자리를 옮기고, Enter는 쌓기, Backspace는 빼기, 숫자 0부터 ${topDigit}은 그 높이로 맞추기예요.`;
   const grid = h('div', { class: 'blk-pad-grid', role: 'grid', 'aria-label': gridLabel(title) }, rowEls);
   const titleEl = h('p', { class: 'blk-pad-title' }, title);
-  // head(자유 쌓기 — 넓은 판의 네 쪽 고르기)를 주면 제목 자리에 그것을 둔다(제목은 판의 화면 읽기 이름에 남는다)
-  const pad = h('div', { class: `blk-padbox${head ? ' has-head' : ''}` },
-    head ?? titleEl,
+  // compact: 넓은 판(자유 쌓기 14×14)을 작은 칸으로 한눈에 — 칸이 48px보다 작은 이 판만의 예외(blocks.css .blk-padbox.is-compact)
+  const pad = h('div', { class: `blk-padbox${compact ? ' is-compact' : ''}` },
+    titleEl,
     grid,
     h('span', { class: 'blk-pad-side', 'aria-hidden': 'true' }, '옆'),
     h('span', { class: 'blk-pad-front', 'aria-hidden': 'true' }, '앞'),
@@ -98,8 +96,6 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     pad.classList.toggle('is-remove', mode === 'remove');
     view.setMode(mode);
   }
-
-  const inWindow = (x, y) => !windowBox || (x >= windowBox.x0 && x < windowBox.x0 + windowBox.w && y >= windowBox.y0 && y < windowBox.y0 + windowBox.h);
 
   function paint() {
     for (const c of cells) {
@@ -220,8 +216,6 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     const x = Math.max(0, Math.min(cols - 1, focusAt[0] + dx));
     const y = Math.max(0, Math.min(rows - 1, focusAt[1] + dy));
     focusAt = [x, y];
-    // 넓은 판의 한 쪽만 보일 때: 쪽 경계를 넘으면 그 칸이 든 쪽이 저절로 펼쳐진다(plan-rotate-free 5-2 (ㄱ))
-    if (!inWindow(x, y)) onWindowEdge?.(x, y);
     paint();
     cellAt(x, y).button.focus({ preventScroll: true });
   }
@@ -289,21 +283,6 @@ export function createBlockTools({ ctx, view, cols = COLS, rows = ROWS, maxH = M
     /** 앞으로 쌓을 쌓기나무의 색 토큰(colorful) */
     setPaint(token) {
       paintToken = token;
-    },
-    /**
-     * 넓은 판의 한 쪽만 보인다: { x0, y0, w, h } (null = 판 전체). onEdge(x, y): 방향키로 쪽 밖의 칸으로 가려 할 때(그 쪽을 펼치게)
-     */
-    setWindow(box, { onEdge } = {}) {
-      windowBox = box;
-      if (onEdge !== undefined) onWindowEdge = onEdge;
-      for (const c of cells) c.button.hidden = !inWindow(c.x, c.y);
-      for (const row of rowEls) row.hidden = ![...row.children].some((b) => !b.hidden);
-      if (windowBox && !inWindow(focusAt[0], focusAt[1])) focusAt = [windowBox.x0, windowBox.y0];
-      paint();
-    },
-    setTitle(text) {
-      titleEl.textContent = text;
-      grid.setAttribute('aria-label', gridLabel(text));
     },
     /** 잠그면 쌓기·빼기·되돌리기가 모두 꺼진다 (맞힌 뒤) */
     lock(value) {

@@ -9,9 +9,10 @@
  *   왼쪽 재단 매트 = 무대가 매트를 꽉 채운다 + [위][앞][옆](왼쪽 위) + 보기 조작판(오른쪽 위) + 펼치는 칸(왼쪽, [위][앞][옆] 아래 —
  *     차시의 "위에서 본 판"과 같은 자리).
  *   오른쪽 좁은 세로 띠 = 개수 → [쌓기][빼기] → [되돌리기] → [모두 치우기] → [위에서 본 판] → [층별로 벌려 보기] → [위·앞·옆 모양] → [색].
- *   [위에서 본 판](결정 8 "버튼 하나로 묶기"): 누르면 펼치고 다시 누르면 접는다. 넓은 판은 펼친 판의 머리에서 네 쪽(왼쪽 앞·오른쪽 앞·왼쪽 뒤·오른쪽 뒤 — 7×7)을
- *     고른다(고른 쪽 표시, 방향키로 쪽 경계를 넘으면 저절로 다음 쪽). 판은 앞쪽이 아래로 오게 놓인 모습. 휴대폰 6×6은 쪽 고르기 없이 판 전체.
- *   펼친 동안 판은 칸을 피해 남는 자리 쪽으로 비키고(크기는 그대로, 펼친 쪽은 늘 다 보이게 — placeBoard), 그래서 가려지거나 무대 밖으로 나간 곳은
+ *   [위에서 본 판](결정 8 "버튼 하나로 묶기"): 누르면 펼치고 다시 누르면 접는다. 판은 앞쪽이 아래로 오게 놓인 모습이고, 넓은 판(14×14)도
+ *     네 쪽으로 나누지 않고 작은 칸(약 24px)으로 한눈에 다 보인다(덧붙임 2 — 사용자 "한칸의 크기를 작게 해서 … 한눈에 다 보이게". 펼친 판의 크기는 그대로,
+ *     칸이 48px보다 작은 것은 이 판만의 예외). 휴대폰 6×6은 48px 칸.
+ *   펼친 동안 판은 칸을 피해 남는 자리 쪽으로 비키고(크기는 그대로, 무대 밖으로 밀어내지 않을 만큼 — placeBoard), 그래서 가려지거나 무대 밖으로 나간 곳은
  *     판 옮기기로 본다(결정 9 "펼쳐서 가려진 부분은 화면을 옆으로 이동해서 볼 수 있도록"): 무대 가장자리의 [◀][▶](태블릿 세로는 [▲][▼]) ·
  *     두 손가락으로 함께 끌기 · Shift+방향키. 돌기의 중심은 그대로 판 가운데이고, 접으면 처음 자리로 돌아온다.
  *   좁은 화면(1000px 이하 — 태블릿 세로·휴대폰): 매트가 위, 띠는 매트 아래 가로 줄. 태블릿 세로는 매트가 남는 높이를 다 쓰고 펼치는 칸은 매트 왼쪽 아래
@@ -24,8 +25,8 @@ import { createBlockView, createViewControls, prefersReducedMotion, svgEl } from
 
 /** 판 크기 (결정 4): 넓은 판 = 알지오매스와 같은 14×14칸(높이 10층은 Plan이 고름), 휴대폰 = 6×6칸·6층 */
 export const FREE_BOARDS = Object.freeze({
-  wide: Object.freeze({ cols: 14, rows: 14, maxH: 10, quarter: 7 }),
-  phone: Object.freeze({ cols: 6, rows: 6, maxH: 6, quarter: 0 }),
+  wide: Object.freeze({ cols: 14, rows: 14, maxH: 10, compact: true }),
+  phone: Object.freeze({ cols: 6, rows: 6, maxH: 6, compact: false }),
 });
 /** 처음 보기 맞춤의 높이: 판과 3층 높이가 무대에 꽉 차게(결정 4) */
 const FIT_H = 3;
@@ -42,21 +43,6 @@ export const FREE_COLORS = Object.freeze([
   { token: '--face-4', name: '분홍' },
   { token: '--face-5', name: '보라' },
 ]);
-
-/** 위에서 본 판의 네 쪽(14×14 → 7×7 넷 — 결정 8). 고르는 버튼은 사용자가 말한 차례: 왼쪽 앞 · 오른쪽 앞 · 왼쪽 뒤 · 오른쪽 뒤 */
-export const QUARTERS = Object.freeze([
-  { id: 'lf', name: '왼쪽 앞', x: 0, y: 0 },
-  { id: 'rf', name: '오른쪽 앞', x: 1, y: 0 },
-  { id: 'lb', name: '왼쪽 뒤', x: 0, y: 1 },
-  { id: 'rb', name: '오른쪽 뒤', x: 1, y: 1 },
-]);
-/** 그 쪽의 칸 범위 { x0, y0, w, h } (n = 한 쪽의 칸 수, 7) */
-export const quarterBox = (id, n) => {
-  const q = QUARTERS.find((item) => item.id === id) ?? QUARTERS[0];
-  return { x0: q.x * n, y0: q.y * n, w: n, h: n };
-};
-/** 칸 (x, y)가 든 쪽 */
-export const quarterAt = (x, y, n) => QUARTERS.find((q) => q.x === Math.min(1, Math.floor(x / n)) && q.y === Math.min(1, Math.floor(y / n))) ?? QUARTERS[0];
 
 /** 판 옮기기 한 번(버튼·Shift+방향키)의 거리: 무대 폭(태블릿 세로는 높이)의 30% · 그 움직임 */
 const PAN_PART = 0.3;
@@ -139,32 +125,8 @@ export function playFreeBuild(stage, ctx) {
   const view = createBlockView({ h, cols, rows, maxH, fit: 'home', fitH: FIT_H });
   const controls = createViewControls({ ctx, view });
 
-  // ── 위에서 본 판의 머리: 네 쪽 고르기 (넓은 판만 — 결정 8) ──
-  let quarter = 'lf';
-  const quarterButtons = new Map();
-  const quarterIcon = (q) => {
-    const svg = svgEl('svg', { class: 'blk-quad-icon', viewBox: '0 0 22 22', 'aria-hidden': 'true', focusable: 'false' });
-    for (const yy of [1, 0]) for (const xx of [0, 1]) svg.append(svgEl('rect', { x: 2 + xx * 9.5, y: 2 + (1 - yy) * 9.5, width: 8.5, height: 8.5, rx: 1.5, class: xx === q.x && yy === q.y ? 'is-on' : '' }));
-    return svg;
-  };
-  const quarterHead = board.quarter
-    ? h('div', { class: 'blk-free-quads', role: 'group', 'aria-label': '판의 네 쪽 가운데 펼칠 쪽 고르기 (앞이 아래)' }, QUARTERS.map((q) => {
-      const b = h('button', {
-        type: 'button',
-        class: 'btn blk-quad',
-        dataset: { quarter: q.id },
-        'aria-pressed': 'false',
-        title: `위에서 본 판의 ${q.name}`,
-        onclick: () => {
-          ctx.sfx.play('click');
-          setQuarter(q.id);
-        },
-      }, quarterIcon(q), h('span', { class: 'blk-quad-text' }, q.name));
-      quarterButtons.set(q.id, b);
-      return b;
-    }))
-    : null;
-  const tools = createBlockTools({ ctx, view, cols, rows, maxH, colorful: true, title: '위에서 본 판', head: quarterHead });
+  // 위에서 본 판: 넓은 판은 작은 칸으로 14×14 전체를 한눈에(덧붙임 2), 휴대폰 6×6은 48px 칸
+  const tools = createBlockTools({ ctx, view, cols, rows, maxH, colorful: true, title: '위에서 본 판', compact: board.compact });
 
   // ── 오른쪽 좁은 띠 ──
   const countText = h('b', null, '0');
@@ -267,27 +229,14 @@ export function playFreeBuild(stage, ctx) {
     );
   }
 
-  // ── 펼치기 · 접기 · 쪽 고르기 ──
-  /** 무대의 표시: 벌렸을 때 층별 개수, 펼친 쪽의 칸(벌리지 않았을 때 — 판에 옅은 파랑) */
+  // ── 펼치기 · 접기 ──
+  /** 무대의 표시: 벌렸을 때 층별 개수 */
   function syncMarks() {
-    const q = open === 'pad' && board.quarter && !view.isApart() ? quarterBox(quarter, board.quarter) : null;
-    view.setMarks({ layers: view.isApart(), region: q ? { x0: q.x0, y0: q.y0, x1: q.x0 + q.w - 1, y1: q.y0 + q.h - 1 } : null });
+    view.setMarks({ layers: view.isApart() });
   }
   function syncButtons() {
     padButton.setAttribute('aria-expanded', String(open === 'pad'));
     viewsButton.setAttribute('aria-expanded', String(open === 'views'));
-    for (const [id, b] of quarterButtons) b.setAttribute('aria-pressed', String(id === quarter));
-  }
-  /** 위에서 본 판의 쪽을 바꾼다(넓은 판). 판은 그 쪽이 보이게 다시 비킨다(옮긴 거리는 처음으로) */
-  function setQuarter(id) {
-    quarter = id;
-    const q = quarterBox(id, board.quarter);
-    const name = QUARTERS.find((item) => item.id === id).name;
-    tools.setWindow(q, { onEdge: (x, y) => setQuarter(quarterAt(x, y, board.quarter).id) });
-    tools.setTitle(`위에서 본 판, ${name}`);
-    syncButtons();
-    syncMarks();
-    placeBoard();
   }
   function toggle(id) {
     open = open === id ? null : id;
@@ -302,10 +251,6 @@ export function playFreeBuild(stage, ctx) {
     } else {
       slot.replaceChildren(tools.pad);
       slot.hidden = false;
-      if (board.quarter) {
-        setQuarter(quarter); // 고른 쪽(처음은 왼쪽 앞)을 펼친다 — setQuarter가 표시·자리를 맞춘다
-        return;
-      }
     }
     syncMarks();
     syncButtons();
@@ -326,7 +271,7 @@ export function playFreeBuild(stage, ctx) {
 
   /**
    * 펼친 칸을 피해 판을 비킬 거리와 옮길 수 있는 범위를 잰다. keep이면 지금 거리를 그대로 두고 범위만(돌리거나 크게 했을 때 — 판이 저절로 움직이지 않게).
-   * 판 전체는 무대 밖으로 밀어내지 않을 만큼만 비키고, 펼친 쪽(7×7)은 그보다 더 비켜서라도 칸 옆에 다 보이게 한다.
+   * 판은 무대 밖으로 밀어내지 않을 만큼만 비킨다 — 그래도 칸에 가린 곳은 판 옮기기로 본다(결정 9).
    */
   function placeBoard({ keep = false } = {}) {
     const { w, h: sh } = view.getSize();
@@ -349,17 +294,14 @@ export function playFreeBuild(stage, ctx) {
     }
     // 칸이 무대 아래쪽(태블릿 세로 — blocks.css가 --free-slot: below로 알린다)이면 판은 위로, 아니면(무대 왼쪽 위) 오른쪽으로 비킨다
     const below = reuse ? shift.axis === 'y' : getComputedStyle(slot).getPropertyValue('--free-slot').trim() === 'below';
-    const q = open === 'pad' && board.quarter ? quarterBox(quarter, board.quarter) : null;
-    const parts = [[0, 0, cols, rows], ...(q ? [[q.x0, q.y0, q.x0 + q.w, q.y0 + q.h]] : [])];
     let move = 0;
-    for (const [x0, y0, x1, y1] of parts) {
-      const base = view.boxOf(square(x0, y0, x1, y1, 0));
-      const top = view.boxOf(square(x0, y0, x1, y1, FIT_H)).y0;
+    {
+      const base = view.boxOf(square(0, 0, cols, rows, 0));
+      const top = view.boxOf(square(0, 0, cols, rows, FIT_H)).y0;
       const clear = below ? base.x1 <= pad.x0 || base.x0 >= pad.x1 : base.y1 <= pad.y0 || base.y0 >= pad.y1;
-      if (clear) continue; // 칸과 겹치지 않는다
       const need = below ? base.y1 + 8 - pad.y0 : pad.x1 + 8 - base.x0;
       const room = below ? top - 6 : w - 6 - base.x1;
-      move = Math.max(move, Math.min(need, room)); // 판 전체: 무대 안에 남을 만큼만 · 펼친 쪽: 그 쪽이 무대 안에 남을 만큼까지
+      if (!clear) move = Math.max(0, Math.min(need, room)); // 칸과 겹치면 비킨다 — 판을 무대 밖으로 밀어내지 않을 만큼만
     }
     // 옮길 수 있는 범위: 판 전체(바닥 + 가장 높은 쌓기나무)가 칸 밖·무대 안에 다 들어오는 두 끝
     const whole = view.boxOf(square(0, 0, cols, rows, 0));
@@ -520,7 +462,7 @@ export function playFreeBuild(stage, ctx) {
   tools.lock(false);
   setPaint(paint);
   view.setViewEnabled(true);
-  view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.quarter ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
+  view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.compact ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
   controls.lock(false);
   showCount();
   // 창 크기가 바뀌면 무대가 먼저 크기를 다시 잰 뒤(block-view의 ResizeObserver) 비킬 거리를 다시 잰다
