@@ -520,7 +520,7 @@ export function playFreeBuild(stage, ctx) {
   tools.lock(false);
   setPaint(paint);
   view.setViewEnabled(true);
-  view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.`);
+  view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.quarter ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
   controls.lock(false);
   showCount();
   // 창 크기가 바뀌면 무대가 먼저 크기를 다시 잰 뒤(block-view의 ResizeObserver) 비킬 거리를 다시 잰다
