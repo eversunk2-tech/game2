@@ -20,6 +20,7 @@ import { playPick } from './play-pick.js';
 import { playPlace } from './play-place.js';
 import { heroArt, miniNet, stageThumb } from './thumbs.js';
 import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES } from './blocks/index.js'; // 쌓기나무 영역(6학년): 차시·단계 목록(바탕 묶음)
+import { BLOCK_BADGES } from './blocks/index.js'; // 쌓기나무 도장 셋(spec-grade6 8절 — 도장판 16칸): 숨겨진 쌓기나무 찾기 · 세 방향의 눈 · 층층이 쌓기
 // 쌓기나무의 플레이(문제 만들기·판정·화면)는 그 영역의 단계에 들어갈 때 받는다 — 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(spec-grade6 7-4절, B0b)
 const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));
 import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES } from './grade6/index.js'; // 각기둥의 전개도 영역(6학년): 차시·단계 목록(바탕 묶음)
@@ -93,6 +94,7 @@ const BADGES = [
   },
 ];
 BADGES.push(...CUBOID_BADGES); // 직육면체 도감 완성 (cuboid-main.js, spec 16-17)
+BADGES.push(...BLOCK_BADGES); // 쌓기나무 도장 셋 (blocks/blocks-stages.js, spec-grade6 8절)
 
 // 도감 2개: 내 맘대로 전개도와 도감 주문에서 직접 만들어 접은 모양만 등록한다 (판별에서 본 것, 주사위 주문에서 접은 것은 아님)
 // "도감 n / 11" 칩에는 전개도 도감만 세고, 노트는 label로 따로 "노트 n / 24". 노트 등록 점수는 +1 (spec 16-8)

@@ -11,7 +11,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로, 2026-10-17 연결) |
 | `origin/main`(사이트) | **`04b589a`**(2026-10-18): c4까지(`6156875`) + **B0d** 사이트 맨 위 주소 = 인트로, 게임 모음 → 선생님용 안내(`teacher.html`, 카드 → `?intro=0` 학년 고르기, 예시 게임 카드 뺌), 학년 고르기 시안 A "큰 두 칸" + 오른쪽 아래 [선생님용 안내], 저작권 줄(학년 고르기·학년 화면·안내 페이지), 개발 서버도 같게. 배포 성공 · **GitHub CI 통과** · 두 사이트에서 길(맨 위 → 인트로 → 학년 고르기 → 안내 → 카드 → 학년 고르기)·저작권 줄·예시 게임 빠짐·응답 400 이상 0·콘솔 오류 0 직접 확인 |
 | 이 컴퓨터의 `main` | `origin/main`과 같다 |
-| 지금 도는 것 | **S3 Review**(`track/blocks` `f101282`, 포트 5354, 결과 `review-blocks-s3.md`) ∥ **G1 Review**(`track/cuboid` `0b51d0b`, 포트 5363, 결과 `review-prism-g1.md`) ∥ **Plan: 쌓기나무 판 돌리기·자유 쌓기**(`.worktrees/c1`, 결과 `plan-rotate-free.md`) — 2-0절 |
+| 지금 도는 것 | **S3 Review**(`track/blocks` `f101282`, 포트 5354, 결과 `review-blocks-s3.md`) ∥ **G1b Build**(각기둥 검토 반영 — Review "수정 필요": 반드시 2 + 사용자 결정 3, 15-20) — 2-0절. 다음: S3 통과 → 합쳐 올림 → **R1**(쌓기나무 돌림판 돌리기, 지침 준비됨) / G1b 재검토 통과 → 합쳐 올림 → **F1**(자유 쌓기) |
 
 ## 2. 진행 중인 일
 
@@ -22,12 +22,14 @@
 - **G1** 각기둥 바탕(`solids.js`·다각형 면·이면각·면 누르기) + `prism-parts`·`prism-judge`·`prism-edge` + 직육면체 검토가 남긴 이름표 손질. 지침 [build-brief-g1.md](games/net-workshop/build-brief-g1.md). `.worktrees/cuboid` · `track/cuboid`(`0a4b3a6`에서), 포트 5301·e2e 5361~5362, scratchpad `build-g1/`. 각기둥 차시는 1~3단계만 등록(4단계는 G2).
 - 줄 몫: `main.js` — S3는 쌓기나무 차시·도전·도장 줄과 도장 수를 세는 검사, G1은 각기둥 영역·차시 줄. 끝나면 트랙마다 별도 Review(지침은 그때 씀).
 - 진행(10-18): 두 Build 끝(S3 `f101282` — 단위 349·e2e 506·0 / G1 `0b51d0b` — 단위 356·e2e 503·0, 둘 다 보통·글꼴 흉내). Build가 올린 물음 둘에 사용자 결정(**15-17**: 숨겨진 쌓기나무 도장은 "처음에 맞힌 수 − 2"로, 6학년 "여기부터!"는 각기둥). 두 트랙 `merge-tree` 충돌 0. Review 지침 [review-brief-s3.md](games/net-workshop/review-brief-s3.md)·[review-brief-g1.md](games/net-workshop/review-brief-g1.md). 통과하면 S3 → G1 차례로(또는 함께) 합쳐 올림.
+- G1 Review(`review-prism-g1.md`, track/cuboid에 커밋) **수정 필요** — G1-1 터치로 면 누를 때 이웃 면, G1-2 전개도 수 열쇠 47 → 42. 사용자 결정 15-20(입체 1.5배·판별 낯선 꼴도 안 되게·바로 옆 선분 정답 섞기) → 같은 Build가 G1b로 고치는 중([build-fix-brief-g1b.md](games/net-workshop/build-fix-brief-g1b.md)), 재검토는 [review-fix-brief-g1b.md](games/net-workshop/review-fix-brief-g1b.md).
 - 쓰지 않은 것: 원기둥 먼저를 위한 Plan 지침(쓰다가 사용자가 원래 순서로 정해 지움), 그때 만든 `.worktrees/cylinder`(비어 있어 지움).
 
 ### 2-0b. Plan: 알지오매스처럼 돌리기 · 자유 쌓기 (사용자 요청 10-18)
 
 - 사용자의 말과 범위: [spec-grade6.md](games/net-workshop/spec-grade6.md) **15-18** — 돌리기가 한쪽으로 너무 기운다 → 알지오매스처럼(누른 지점 중심, 수평 유지). 이어서 "5학년 전개도는 그대로 둬도 좋아", **"쌓기나무 판의 돌리기만 수정해줘."** → 새 돌리기는 쌓기나무 무대에만, 전개도 입체(5·6학년)는 그대로. 그리고 넓은 판의 **"자유 쌓기"**를 쌓기나무 1차시 위에.
 - Plan 지침 [plan-brief-rotate.md](games/net-workshop/plan-brief-rotate.md)(덧붙임 1·2), 작업 폴더 `.worktrees/c1`, scratchpad `plan-rotate/`, 포트 5371. 결과 `plan-rotate-free.md`(사용자에게 물을 것 포함) → 사용자 결정 → Build(S3·G1이 합쳐진 뒤 그 위에서).
+- 진행(10-18): Plan 끝(`plan-rotate-free.md` — c1 작업 폴더, 아직 커밋 안 함) → 사용자 결정 **15-19**(판 가운데·수평~바로 위·넓은 카드·하나 자동 저장·기본 + 색 + 위·앞·옆 모양, 판 넓이는 "알지오매스와 같이 많이 넓은 칸" — 휴대폰 6×6·6층) → Plan이 잼: 알지오매스 판 14×14칸 → 크롬북·태블릿 14×14·10층, 휴대폰 6×6·6층, 처음 크기 꽉 차게(사용자 결정). 계획서 `plan-rotate-free.md` `main`에 합침. R1 지침 [build-brief-r1.md](games/net-workshop/build-brief-r1.md)(S3가 합쳐진 뒤 `.worktrees/blocks`에서), F1 지침은 R1 뒤에.
 
 ### 2-1. (끝남, 올림 `0b1bb57`) B0b 빌드 바탕
 

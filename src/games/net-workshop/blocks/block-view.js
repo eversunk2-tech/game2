@@ -196,7 +196,29 @@ function palette(token, face) {
   return rgb ? shaded(rgb, FACE_SHADE[face] ?? 0) : `var(${token})`;
 }
 
+/** 층별 색(1층부터): 노랑 · 파랑 · 초록 — 면에 층 숫자도 쓴다(색만으로 구분하지 않는다) */
+export const LAYER_TOKENS = Object.freeze(['--face-1', '--face-2', '--face-3']);
+
 const points = (pts) => pts.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' ');
+/** 화면에 그린 다각형의 넓이(px²) */
+const areaOf = (pts) => Math.abs(pts.reduce((sum, p, i) => {
+  const q = pts[(i + 1) % pts.length];
+  return sum + p[0] * q[1] - q[0] * p[1];
+}, 0)) / 2;
+/**
+ * 층 숫자를 쓸 면: 쌓기나무마다 화면에 가장 넓게 보이는 면 하나(그 넓이가 한 변의 0.3배 네모보다 클 때만 — 거의 옆으로 선 면에는 쓰지 않는다).
+ * at: 모델 점 → 화면 점 · k: 한 변의 화면 길이 → 면 열쇠의 Set
+ */
+function numberFaces(shapes, at, k) {
+  const best = new Map();
+  for (const s of shapes) {
+    if (s.kind !== 'face') continue;
+    const area = areaOf(s.pts.map(at));
+    const cube = `${s.x},${s.y},${s.z}`;
+    if (area > 0.3 * k * k && (!best.has(cube) || area > best.get(cube).area)) best.set(cube, { area, key: `f${s.x},${s.y},${s.z},${s.face}` });
+  }
+  return new Set([...best.values()].map((b) => b.key));
+}
 const mid = (a, b, t = 0.5) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 const centerOf = (pts) => [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
 
@@ -280,6 +302,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let hover = null; // 마우스가 올라가 있거나 손가락이 누르고 있는 곳(hit)
   let marks = { hidden: [], diff: [], goal: null, layers: false, hiddenText: null, counted: [], tally: [] };
   let overlay = []; // 내가 그린 2D 그림을 그 방향의 무대 위에 겹친다 [{ dir: 'top' | 'front' | 'side', cells: [{ r, c, state }] }]
+  let layerLook = false; // 층별 색과 층 숫자(5차시 — 답한 뒤에만): 1층 노랑 · 2층 파랑 · 3층 초록 + 쌓기나무마다 층 숫자(색만으로 구분하지 않는다)
+  let layerOverlay = []; // 내가 칠한 층 모양을 층별로 벌린 무대의 그 층 위에 겹친다 [{ z(0 = 1층), cells: [{ r(줄), c(칸), state }] }]
   let size = { w: 0, h: 0, unit: 40 };
   let raf = 0;
   let mixing = null; // { t0, p }
@@ -287,6 +311,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   let orderSig = '';
   const shapeEls = new Map(); // 열쇠 → <polygon>
   const markEls = new Map(); // 열쇠 → <path> (조형물 무늬)
+  const numEls = new Map(); // 열쇠 → <text> (층 숫자)
   const listeners = { tap: new Set(), view: new Set(), say: new Set(), facing: new Set() };
   let edgeList = edge;
   const emit = (name, ...args) => {
@@ -307,7 +332,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   }
 
   const scaleNow = () => size.unit * shown.zoom * (apart ? APART_FIT : 1);
-  const tokenAt = (x, y) => colors?.[y]?.[x]?.token ?? DEFAULT_TOKEN;
+  const tokenAt = (x, y, z) => (layerLook ? LAYER_TOKENS[z] ?? DEFAULT_TOKEN : colors?.[y]?.[x]?.token ?? DEFAULT_TOKEN);
 
   function render() {
     if (destroyed) return;
@@ -324,6 +349,9 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const hiddenSet = new Set(marks.hidden.map((c) => c.join(',')));
     const diffSet = new Set(marks.diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
     const countedSet = new Set(marks.counted.map((c) => c.join(',')));
+    // 층 숫자: 쌓기나무마다 화면에 가장 넓게 보이는 면 하나에 (층별 색을 켰을 때)
+    const numberFace = layerLook ? numberFaces(shapes, at, k) : null;
+    const usedNums = new Set();
     for (const s of shapes) {
       const key = s.kind === 'tile' ? `t${s.x},${s.y}` : `f${s.x},${s.y},${s.z},${s.face}`;
       let node = shapeEls.get(key);
@@ -331,7 +359,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
         // 자리 값(data-*)과 색은 만들 때 한 번만 싣는다. 멈춘 그림에는 자리 값을 싣지 않는다
         // (보이는 면이 어느 깊이의 쌓기나무인지는 그림이 알려 주지 않는 것이다)
         node = svgEl('polygon', frozen || bare ? {} : { 'data-kind': s.kind, 'data-x': s.x, 'data-y': s.y, 'data-z': s.z, 'data-face': s.face });
-        if (s.kind === 'face') node.style.fill = palette(tokenAt(s.x, s.y), s.face);
+        if (s.kind === 'face') node.style.fill = palette(tokenAt(s.x, s.y, s.z), s.face);
         shapeEls.set(key, node);
       }
       const pts = s.pts.map(at);
@@ -347,6 +375,19 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       if (node.getAttribute('class') !== cls) node.setAttribute('class', cls);
       used.add(key);
       order.push(node);
+      if (numberFace?.has(key)) {
+        let num = numEls.get(key);
+        if (!num) {
+          num = svgEl('text', { class: 'blk-face-num' }, document.createTextNode(String(s.z + 1)));
+          numEls.set(key, num);
+        }
+        const c = centerOf(pts);
+        num.setAttribute('x', c[0].toFixed(1));
+        num.setAttribute('y', c[1].toFixed(1));
+        num.style.fontSize = `${Math.max(11, Math.round(k * 0.34))}px`;
+        usedNums.add(key);
+        order.push(num);
+      }
       const mark = s.kind === 'face' ? colors?.[s.y]?.[s.x]?.mark : null;
       if (mark && mark !== 'plain') {
         let path = markEls.get(key);
@@ -371,8 +412,14 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
         markEls.delete(key);
       }
     }
-    // 그리는 순서가 바뀌었을 때만 DOM 순서를 다시 맞춘다
-    const sig = shapes.map((s) => (s.kind === 'tile' ? `t${s.x}${s.y}` : `${s.x}${s.y}${s.z}${s.face[0]}${s.face[1]}`)).join('|');
+    for (const [key, node] of numEls) {
+      if (!usedNums.has(key)) {
+        node.remove();
+        numEls.delete(key);
+      }
+    }
+    // 그리는 순서가 바뀌었을 때만 DOM 순서를 다시 맞춘다 (층 숫자가 붙는 면이 바뀌어도)
+    const sig = shapes.map((s) => (s.kind === 'tile' ? `t${s.x}${s.y}` : `${s.x}${s.y}${s.z}${s.face[0]}${s.face[1]}`)).join('|') + (numberFace ? `#${[...numberFace].join('|')}` : '');
     if (sig !== orderSig) {
       orderSig = sig;
       gShapes.replaceChildren(...order);
@@ -388,6 +435,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   function resetNodes() {
     shapeEls.clear();
     markEls.clear();
+    numEls.clear();
     gShapes.replaceChildren();
     orderSig = '';
   }
@@ -452,6 +500,30 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     return out;
   }
 
+  /**
+   * 내가 칠한 층 모양을 층별로 벌린 무대의 그 층에 겹친다(돌려도 따라 돈다): 칸 하나 = 그 층 쌓기나무의 윗면 높이의 네모.
+   * state: ok(반투명 테두리) · extra(칠했는데 없음 — 빗금 + ✗) · missing(있는데 안 칠함 — 점선 + ✗). 다른 칸이 있으면 가장 위의 ✗ 옆에 "여기가 달라요"
+   */
+  function layerOverlayNodes(at, k) {
+    const out = [];
+    let first = null;
+    for (const layer of layerOverlay) {
+      const h = layer.z + 1 + liftOf(layer.z, true) + 0.02;
+      for (const cell of layer.cells) {
+        const pts = [[cell.c, cell.r, h], [cell.c + 1, cell.r, h], [cell.c + 1, cell.r + 1, h], [cell.c, cell.r + 1, h]].map(at);
+        out.push(svgEl('polygon', { class: `blk-over is-${cell.state}`, points: points(pts) }));
+        if (cell.state === 'extra') out.push(svgEl('path', { class: 'blk-over-hatch', d: hatchPath(pts) }));
+        if (cell.state !== 'ok') {
+          const c = centerOf(pts);
+          out.push(svgEl('text', { class: 'blk-x', x: c[0].toFixed(1), y: c[1].toFixed(1) }, document.createTextNode('✗')));
+          if (!first || c[1] < first[1]) first = c;
+        }
+      }
+    }
+    if (first) out.push(chip('여기가 달라요', [clamp(first[0], 70, size.w - 70), Math.max(16, first[1] - k * 0.75)], 'blk-hid blk-over-chip'));
+    return out;
+  }
+
   /** 판 가장자리 글자(앞·옆, 가~라)와 화살표, 층별 개수, "숨어 있었어요", 다른 곳 ✗ */
   function renderMarks(pose, d, at, k) {
     const nodes = [];
@@ -503,6 +575,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       nodes.push(chip(String(t.n), spot, 'blk-tally'));
     }
     if (!frozen && !mixing && overlay.length) nodes.push(...overlayNodes(pose, at, k));
+    if (!frozen && apart && layerOverlay.length) nodes.push(...layerOverlayNodes(at, k));
     for (const f of marks.diff) {
       const lift = liftOf(f.z, apart);
       const c = centerOf(FACE_CORNERS[f.face].map(([dx, dy, dz]) => at([f.x + dx, f.y + dy, f.z + dz + lift])));
@@ -932,6 +1005,20 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       overlay = list;
       render();
     },
+    /** 층별 색과 층 숫자(답한 뒤 — 5차시)를 켜고 끈다 */
+    setLayerLook(value) {
+      const next = Boolean(value);
+      if (next === layerLook) return;
+      layerLook = next;
+      el.classList.toggle('is-layered', layerLook);
+      resetNodes();
+      render();
+    },
+    /** 내가 칠한 층 모양을 층별로 벌린 무대의 그 층 위에 겹친다: [{ z, cells: [{ r, c, state }] }] (벌렸을 때만 보인다. 빈 목록이면 지운다) */
+    setLayerOverlay(list = []) {
+      layerOverlay = list;
+      render();
+    },
     step,
     zoomStep,
     resetView,
@@ -1074,7 +1161,7 @@ export const DEFAULT_DIRS = Object.freeze([
  * colors: [줄][칸] = { token, mark } (조형물) · diff: 다르다고 표시할 면들 [{ x, y, z, face }]
  * edges: 교과서처럼 "앞"(왼쪽 아래)·"옆"(오른쪽 아래) 글자와 화살표를 붙인다 — 틀의 아래 두 모서리, 모양과 무관하게 늘 같은 자리
  */
-export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [], edges = false }) {
+export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓기나무로 만든 모양 그림', diff = [], edges = false, added = [] }) {
   const pose = POSES.home;
   const shapes = sceneShapes(map, pose, { board: false, still: true });
   // 틀: 판 전체(3×3×3)를 그 방향에서 본 크기 (+ 글자를 붙이면 아래에 띠)
@@ -1089,11 +1176,14 @@ export function createBlockPicture({ map, colors = null, unit = 26, label = '쌓
   const dy = frame.h / 2 - (box.y0 + box.y1) / 2;
   const svg = svgEl('svg', { class: `blk-picture${edges ? ' has-edges' : ''}`, viewBox: `0 0 ${frame.w} ${frame.h + band}`, role: 'img', 'aria-label': label, focusable: 'false' });
   const diffSet = new Set(diff.map((f) => `${f.x},${f.y},${f.z},${f.face}`));
+  // added: 더 붙인 쌓기나무 [x, y, z] — 파랑 굵은 점선 테두리(도전 "더 붙여서 만들기"에서 답한 뒤)
+  const addedSet = new Set(added.map((c) => c.join(',')));
   shapes.forEach((s, i) => {
     const pts = raw[i].map(([x, y]) => [x + dx, y + dy]);
     const token = colors?.[s.y]?.[s.x]?.token ?? DEFAULT_TOKEN;
     const isDiff = diffSet.has(`${s.x},${s.y},${s.z},${s.face}`);
-    const node = svgEl('polygon', { class: `blk-face blk-${s.face}${isDiff ? ' is-diff' : ''}`, points: points(pts) });
+    const isAdded = addedSet.has(`${s.x},${s.y},${s.z}`);
+    const node = svgEl('polygon', { class: `blk-face blk-${s.face}${isDiff ? ' is-diff' : ''}${isAdded ? ' is-added' : ''}`, points: points(pts) });
     node.style.fill = palette(token, s.face);
     svg.append(node);
     const mark = colors?.[s.y]?.[s.x]?.mark;

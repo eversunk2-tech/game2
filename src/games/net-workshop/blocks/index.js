@@ -2,7 +2,7 @@
  * 쌓기나무 영역의 들머리(바탕 묶음). main.js는 여기서 차시·단계 목록(단계 카드 그림 포함)만 가져간다.
  * 플레이(문제 만들기·판정·화면)는 단계에 들어갈 때 받는 묶음 blocks-play.js에 있다(spec-grade6.md 7-4절 "영역을 들어갈 때 불러오기" — B0b).
  */
-import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST } from './blocks-stages.js';
+import { BLOCK_BADGES, BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES as STAGE_LIST } from './blocks-stages.js';
 import { createBlockPicture } from './block-view.js';
 
 // 단계 카드 그림: 작은 멈춘 그림 (조형물은 색·무늬)
@@ -22,6 +22,11 @@ const THUMBS = {
   write: { map: [[1, 2, 0], [2, 3, 1], [0, 1, 0]] },
   fromnum: { map: [[3, 1, 0], [2, 1, 0], [1, 0, 0]] },
   numviews: { map: [[2, 0, 0], [1, 3, 1], [0, 1, 0]] },
+  // 5차시 · 도전
+  layerdraw: { map: [[1, 2, 3], [1, 2, 0], [0, 1, 0]] },
+  layerbuild: { map: [[3, 2, 1], [2, 1, 0], [1, 0, 0]] },
+  layerviews: { map: [[1, 3, 1], [0, 2, 0], [0, 1, 0]] },
+  add: { map: [[1, 1, 0], [2, 1, 0], [0, 0, 0]] },
 };
 function thumbOf(kind) {
   const spec = THUMBS[kind];
@@ -35,5 +40,5 @@ function thumbOf(kind) {
   } : null;
 }
 
-export { BLOCK_HOW_TO, BLOCK_LESSONS };
+export { BLOCK_BADGES, BLOCK_HOW_TO, BLOCK_LESSONS };
 export const BLOCK_STAGES = STAGE_LIST.map((stage) => ({ ...stage, thumb: thumbOf(stage.kind) }));

@@ -184,6 +184,30 @@ export function createGridPicture({ kind, cells = null, numbers = null, cell = 2
   return svg;
 }
 
+/**
+ * 층별 모양 셋을 한 줄로 작게(5차시 — 답한 뒤 매트 오른쪽의 카드): 3×3 모눈 셋, 모눈마다 아래에 "1층"·"2층"·"3층".
+ * 모눈은 위에서 본 모양과 같은 방향(앞줄이 아래)이다. layers = [1층, 2층, 3층] 칸 [줄][칸] · label: 글 이름(화면 읽기)
+ */
+export function createLayerStrip({ layers, cell = 15, label = '' }) {
+  const gap = 10;
+  const pad = 3;
+  const foot = 16;
+  const one = COLS * cell;
+  const w = pad * 2 + layers.length * one + (layers.length - 1) * gap;
+  const h = pad * 2 + ROWS * cell + foot;
+  const svg = svgEl('svg', { class: 'blk-grid-pic blk-layer-strip', viewBox: `0 0 ${w} ${h}`, width: w, height: h, role: 'img', 'aria-label': label, focusable: 'false' });
+  layers.forEach((g, k) => {
+    const left = pad + k * (one + gap);
+    for (let r = ROWS - 1; r >= 0; r -= 1) {
+      for (let c = 0; c < COLS; c += 1) {
+        svg.append(svgEl('rect', { class: `blk-grid-cell${g[r][c] ? ' is-on' : ''}`, x: left + c * cell, y: pad + (ROWS - 1 - r) * cell, width: cell, height: cell }));
+      }
+    }
+    svg.append(text('blk-plan-label', left + one / 2, pad + ROWS * cell + foot / 2 + 1, `${k + 1}층`));
+  });
+  return svg;
+}
+
 /** 수를 쓴 위에서 본 모양의 글 이름: "수를 쓴 위에서 본 모양: 1줄 1칸 2, 1줄 2칸 1, …" (줄은 앞줄부터, 칸은 왼쪽부터) */
 export function describeNumbers(map) {
   const parts = [];
@@ -206,7 +230,7 @@ const cellWord = (kind, r, c) => (kind === 'top' ? `${r + 1}줄 ${c + 1}칸` : `
  * kind: 'top' · 'front' · 'side' — 위는 앞줄이 아래(아래 "앞", 오른쪽 "옆"), 앞·옆은 1층이 아래(바닥 선).
  * → { el, kind, get(), set(cells), lock(bool), showDiff([{ r, c, state }]), clearDiff(), onChange(fn), focus() }
  */
-export function createPaintGrid({ ctx, kind, title = PAINT_LABEL[kind] }) {
+export function createPaintGrid({ ctx, kind, title = PAINT_LABEL[kind], name = kind }) {
   const { h } = ctx;
   let cells = emptyCells();
   let locked = false;
@@ -232,7 +256,8 @@ export function createPaintGrid({ ctx, kind, title = PAINT_LABEL[kind] }) {
   const parts = [h('p', { class: 'blk-paint-title' }, title), grid];
   if (kind === 'top') parts.push(h('span', { class: 'blk-paint-side', 'aria-hidden': 'true' }, '옆'), h('span', { class: 'blk-paint-front', 'aria-hidden': 'true' }, '앞'));
   else parts.push(h('span', { class: 'blk-paint-ground', 'aria-hidden': 'true' }));
-  const el = h('div', { class: `blk-paint is-${kind}`, dataset: { kind } }, parts);
+  // name: 같은 꼴(위에서 본 모양 모눈)을 두 장 쓸 때 가르는 이름(5차시의 2층·3층 모양 — data-kind="layer2"·"layer3")
+  const el = h('div', { class: `blk-paint is-${kind}`, dataset: { kind: name } }, parts);
   const at = (r, c) => buttons.find((b) => b.r === r && b.c === c).el;
 
   function paint() {
