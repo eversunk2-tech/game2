@@ -4,7 +4,9 @@
  * 그리기: 원근 없는 투영(평행 투영). 쌓기나무의 면을 <polygon>으로, 눈에서 먼 것부터 차례로 그린다(blocks.js paintOrder) —
  *   브라우저의 3D 정렬에 기대지 않아 깊이 순서가 늘 맞고, 면이 2D 다각형이라 누른 곳의 판정이 정확하다.
  *   [위] [앞] [옆]으로 돌리면 화면의 쌓기나무가 2D 그림과 똑같은 네모들로 보인다.
- * 보기 값: 전개도 무대와 같은 orbit.js의 값({ roll(쌓인 회전), zoom })과 함수(끌기·한 단계·벌리기·휠)를 그대로 쓴다.
+ * 보기 값: 돌림판식(turn-view.js — spec-grade6 15-19, 알지오매스와 같은 방식) { yaw(판 돌림), pitch(내려다보는 높이), zoom }.
+ *   가로로 끌면 판이 제 세로축 둘레로 돌고, 세로로 끌면 내려다보는 높이만 바뀐다(수평 ~ 바로 위). 판은 화면에서 기울지 않는다.
+ *   끌기 1px = 0.5°·문턱 8px·관성 없음과 크게·작게(벌리기·휠·단계)는 전개도 무대와 같은 orbit.js의 값·함수를 그대로 쓴다.
  *   처음 보기는 교과서 입체 그림의 방향(앞이 왼쪽 아래, 옆이 오른쪽 아래)이다.
  * 좌표: 모델은 x 오른쪽(칸), y 뒤쪽(줄), z 위쪽(층). 화면은 x 오른쪽, y 아래, z 보는 사람 쪽(orbit.js와 같다).
  *
@@ -15,29 +17,23 @@
  */
 import { josa } from '../../../shared/core/korean.js';
 import { icon } from '../../../shared/ui/icons.js';
+import { DRAG_START, HOME_WORD, MIX_MS, clamp, mixStep, pinchView, stepZoom, wheelView, zoomWord } from '../orbit.js';
 import {
-  DRAG_START,
-  HOME_WORD,
-  MIX_MS,
-  TILT_STEP,
-  TURN_BUTTON,
-  TURN_KEY,
-  clamp,
-  dragView,
-  homeView,
-  isHome,
-  lookToward,
-  mixStep,
-  pinchView,
-  rollOf,
-  rotationMatrix,
-  sameLook,
-  stepView,
-  stepZoom,
-  viewLimits,
-  wheelView,
-  zoomWord,
-} from '../orbit.js';
+  PITCH_STEP,
+  POSES,
+  SNAP,
+  YAW_BUTTON,
+  YAW_KEY,
+  dragTurn,
+  homeTurn,
+  isHomeTurn,
+  poseOf,
+  sameTurn,
+  snapTurn,
+  stepTurn,
+  turnLimits,
+  turnToward,
+} from './turn-view.js';
 import { COLS, FACE_NORMALS, MAX_H, ROWS, count, picturedFaces, targetOf, visibleFaces } from './blocks.js';
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -55,60 +51,11 @@ export function svgEl(tag, attrs = {}, ...children) {
 export const prefersReducedMotion = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
 // ── 자세 (순수) ───────────────────────────
-const R2 = Math.SQRT1_2;
-const R3 = 1 / Math.sqrt(3);
-const R6 = 1 / Math.sqrt(6);
 /**
  * 모델 방향 → 화면 방향 3×3 행렬(행 우선): 1행 = 화면 오른쪽, 2행 = 화면 아래, 3행 = 보는 사람 쪽.
- * home: 교과서 입체 그림의 방향 — 앞·오른쪽·위가 같은 비율로 보인다(눈이 앞·오른쪽·위에 있다)
- * top: 위에서(앞이 아래, 옆이 오른쪽) · front: 앞에서 · side: 옆(오른쪽)에서 · back: 뒤에서 · left: 왼쪽에서
+ * 정해진 자세(POSES — home·top·front·side·back·left·behind)와 돌림판 보기 값 → 자세(poseOf)는 turn-view.js에 있다.
  */
-export const POSES = Object.freeze({
-  home: [R2, R2, 0, R6, -R6, -2 * R6, R3, -R3, R3],
-  top: [1, 0, 0, 0, -1, 0, 0, 0, 1],
-  front: [1, 0, 0, 0, 0, -1, 0, -1, 0],
-  side: [0, 1, 0, 0, 0, -1, 1, 0, 0],
-  back: [-1, 0, 0, 0, 0, -1, 0, 1, 0],
-  left: [0, -1, 0, 0, 0, -1, -1, 0, 0],
-  // 처음 보기의 맞은편(뒤·왼쪽·위)에서 비스듬히: 그림에서 가려져 있던 쪽이 보인다
-  behind: [-R2, -R2, 0, -R6, R6, -2 * R6, -R3, R3, R3],
-});
-
-const mul3 = (a, b) => {
-  const out = new Array(9).fill(0);
-  for (let r = 0; r < 3; r += 1) for (let c = 0; c < 3; c += 1) for (let k = 0; k < 3; k += 1) out[r * 3 + c] += a[r * 3 + k] * b[k * 3 + c];
-  return out;
-};
-const transpose3 = (m) => [m[0], m[3], m[6], m[1], m[4], m[7], m[2], m[5], m[8]];
-
-/** 회전 행렬 → 사원수 [x, y, z, w] (orbit.js의 roll과 같은 꼴) */
-function quatOf(m) {
-  const trace = m[0] + m[4] + m[8];
-  let q;
-  if (trace > 0) {
-    const s = Math.sqrt(trace + 1) * 2;
-    q = [(m[7] - m[5]) / s, (m[2] - m[6]) / s, (m[3] - m[1]) / s, s / 4];
-  } else if (m[0] > m[4] && m[0] > m[8]) {
-    const s = Math.sqrt(1 + m[0] - m[4] - m[8]) * 2;
-    q = [s / 4, (m[1] + m[3]) / s, (m[2] + m[6]) / s, (m[7] - m[5]) / s];
-  } else if (m[4] > m[8]) {
-    const s = Math.sqrt(1 + m[4] - m[0] - m[8]) * 2;
-    q = [(m[1] + m[3]) / s, s / 4, (m[5] + m[7]) / s, (m[2] - m[6]) / s];
-  } else {
-    const s = Math.sqrt(1 + m[8] - m[0] - m[4]) * 2;
-    q = [(m[2] + m[6]) / s, (m[5] + m[7]) / s, s / 4, (m[3] - m[1]) / s];
-  }
-  return q[3] < 0 ? q.map((v) => -v) : q;
-}
-
-/** 처음 보기에서 그 방향 보기로 가는 회전(roll) */
-export const rollTo = (name) => (name === 'home' ? [0, 0, 0, 1] : quatOf(mul3(POSES[name], transpose3(POSES.home))));
-
-/** 보기 값의 roll → 자세 행렬 */
-export function poseOfRoll(roll) {
-  const { axis, angle } = rollOf(roll);
-  return Math.abs(angle) < 1e-9 ? [...POSES.home] : mul3(rotationMatrix(axis, angle), POSES.home);
-}
+export { POSES };
 
 /** 보는 사람 쪽 방향(모델 좌표) */
 export const toViewerOf = (pose) => [pose[6], pose[7], pose[8]];
@@ -289,8 +236,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
   let map = Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
   let colors = null; // [줄][칸] = { token, mark } (조형물) 또는 null
-  let view = homeView(); // 학생 보기 { spin(쓰지 않음), roll, zoom }
-  let shown = { roll: [...view.roll], zoom: view.zoom }; // 지금 화면의 모습 (돌아가는 움직임 도중에는 view와 다르다)
+  let view = homeTurn(); // 학생 보기 { yaw, pitch, zoom } (turn-view.js)
+  let shown = { ...view }; // 지금 화면의 모습 (돌아가는 움직임 도중에는 view와 다르다)
   let frozen = still; // 멈춘 그림처럼 그리는 중(답하기 전)
   let bare = false; // 돌려 볼 수는 있지만 면에 자리 값(data-*)을 싣지 않는다 — 보고 세는 것이 과제인 문항의 답하기 전(수 쓰기)
   let withBoard = board;
@@ -336,7 +283,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
 
   function render() {
     if (destroyed) return;
-    const pose = poseOfRoll(shown.roll);
+    const pose = poseOf(shown);
     const d = toViewerOf(pose);
     const k = scaleNow();
     const cx = size.w / 2;
@@ -594,14 +541,13 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     });
   }
 
-  const emitView = () => emit('view', { can: canView(), ...viewLimits(view) });
+  const emitView = () => emit('view', { can: canView(), ...turnLimits(view) });
 
   /** 지금 화면의 모습에서 view로 짧은 움직임(0.2초)으로 간다. 움직임 줄이기·?fx=low면 바로 */
   function easeToView() {
-    const target = { roll: view.roll, zoom: view.zoom };
-    if (instant() || sameLook(shown, target)) {
+    if (instant() || sameTurn(shown, view)) {
       mixing = null;
-      shown = { roll: [...view.roll], zoom: view.zoom };
+      shown = { ...view };
       el.classList.remove('is-easing');
       render();
       return;
@@ -612,11 +558,11 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   }
   function stepMix(now) {
     const p = clamp((now - mixing.t0) / MIX_MS, 0, 1);
-    shown = lookToward(shown, { roll: view.roll, zoom: view.zoom }, mixStep(mixing.p, p));
+    shown = turnToward(shown, view, mixStep(mixing.p, p));
     mixing.p = p;
     if (p >= 1) {
       mixing = null;
-      shown = { roll: [...view.roll], zoom: view.zoom };
+      shown = { ...view };
       el.classList.remove('is-easing');
     }
   }
@@ -625,7 +571,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     mixing = null;
     delete el.dataset.facing;
     el.classList.remove('is-easing');
-    shown = { roll: [...view.roll], zoom: view.zoom };
+    shown = { ...view };
     schedule();
     emitView();
   }
@@ -693,7 +639,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
       swallowClick = false;
     }, 0);
     if (!told) return;
-    const word = poseWord(poseOfRoll(view.roll), names);
+    const word = poseWord(poseOf(view), names);
     if (word !== g.word) say(word);
     else if (Math.abs(view.zoom - g.zoom) > 0.005) say(zoomWord(view.zoom));
   }
@@ -713,7 +659,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 1) {
       const hit = hitOf(event.target);
-      gesture = { mode: 'wait', x: event.clientX, y: event.clientY, hit, right, word: poseWord(poseOfRoll(view.roll), names), zoom: view.zoom };
+      gesture = { mode: 'wait', x: event.clientX, y: event.clientY, hit, right, word: poseWord(poseOf(view), names), zoom: view.zoom };
       // 터치: 누르는 동안 놓일 곳이 점선 쌓기나무로 보인다(떼면 놓인다. 끌면 돌리기로 바뀌어 사라진다)
       if (editable && !right && event.pointerType !== 'mouse') setHover(hit);
       globalThis.addEventListener('pointermove', onPointerMove);
@@ -752,7 +698,10 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     p.x = event.clientX;
     p.y = event.clientY;
     if (!canView() || gesture.right) return;
-    view = dragView(view, dx, dy); // 끈 방향으로 구른다(화면 기준, 한계 없음)
+    // 가로 몫 = 판 돌리기(끝없이), 세로 몫 = 내려다보는 높이(수평 ~ 바로 위에서 멈춘다). 한도에 걸려 그대로면 [위]·[앞]의 모습을 지우지 않는다
+    const next = dragTurn(view, dx, dy);
+    if (next.yaw === view.yaw && next.pitch === view.pitch) return;
+    view = next;
     follow();
   }
 
@@ -835,16 +784,21 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (canView()) event.preventDefault(); // 사파리의 두 손가락 벌리기(화면 전체 확대)
   }
 
-  /** 한 단계 돌린다(조작판 버튼·방향키). 보는 방향의 말("위에서 본 모습" 등)이 바뀌면 알린다 — 전개도 무대와 같다 */
+  /**
+   * 한 단계 돌린다(조작판 버튼·방향키 — 눈금에 멈춘다). 보는 방향의 말("위에서 본 모습" 등)이 바뀌면 알린다 — 전개도 무대와 같다.
+   * 높이가 한도(수평·바로 위)에 닿아 있으면 아무 일도 없다(그 버튼은 꺼져 있다)
+   */
   function turnStep(dir, degrees) {
-    const before = poseWord(poseOfRoll(view.roll), names);
-    moveTo(stepView(view, dir, degrees));
-    const after = poseWord(poseOfRoll(view.roll), names);
+    const next = stepTurn(view, dir, degrees);
+    if (sameTurn(next, view)) return;
+    const before = poseWord(poseOf(view), names);
+    moveTo(next);
+    const after = poseWord(poseOf(view), names);
     if (after !== before) say(after);
   }
   function step(dir) {
     if (!canView()) return false;
-    turnStep(dir, dir === 'left' || dir === 'right' ? TURN_BUTTON : TILT_STEP);
+    turnStep(dir, dir === 'left' || dir === 'right' ? YAW_BUTTON : PITCH_STEP);
     return true;
   }
   function zoomStep(dir) {
@@ -856,15 +810,15 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   }
   function resetView() {
     if (!canView()) return false;
-    if (isHome(view)) return true;
-    moveTo(homeView());
+    if (isHomeTurn(view)) return true;
+    moveTo(homeTurn());
     say(HOME_WORD);
     return true;
   }
   /** 그 방향에서 본 모습으로 돌린다: 'top' · 'front' · 'side' · 'back' · 'left' · 'home'. force면 보기 조작이 꺼져 있어도(단계가 보여 줄 때) */
   function snapTo(name, { force = false, quiet = false } = {}) {
-    if (!POSES[name] || (!force && !canView())) return false;
-    moveTo({ ...view, roll: rollTo(name) });
+    if (!SNAP[name] || (!force && !canView())) return false;
+    moveTo(snapTurn(view, name));
     el.dataset.facing = name;
     if (overlay.length) render(); // 움직임 없이 바로 돈 때(움직임 줄이기): 그 방향의 겹친 그림을 바로 그린다
     emit('facing', name);
@@ -876,8 +830,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (frozen || event.ctrlKey || event.metaKey || event.altKey) return;
     if (!canView()) return;
     const { key } = event;
-    if (key === 'ArrowLeft') turnStep('left', TURN_KEY);
-    else if (key === 'ArrowRight') turnStep('right', TURN_KEY);
+    if (key === 'ArrowLeft') turnStep('left', YAW_KEY);
+    else if (key === 'ArrowRight') turnStep('right', YAW_KEY);
     else if (key === 'ArrowUp') step('up');
     else if (key === 'ArrowDown') step('down');
     else if (key === '+' || key === '=') zoomStep(1);
@@ -1025,16 +979,16 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     snapTo,
     /** 보기를 처음으로(움직임 없이). 문제가 바뀔 때 */
     home() {
-      view = homeView();
+      view = homeTurn();
       mixing = null;
       el.classList.remove('is-easing');
-      shown = { roll: [...view.roll], zoom: view.zoom };
+      shown = { ...view };
       delete el.dataset.facing;
       emitView();
       render();
     },
-    /** 지금 보기 값(검사용): { roll, zoom } */
-    getView: () => ({ roll: [...view.roll], zoom: view.zoom }),
+    /** 지금 보기 값(검사용): { yaw, pitch, zoom } */
+    getView: () => ({ ...view }),
     on(name, fn) {
       listeners[name].add(fn);
       return () => listeners[name].delete(fn);
@@ -1061,7 +1015,7 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
   };
 }
 
-const STAGE_LABEL = '쌓기나무 무대. 끌거나 방향키로 돌려 보고, + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.';
+const STAGE_LABEL = '쌓기나무 무대. 옆으로 끌거나 왼쪽·오른쪽 방향키를 누르면 판이 돌고, 위아래로 끌거나 위·아래 방향키를 누르면 내려다보는 높이가 바뀌어요. + 와 - 로 크게 작게 봐요. 1은 위, 2는 앞, 3은 옆에서 보기예요.';
 const PICTURE_LABEL = '쌓기나무로 만든 모양 그림이에요. 답한 뒤에 돌려 볼 수 있어요.';
 /** 처음 보기(교과서 방향)에서 판 가장자리 글자가 놓이는 쪽 */
 const EDGE_SPOT = { front: '왼쪽 아래', right: '오른쪽 아래', back: '오른쪽 위', left: '왼쪽 위' };
@@ -1124,7 +1078,10 @@ export function createViewControls({ ctx, view, dirs = DEFAULT_DIRS }) {
     if (focused) view.el.focus({ preventScroll: true });
   }
   const offView = view.on('view', (s) => {
-    for (const b of [turnLeft, turnRight, tiltUp, tiltDown, ...dirButtons]) setOff(b, !s.can);
+    for (const b of [turnLeft, turnRight, ...dirButtons]) setOff(b, !s.can);
+    // 높이는 수평 ~ 바로 위까지라, 한도에 닿으면 그쪽 버튼이 꺼진다(점선). 판 돌리기는 끝없이
+    setOff(tiltUp, !s.can || s.up);
+    setOff(tiltDown, !s.can || s.down);
     setOff(zoomIn, !s.can || s.zoomMax);
     setOff(zoomOut, !s.can || s.zoomMin);
     setOff(home, !s.can || s.home);

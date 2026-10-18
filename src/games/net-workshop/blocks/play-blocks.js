@@ -256,7 +256,7 @@ function playPlay(stage, ctx, questions) {
   const tasks = [
     { text: `노란 자리(${spotName(gx, gy)})에 ${q.height}층으로 쌓아요.`, tip: '무대의 노란 자리를 짧게 누르거나, "위에서 본 판"의 칸을 눌러요.' },
     { text: '쌓기나무 하나를 빼요.', tip: '[빼기]를 누른 다음 쌓기나무를 눌러요. 다 뺐으면 [쌓기]로 돌아와요.' },
-    { text: '[앞]을 눌러 앞에서 봐요.', tip: '무대를 끌면 어느 쪽으로든 돌아가요. 짧게 누르면 쌓이고, 끌면 돌아가요.' },
+    { text: '[앞]을 눌러 앞에서 봐요.', tip: '옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.' },
   ];
   const items = tasks.map((t, i) => h('li', { class: 'blk-task', dataset: { task: i + 1 } },
     h('span', { class: 'blk-task-mark', 'aria-hidden': 'true' }, String(i + 1)),

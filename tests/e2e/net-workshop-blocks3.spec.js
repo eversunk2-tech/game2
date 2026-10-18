@@ -852,8 +852,9 @@ for (const size of SIZES) {
       if (i < 2) await scene(`layer-build ${i + 2} 처음`);
     }
     await noScroll(page, 'layer-build 결과');
-    // 층별 모양만 보고: 개수 틀림, 칠하기 틀림 → 맞힘
+    // 층별 모양만 보고: 개수 틀림, 칠하기 틀림 → 맞힘. 첫 칠하기는 두 번 틀려(모두 칠함 → 앞과 옆을 바꿔 칠함) 힌트까지 — 가장 긴 힌트 문장(S3-2)
     await begin('blocks-layer-views');
+    let hinted = false;
     for (const [i, q] of questionsFor('blocks-layer-views').entries()) {
       if (q.kind === 'count') {
         await press(testInfo, page.locator(`.blk-choice[data-answer="${q.options.find((v) => v !== q.expected)}"]`));
@@ -861,9 +862,20 @@ for (const size of SIZES) {
         await scene('layer-views 개수 틀림');
       } else {
         const kind = q.kinds[0];
+        if (!hinted) {
+          await paint(page, testInfo, kind, [[1, 1, 1], [1, 1, 1], [1, 1, 1]]);
+          await check(testInfo, page);
+          await scene(`layer-views ${kind} 모두 칠해 틀림`);
+        }
         await paint(page, testInfo, kind, q.views[kind === 'front' ? 'side' : 'front']);
         await check(testInfo, page);
         await scene(`layer-views ${kind} 틀림`);
+        if (!hinted) {
+          hinted = true;
+          await press(testInfo, page.locator('.blk-hint'));
+          await expect(page.locator('.blk-hint-text')).toContainText(kind === 'front' ? '층별 모양의 아래쪽(앞)에서 보면' : '층별 모양의 오른쪽(옆)에서 보면');
+          await scene(`layer-views ${kind} 힌트`);
+        }
         await paint(page, testInfo, kind, q.views[kind]);
         await check(testInfo, page);
         await scene(`layer-views ${kind} 맞힘`);
