@@ -552,6 +552,15 @@ export function judgePrismEdge(question, index) {
   return { correct: false, expected, tag: TAGS.meetingEdge, message };
 }
 
+/**
+ * 알림(토스트)에 쓰는 짧은 글: 까닭 문장의 첫 마디. 까닭 전체는 작업 지시서의 쪽지에 있다 —
+ * 휴대폰은 알림이 매트 바로 밑에 뜨므로 길면 판의 답 버튼·조작 띠를 가린다(글자가 넓은 기기에서 세 줄)
+ */
+export function toastText(message) {
+  const at = message.indexOf('. ');
+  return at < 0 ? message : message.slice(0, at + 1);
+}
+
 /** 단계의 문항 목록. playStage에서 ctx.rng로 가장 먼저 부른다(같은 시드 = 같은 문항) */
 export const PRISM_MAKERS = Object.freeze({ parts: makePartsQuestions, pjudge: makeJudgeQuestions, pedge: makeEdgeQuestions });
 export function makePrismQuestions(stage, rng) {

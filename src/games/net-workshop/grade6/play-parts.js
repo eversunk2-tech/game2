@@ -9,7 +9,7 @@
 import { LABELS } from '../fold.js';
 import { TILT } from '../orbit.js';
 import { createNetView, createWorkbench } from '../view3d.js';
-import { PRISM_FIT, judgeParts } from './prism-logic.js';
+import { PRISM_FIT, judgeParts, toastText } from './prism-logic.js';
 
 const UNFOLD_AFTER = 700; // 맞힌 뒤 이름을 읽을 틈(ms) — 그다음 펼친다(움직임 줄이기에서는 바로 펼친 모습)
 
@@ -110,9 +110,9 @@ export function playParts(stage, ctx, questions) {
       }
       picked = [];
       sync();
-      ctx.sfx.play('wrong');
-      ctx.feedback.wrong(result.message, check);
       bench.showBounce({ retry: true });
+      ctx.sfx.play('wrong');
+      ctx.feedback.wrong(toastText(result.message), check); // 알림은 한 문장(휴대폰에서 아래 조작 띠를 가리지 않게), 까닭 전체는 쪽지에
       return;
     }
     solved = true;
@@ -131,8 +131,6 @@ export function playParts(stage, ctx, questions) {
     check.hidden = true;
     name.textContent = `${q.name} · 옆면 ${q.sides}개`;
     name.hidden = false;
-    ctx.sfx.play('correct');
-    ctx.feedback.correct(result.message, check);
     bench.clearBonus();
     view.reveal({ ok: true, text: `${q.name} · 옆면 ${q.sides}개` });
     bench.lockFold(false);
@@ -142,6 +140,9 @@ export function playParts(stage, ctx, questions) {
     }, UNFOLD_AFTER);
     const last = index + 1 >= questions.length;
     bench.showNext(last ? '결과 보기' : '다음 문제', next, { iconName: 'play' });
+    // 알림은 판의 글이 다 바뀐 뒤에: 판이 짧아져 휴대폰 화면이 밀린 뒤에 자리를 잡아야 매트 아래 조작 띠를 가리지 않는다
+    ctx.sfx.play('correct');
+    ctx.feedback.correct(`맞아요! ${q.name}의 밑면 두 개를 찾았어요.`, check);
     bench.focusNext();
   }
 

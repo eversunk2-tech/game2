@@ -7,7 +7,7 @@
 import { icon } from '../../../shared/ui/icons.js';
 import { createReasonPick } from '../play-judge.js';
 import { createNetView, createWorkbench } from '../view3d.js';
-import { PRISM_FIT, PRISM_JUDGE_REASONS, judgePrismAnswer, judgePrismReason, prismJudgeTip, prismMismatch } from './prism-logic.js';
+import { PRISM_FIT, PRISM_JUDGE_REASONS, judgePrismAnswer, judgePrismReason, prismJudgeTip, prismMismatch, toastText } from './prism-logic.js';
 
 const cm = (value) => `${Math.round(value * 100) / 100} cm`;
 /** 길이가 다른 두 선분(problem.edges)에 같은 무늬 띠와 길이 이름표 */
@@ -83,13 +83,13 @@ export function playPrismJudge(stage, ctx, questions) {
 
     ctx.sfx.play(result.correct ? 'correct' : 'wrong');
     if (!result.correct) {
-      ctx.feedback.wrong(result.message, chosen);
+      ctx.feedback.wrong(toastText(result.message), chosen); // 알림은 첫 마디, 까닭 전체는 쪽지에(휴대폰에서 답 버튼을 가리지 않게)
       bench.showBounce();
       reveal(result);
       return;
     }
     if (q.valid) {
-      ctx.feedback.correct(result.message, chosen);
+      ctx.feedback.correct(toastText(result.message), chosen);
       reveal(result);
       return;
     }

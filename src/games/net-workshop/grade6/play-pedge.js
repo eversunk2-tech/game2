@@ -6,7 +6,7 @@
  */
 import { icon } from '../../../shared/ui/icons.js';
 import { createNetView, createWorkbench } from '../view3d.js';
-import { PRISM_FIT, judgePrismEdge } from './prism-logic.js';
+import { PRISM_FIT, judgePrismEdge, toastText } from './prism-logic.js';
 
 export function playPrismEdge(stage, ctx, questions) {
   const { h } = ctx;
@@ -72,7 +72,7 @@ export function playPrismEdge(stage, ctx, questions) {
       button.querySelector('.edge-opt-mark').replaceChildren(icon('cross'));
       drawMarks();
       ctx.sfx.play('wrong');
-      ctx.feedback.wrong(result.message, button);
+      ctx.feedback.wrong(toastText(result.message), button); // 알림은 첫 마디, 까닭 전체는 쪽지에
       bench.offerHint();
       bench.showBounce({ retry: true });
       return;
@@ -81,10 +81,11 @@ export function playPrismEdge(stage, ctx, questions) {
     button.classList.add('is-right');
     button.querySelector('.edge-opt-mark').replaceChildren(icon('check'));
     for (const b of buttons.values()) b.disabled = true;
-    ctx.sfx.play('correct');
-    ctx.feedback.correct(result.message, button);
+    // 판이 짧아지는 것(힌트 · 보너스 쪽지)을 먼저 — 알림은 그 뒤에 자리를 잡는다(휴대폰에서 화면이 밀려 알림이 조작 띠를 가리지 않게)
     bench.hideHint();
     bench.clearBonus();
+    ctx.sfx.play('correct');
+    ctx.feedback.correct(toastText(result.message), button);
     // 맞닿는 두 선분을 같은 무늬로 (접으면 두 띠가 한 모서리에서 만난다)
     view.setEdgeMarks([segMark(q, q.target, 'a'), segMark(q, q.answer, 'a')]);
     view.reveal();
