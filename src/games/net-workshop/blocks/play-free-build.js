@@ -17,7 +17,6 @@
  *   좁은 화면(1000px 이하 — 태블릿 세로·휴대폰): 매트가 위, 띠는 매트 아래 가로 줄. 태블릿 세로는 매트가 남는 높이를 다 쓰고 펼치는 칸은 매트 왼쪽 아래
  *     (판이 위로 비킨다), 휴대폰은 펼치는 칸이 매트 안 흐름에(조작판 아래 — 판이 비키지 않는다).
  */
-import { createStorage } from '../../../shared/core/storage.js';
 import { icon } from '../../../shared/ui/icons.js';
 import { count, emptyMap, frontView, sideView, topView } from './blocks.js';
 import { createBlockTools } from './block-pad.js';
@@ -63,7 +62,36 @@ export const quarterAt = (x, y, n) => QUARTERS.find((q) => q.x === Math.min(1, M
 const PAN_PART = 0.3;
 const PAN_MS = 180;
 
-// ── 저장 (순수) ──────────────────────────
+// ── 저장 ──────────────────────────
+/**
+ * 이 기기의 저장소: 엔진의 createStorage와 같은 열쇠 모양(edu:<게임 id>:<열쇠>, JSON). 학습 기록이 아니라 [기록 모두 지우기]는 건드리지 않는다 — 새로는 [모두 치우기].
+ * 막힌 기기(사생활 보호 모드 등)에서는 그 판 동안만 남는다. (엔진의 storage.js를 이 늦게 받는 묶음에서 가져오면 빌드가 그 파일을
+ * 따로 떼어 처음 화면이 받는 파일이 하나 늘어나 — 모든 게임에 — 여기서는 같은 일을 몇 줄로 한다)
+ */
+function createFreeStore(gameId) {
+  const memory = new Map();
+  const full = (key) => `edu:${gameId}:${key}`;
+  return {
+    get(key) {
+      try {
+        const raw = globalThis.localStorage.getItem(full(key));
+        return raw == null ? memory.get(key) ?? null : JSON.parse(raw);
+      } catch {
+        return memory.get(key) ?? null;
+      }
+    },
+    set(key, value) {
+      memory.set(key, value);
+      try {
+        globalThis.localStorage.setItem(full(key), JSON.stringify(value));
+      } catch {
+        // 막힌 저장소: 그 판 동안만(memory)
+      }
+    },
+  };
+}
+
+// ── 저장 값 (순수) ──────────────────────────
 /** 저장 값 → { map, cubes } (모양이 맞지 않으면 null — 빈 판으로 시작) */
 export function readSaved(raw, board) {
   if (!raw || raw.v !== 1 || !Array.isArray(raw.h) || raw.h.length !== board.rows) return null;
@@ -107,7 +135,7 @@ export function playFreeBuild(stage, ctx) {
   const { h } = ctx;
   const board = boardFor(globalThis.innerWidth ?? 1366, globalThis.innerHeight ?? 768);
   const { cols, rows, maxH } = board;
-  const storage = createStorage(ctx.game?.id ?? 'net-workshop');
+  const storage = createFreeStore(ctx.game?.id ?? 'net-workshop');
   const view = createBlockView({ h, cols, rows, maxH, fit: 'home', fitH: FIT_H });
   const controls = createViewControls({ ctx, view });
 
