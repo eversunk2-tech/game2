@@ -44,7 +44,7 @@ import {
 } from './blocks.js';
 
 // 차시·단계 목록과 별 기준은 blocks-stages.js로 옮겼다(바탕 묶음 — 단계 지도에 필요). 여기서도 같은 이름으로 내보낸다
-export { BLOCK_BADGES, BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, BLOCK_UNIT, hiddenCountWins, layerBuildWins, starNoteByWrong, starsByWrong, threeViewWins } from './blocks-stages.js';
+export { BLOCK_BADGES, BLOCK_FREE_STAGES, BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES, BLOCK_UNIT, hiddenCountWins, layerBuildWins, starNoteByWrong, starsByWrong, threeViewWins } from './blocks-stages.js';
 
 /** 오개념 tag (기획서 4절 표와 글자까지 같게) */
 export const BLOCK_TAGS = Object.freeze({
@@ -396,41 +396,90 @@ export const MORE_CLUES = Object.freeze([
 export const MORE_CLUE_ANSWER = 'top';
 
 /**
- * 정답보다 큰 쪽에 놓는 "함정처럼 떨어진 수"의 거리 쌍 [숨은 수, 칸 수 거리]와 그 무게.
- * 함정 값은 늘 정답보다 작고 정답에서 떨어진 거리가 문항마다 다르다(보이는 것만 센 수: 숨은 쌓기나무의 수만큼 · 위에서 본 칸 수: 2층 이상의 수만큼).
- * 큰 쪽 보기를 늘 정답 + 1~3으로 두면 "가장 큰 수 − 3보다 작은 보기는 오답" 같은 규칙으로 풀린다(review-blocks S1b-1, 60.3%).
- * 그래서 큰 쪽에도 함정 값과 같은 꼴로 떨어진 수를 둔다: 쌓기 문항 8,000개에서 잰 함정 거리의 분포를 어림한 표.
- * (숨은 수가 0이면 함정이 하나뿐인 문항과 같은 꼴 — 칸 수 거리만 쓴다)
+ * 개수 보기의 값만으로 정답이 드러나지 않게 고르는 보기 넷(작은 수부터) — review-blocks-r1 R1-1.
+ * 정답은 문항의 모양이 정하므로 그 단계의 정답 값은 좁은 범위에 몰린다(2차시 5~10개, 5차시 6~11개). 보기를 정답 둘레에 퍼뜨리면
+ * "흔한 정답 값에 가장 가까운 보기"·"가장 작은 보기의 값으로 배운 표" 같은 값만 보는 규칙이 찍기(25%)보다 훨씬 잘 맞는다(52~77%).
+ * 그래서 보기 넷을 그 단계의 정답 분포(prior — 값 v가 정답일 확률)에서 뽑는다: 값 v가 보기에 들 확률이 4·prior(v)가 되게 하는 계통 뽑기를
+ * "정답이 든 것"으로 좁혀 쓰면, 어떤 보기 넷을 보아도 넷 가운데 무엇이 정답인지가 고르다(값·간격·자리 어느 것도 정답을 알려 주지 않는다).
+ * 함정 값(prefer — 오개념으로 세면 나오는 수)은 뽑은 넷에 없으면 tries번까지 다시 뽑아 들게 한다(그만큼만 치우친다 — 단위 검사가 잰다).
+ * 보기는 모두 그 단계에 나올 수 있는 정답 값이라 0·엉뚱하게 큰 수가 없다. prior에 없는 정답(모양 규칙이 바뀐 때)도 넣어서 뽑는다.
+ * size·avoid: 보기 하나를 함정 값으로 정해 두고 나머지 size개(3)를 뽑을 때 — 그 함정 값은 avoid로 빼고, prior는 "그 함정 값이 보일 때의 정답 분포"를 준다
+ * (함정 값이 보이면 정답이 그 값에 따라 좁혀지므로 — 아래 COUNT_BY_SPOTS·LAYER_COUNT_BY_FLOOR)
  */
-const MIRROR_TRAPS = [[0, 1, 2], [0, 2, 12], [0, 3, 11], [0, 4, 9], [0, 5, 4], [0, 6, 2], [1, 2, 5], [1, 3, 8], [1, 4, 8], [1, 5, 5], [1, 6, 1], [2, 3, 1], [2, 4, 4], [2, 5, 3], [2, 6, 2], [3, 5, 1]]
-  .flatMap(([hid, far, weight]) => Array.from({ length: weight }, () => [hid, far]));
-/** 함정 값·떨어진 수로 모자란 보기를 채우는 거리(위·아래 같은 분포) */
-const FILL_GAPS = [1, 2, 2, 3, 3, 4, 4, 5, 6];
+export function neutralCountOptions(rng, { total, prior, prefer = [], tries = 1, size = 4, avoid = [] }) {
+  const weights = new Map(Object.entries(prior).map(([v, p]) => [Number(v), p]).filter(([v, p]) => v > 0 && p > 0 && (v === total || !avoid.includes(v))));
+  if (!weights.has(total)) weights.set(total, Math.min(...weights.values(), 0.05));
+  // 나올 수 있는 값이 size개보다 적으면(한 값으로 정답이 정해지는 때 — 5차시의 1층 칸 수가 3이면 늘 6개) 정답 곁의 수로 채운다
+  if (weights.size <= size) {
+    const out = new Set(weights.keys());
+    for (const v of rng.shuffle([total - 1, total + 1, total + 2, total - 2, total + 3, total - 3])) if (out.size < size && v > 0 && !avoid.includes(v)) out.add(v);
+    return [...out].sort((a, b) => a - b);
+  }
+  // 보기에 들 확률 π(v) = size·p(v) — 1을 넘는 값은 1로 줄이고 나머지에 나눈다
+  const sum = [...weights.values()].reduce((a, b) => a + b, 0);
+  let pis = new Map([...weights].map(([v, p]) => [v, (size * p) / sum]));
+  for (let guard = 0; guard < 8 && [...pis.values()].some((x) => x > 1 + 1e-9); guard += 1) {
+    const over = [...pis].filter(([, x]) => x >= 1);
+    const rest = [...pis].filter(([, x]) => x < 1);
+    const left = size - over.length;
+    const restSum = rest.reduce((a, [, x]) => a + x, 0);
+    pis = new Map([...over.map(([v]) => [v, 1]), ...rest.map(([v, x]) => [v, (x * left) / restSum])]);
+  }
+  let options = null;
+  for (let t = 0; t < Math.max(1, tries); t += 1) {
+    const order = rng.shuffle([...pis.keys()]);
+    let acc = 0;
+    const spans = order.map((v) => {
+      const from = acc;
+      acc += pis.get(v);
+      return { v, from, to: acc };
+    });
+    spans[spans.length - 1].to = size; // 더한 값의 반올림 오차를 없앤다(합은 size)
+    const own = spans.find((x) => x.v === total);
+    const pos = own.from + rng.next() * (own.to - own.from);
+    const u = pos - Math.floor(pos);
+    const picked = Array.from({ length: size }, (_, j) => spans.find((x) => u + j >= x.from && u + j < x.to)?.v).filter((v) => v != null);
+    options = [...new Set(picked)].sort((a, b) => a - b);
+    if (prefer.length === 0 || prefer.some((v) => v !== total && options.includes(v))) break;
+  }
+  return options;
+}
+
+/** 단계마다 정답 값의 분포(시드 20,000개로 잰 것 — 모양을 만드는 규칙이 바뀌면 단위 검사가 알려 준다) */
+export const COUNT_PRIOR = Object.freeze({ 5: 0.14, 6: 0.187, 7: 0.203, 8: 0.182, 9: 0.158, 10: 0.129 });
+export const LAYER_COUNT_PRIOR = Object.freeze({ 6: 0.147, 7: 0.1, 8: 0.154, 9: 0.21, 10: 0.195, 11: 0.193 });
+/**
+ * 함정 값이 보일 때의 정답 분포(시드 20,000개로 잰 것): 2차시는 위에서 본 모양의 칸 수마다, 5차시는 1층 모양의 칸 수마다.
+ * 함정 보기를 판마다 한 번 이상 만나게 하면(spec-grade6 15-8 · 4절 오개념 보기) 그 값이 보기에 늘 보이므로 나머지 보기는 이 분포에서 뽑는다
+ */
+export const COUNT_BY_SPOTS = Object.freeze({
+  3: { 5: 0.291, 6: 0.303, 7: 0.243, 8: 0.119, 9: 0.045 },
+  4: { 5: 0.074, 6: 0.169, 7: 0.227, 8: 0.24, 9: 0.179, 10: 0.111 },
+  5: { 6: 0.052, 7: 0.138, 8: 0.222, 9: 0.296, 10: 0.292 },
+  6: { 7: 0.051, 8: 0.154, 9: 0.316, 10: 0.479 },
+});
+export const LAYER_COUNT_BY_FLOOR = Object.freeze({
+  3: { 6: 1 },
+  4: { 7: 0.336, 8: 0.331, 9: 0.333 },
+  5: { 8: 0.154, 9: 0.234, 10: 0.38, 11: 0.232 },
+  6: { 9: 0.137, 10: 0.298, 11: 0.565 },
+});
 
 /**
- * blocks-count의 보기 넷(작은 수부터).
- * 정답이 크기 순으로 몇째인지(= 놓이는 자리)를 먼저 뽑는다 — 함정 값(보이는 것만 센 수, 위에서 본 모양의 칸 수)은 늘 정답보다 작아서,
- * 함정을 늘 넣고 남는 칸을 큰 수로 채우면 정답이 늘 "끝에서 둘째"가 된다(자리가 답을 알려 준다).
- * 정답보다 작은 보기 rank개: 함정 값부터(숨겨진 것이 있으면 보이는 것만 센 수 먼저) 넣는다.
- * 정답보다 큰 보기 3 − rank개: 함정 값과 같은 꼴로 떨어진 수(MIRROR_TRAPS)부터 넣는다 — 보기의 값과 간격만 보고는 위아래가 갈리지 않게.
- * 모자라면 위·아래 모두 같은 거리 분포(FILL_GAPS)에서 채운다. 작은 수가 모자라면(정답이 아주 작을 때) 큰 수로 채운다.
- * 검사: 시드 1,000개에서 정답 자리마다 15~35%, 값만 보는 규칙(가장 큰/작은/가운데, 이어진 수 묶음, 큰 간격의 앞뒤, 가장 큰 수 − 3 …)이 25 ± 10%
+ * blocks-count의 보기 넷(작은 수부터) — 정답 분포에서 뽑는다(neutralCountOptions, R1-1).
+ * 함정 값(보이는 것만 센 수 — 숨겨진 쌓기나무를 빼먹음, 위에서 본 모양의 칸 수)이 정답과 다르면 그 값이 들도록 세 번까지 다시 뽑는다.
+ * withSpots(한 판에 한 문항 — makeCountQuestions가 고름): "위에서 본 모양의 칸 수" 보기를 꼭 넣고(오개념 "바닥에 닿은 면"을 판마다 한 번 이상 만나게 —
+ * spec-grade6 4절·15-8), 나머지 셋은 그 칸 수가 보일 때의 정답 분포(COUNT_BY_SPOTS)에서 뽑는다.
+ * (예전 방법: 정답보다 작은 보기의 수를 먼저 뽑고 함정부터 채우고, 큰 쪽은 함정과 같은 꼴로 떨어진 수 — 꼴은 고르게 됐지만 정답이 좁은 범위에 몰려
+ * "6.5에 가장 가까운 보기" 52.7%, 가장 작은·가장 큰 보기로 배운 표 61% — review-blocks-r1 R1-1)
+ * 검사(단위): 시드 3,000개에서 판마다 칸 수 보기가 한 번 이상, 값·꼴만 보는 규칙들이 찍기(25%)에서 +10%p 안, 숨겨진 쌓기나무가 있는 문항의 70% 이상에 "보이는 것만 센 수"
  */
-export function countOptions(rng, { total, seen, spots }) {
-  const rank = rng.int(0, 3);
-  const used = new Set([total]);
-  const below = [];
-  const above = [];
-  const add = (list, value) => {
-    if (value <= 0 || used.has(value)) return;
-    list.push(value);
-    used.add(value);
-  };
-  for (const trap of [seen, spots]) if (below.length < rank && trap < total) add(below, trap);
-  for (const far of rng.pick(MIRROR_TRAPS)) if (above.length < 3 - rank && far > 0) add(above, total + far);
-  for (let guard = 0; below.length < rank && guard < 60; guard += 1) add(below, total - rng.pick(FILL_GAPS));
-  for (let guard = 0; below.length + above.length < 3 && guard < 60; guard += 1) add(above, total + rng.pick(FILL_GAPS));
-  return [...below, total, ...above].sort((a, b) => a - b);
+export function countOptions(rng, { total, seen, spots, withSpots = false }) {
+  if (withSpots && spots > 0 && spots < total) {
+    const others = neutralCountOptions(rng, { total, prior: COUNT_BY_SPOTS[spots] ?? COUNT_PRIOR, size: 3, avoid: [spots], prefer: seen < total && seen !== spots ? [seen] : [], tries: 3 });
+    return [spots, ...others].sort((a, b) => a - b);
+  }
+  return neutralCountOptions(rng, { total, prior: COUNT_PRIOR, prefer: [seen, spots].filter((v) => v < total), tries: 3 });
 }
 
 function makeCountQuestions(stage, rng) {
@@ -454,6 +503,7 @@ function makeCountQuestions(stage, rng) {
     ...Array.from({ length: half }, (_, i) => draw(true, hiddenFallbacks[i % 2])),
     ...Array.from({ length: stage.count - half }, (_, i) => draw(false, openFallbacks[i % 2])),
   ]);
+  const spotsAt = rng.int(0, targets.length - 1); // "위에서 본 모양의 칸 수" 보기를 꼭 넣는 문항(판마다 하나 — 다른 문항에도 들 수 있다)
   return targets.map((target, i) => {
     const total = count(target);
     const hidden = hiddenCells(target);
@@ -465,7 +515,7 @@ function makeCountQuestions(stage, rng) {
       hidden,
       spots,
       seen: total - hidden.length,
-      options: countOptions(rng, { total, seen: total - hidden.length, spots }),
+      options: countOptions(rng, { total, seen: total - hidden.length, spots, withSpots: i === spotsAt }),
       expected: total,
     };
   });
@@ -1572,24 +1622,17 @@ function makeLayerViewQuestions(stage, rng) {
 }
 
 /**
- * 층별 모양만 보고 개수 고르기의 보기 넷(작은 수부터).
- * 함정 값은 늘 정답보다 작은 두 수다: 맨 위층을 빠뜨린 수(total − top, 맨 위층은 한두 칸이라 정답 바로 아래가 잦다)와 1층 모양의 칸 수(floor).
- * 정답의 자리를 먼저 뽑고 남는 칸을 따로 채우면, 함정 값이 늘 정답 바로 아래·조금 아래에 있어 보기의 간격만 보고도 정답 자리가 드러난다
- * (예전 방법은 큰 쪽에 함정 값의 거울 total + top · total + (total − floor)를 두어 정답이 "다른 두 보기의 한가운데인 수"인 때가 많았다 —
- * 그 꼴만 따라 고르면 47~53%, 간격 셋으로 배운 표는 70% — review-blocks-s3 S3-1).
- * 그래서 보기 넷을 늘 같은 꼴 {x, x + top, x + d, x + top + d}(d = total − floor: 1층 위에 쌓인 수)로 만들고, 그 네 자리 가운데
- * 정답이 놓일 자리를 고르게 뽑는다. 꼴은 정답의 자리와 상관없이 같으므로 보기의 값과 간격만 보고 고르는 어떤 규칙도 찍기(25%)와 같고,
- * 함정은 정답이 가장 큰 수이면 둘 다, 둘째로 큰 수이면 1층 모양의 칸 수, 둘째로 작은 수이면 맨 위층을 빠뜨린 수가 들고, 가장 작은 수이면 없다(함정 든 문항 75%).
- * top < d(맨 위층은 1층 위에 쌓인 것의 일부)라 네 수는 늘 서로 다르다. 모두 1 이상이 되지 않는 자리(floor ≤ top)는 뽑지 않는다
+ * 층별 모양만 보고 개수 고르기의 보기 넷(작은 수부터) — 함정 값과 정답 분포(neutralCountOptions, R1-1).
+ * "1층 모양의 칸 수"(floor — 오개념 "바닥에 닿은 면") 보기는 늘 넣는다: 이 단계는 개수 문항이 한 판에 하나라 판마다 한 번 이상 만나려면 늘이다(spec-grade6 4절·15-8).
+ * 나머지 셋은 그 1층 칸 수가 보일 때의 정답 분포(LAYER_COUNT_BY_FLOOR)에서 뽑는다. 맨 위층을 빠뜨린 수(total − top)는 그 분포 안에 자주 있어 저절로 든다(약 60%).
+ * 한계(값만 보고 맞히기): 1층 칸 수가 보이면 이 단계의 모양에서는 정답이 좁혀진다(1층 3칸이면 늘 6개, 6칸이면 11개가 57%) — 보기를 어떻게 골라도
+ * 1층 칸 수마다 정답을 외운 사람은 약 49%까지 맞힌다(계산). 찍기 자리·가까운 수처럼 외우지 않는 규칙은 33% 안팎(정답은 1층 칸 수보다 늘 크다)
+ * (예전 방법 S3-1: 늘 같은 꼴 {x, x + top, x + d, x + top + d}에 정답 자리를 고르게 — 가장 작은·가장 큰 보기로 배운 표 77% — review-blocks-r1 R1-1)
  */
 export function layerCountOptions(rng, { total, top, floor }) {
-  const d = total - floor;
-  const slots = [[0, top, d, top + d], [-top, 0, d - top, d], [-d, top - d, 0, top], [-top - d, -d, -top, 0]]
-    .map((offsets) => offsets.map((k) => total + k))
-    .filter((values) => values.every((v) => v > 0) && new Set(values).size === 4);
-  // (이 단계의 모양은 3층까지 쌓여 있어 늘 네 자리가 모두 된다. 아니면 되는 자리에서, 하나도 없으면 정답부터 이어진 수)
-  const values = slots.length === 4 ? slots[rng.int(0, 3)] : slots.length ? rng.pick(slots) : [0, 1, 2, 3].map((k) => total + k);
-  return [...values].sort((a, b) => a - b);
+  if (!(floor > 0 && floor < total)) return neutralCountOptions(rng, { total, prior: LAYER_COUNT_PRIOR, prefer: [total - top], tries: 3 });
+  const others = neutralCountOptions(rng, { total, prior: LAYER_COUNT_BY_FLOOR[floor] ?? LAYER_COUNT_PRIOR, size: 3, avoid: [floor] });
+  return [floor, ...others].sort((a, b) => a - b);
 }
 
 /**

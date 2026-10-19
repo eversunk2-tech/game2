@@ -21,6 +21,7 @@ import { playPlace } from './play-place.js';
 import { heroArt, miniNet, stageThumb } from './thumbs.js';
 import { BLOCK_HOW_TO, BLOCK_LESSONS, BLOCK_STAGES } from './blocks/index.js'; // 쌓기나무 영역(6학년): 차시·단계 목록(바탕 묶음)
 import { BLOCK_BADGES } from './blocks/index.js'; // 쌓기나무 도장 셋(spec-grade6 8절 — 도장판 16칸): 숨겨진 쌓기나무 찾기 · 세 방향의 눈 · 층층이 쌓기
+import { BLOCK_FREE_STAGES } from './blocks/index.js'; // 자유 쌓기(spec-grade6 15-19 — F1): 쌓기나무 영역 단계 지도 맨 위의 넓은 카드(엔진의 자유 단계)
 // 쌓기나무의 플레이(문제 만들기·판정·화면)는 그 영역의 단계에 들어갈 때 받는다 — 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(spec-grade6 7-4절, B0b)
 const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));
 import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES } from './grade6/index.js'; // 각기둥의 전개도 영역(6학년): 차시·단계 목록(바탕 묶음)
@@ -150,6 +151,7 @@ const AREAS = [
     title: '쌓기나무',
     note: '6학년 2학기 · 공간과 입체',
     lessons: ['blocks-look', 'blocks-top', 'blocks-three', 'blocks-number', 'blocks-layer'],
+    free: ['blocks-free'], // 자유 쌓기: 1차시 위의 넓은 카드 — 차시·별·잠금·점수 없음(spec-grade6 15-19 결정 3)
     art: areaArt('blocks'),
     howTo: BLOCK_HOW_TO, // 쌓기나무 차시의 조작
   },
@@ -197,7 +199,7 @@ createGameApp({
     badges: BADGES,
   },
   collections: COLLECTIONS,
-  stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES, ...PRISM_STAGES],
+  stages: [...STAGES.map((stage) => ({ ...stage, thumb: stageThumb(stage.kind) })), ...BLOCK_STAGES, ...PRISM_STAGES, ...BLOCK_FREE_STAGES],
   preload: [BLOCKS_PLAY.preload, PRISM_PLAY.preload],
   playStage(stage, ctx) {
     // 쌓기나무 단계는 blocks/가 문항도 화면도 만든다(받은 뒤에 — 받는 동안은 엔진의 "불러오는 중")

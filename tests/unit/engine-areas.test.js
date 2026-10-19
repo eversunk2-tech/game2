@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { AREA_KEY, areaLabel, areaLine, areaOfLesson, gradeCardLabel, planAreas, planGrades, startAreaId, startGrade } from '../../src/shared/core/areas.js';
+import { AREA_KEY, areaLabel, areaLine, areaOfFree, areaOfLesson, gradeCardLabel, planAreas, planGrades, startAreaId, startGrade } from '../../src/shared/core/areas.js';
 import { lessonChipText } from '../../src/shared/ui/app.js';
 import { loadGames } from '../../scripts/lib/games.mjs';
 
@@ -146,4 +146,33 @@ test('입체도형 공방(net-workshop) 게임 정보: 새 이름·쌓기나무 
   assert.equal((cover.match(/<polygon /g) ?? []).length, 9); // 쌓기나무 3개 × 보이는 면 3
   const html = await readFile(new URL('../../src/games/net-workshop/index.html', import.meta.url), 'utf8');
   assert.match(html, /<title>입체도형 공방<\/title>/);
+});
+
+// ── 자유 공간(F1 — docs/engine.md 2절 "자유 공간", spec-grade6 15-19 결정 3): 영역의 free에 적은 자유 단계(free: true)는 그 영역의 지도 맨 위 카드 ──
+test('자유 단계: 영역의 free 순서대로 그 영역에 붙고(areaOfFree), 차시·ready에는 들지 않는다. free가 없는 영역은 빈 목록', () => {
+  const FREE = [{ id: 'blocks-free', free: true }, { id: 'blocks-free2', free: true }];
+  const areas = AREAS.map((a) => (a.id === 'blocks' ? { ...a, free: ['blocks-free2', 'blocks-free'] } : a));
+  const plan = planAreas(areas, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS, FREE);
+  assert.deepEqual(plan.map((e) => e.free.map((st) => st.id)), [[], [], ['blocks-free2', 'blocks-free']]);
+  assert.deepEqual(plan.map((e) => [e.area.id, e.ready, e.groups.length]), [['net5', true, 2], ['net6', false, 0], ['blocks', true, 2]]);
+  assert.equal(areaOfFree(plan, 'blocks-free').area.id, 'blocks');
+  assert.equal(areaOfFree(plan, 'cube-1'), null);
+  assert.equal(areaOfFree(null, 'blocks-free'), null);
+  // 자유 단계만 있고 차시가 없는 영역은 열리지 않는다(준비 중)
+  const only = planAreas([{ id: 'a', title: 'A', lessons: ['cube', 'cuboid', 'look', 'top'] }, { id: 'z', title: 'Z', lessons: [], free: ['blocks-free'] }], groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS, [FREE[0]]);
+  assert.equal(only[1].ready, false);
+  // 자유 단계를 주지 않은 옛 부름(인자 셋)은 그대로다
+  assert.deepEqual(planAreas(AREAS, groupsOf(['cube', 'cuboid', 'look', 'top']), LESSONS).map((e) => e.free), [[], [], []]);
+});
+
+test('자유 단계 정의의 실수는 오류: free가 배열이 아님, 단계 목록에 없는 id, 두 영역에 든 자유 단계, 어느 영역에도 없는 자유 단계', () => {
+  const groups = groupsOf(['cube', 'cuboid', 'look', 'top']);
+  const FREE = [{ id: 'f1', free: true }];
+  const withFree = (free, id = 'blocks') => AREAS.map((a) => (a.id === id ? { ...a, free } : a));
+  assert.throws(() => planAreas(withFree('f1'), groups, LESSONS, FREE), /free는 자유 단계 id 목록/);
+  assert.throws(() => planAreas(withFree(['nope']), groups, LESSONS, FREE), /자유 단계 nope가 단계 목록/);
+  assert.throws(() => planAreas(AREAS.map((a) => ({ ...a, free: ['f1'] })), groups, LESSONS, FREE), /자유 단계 f1가 두 영역/);
+  assert.throws(() => planAreas(AREAS, groups, LESSONS, FREE), /자유 단계 f1가 어느 영역의 free에도 없어요/);
+  assert.doesNotThrow(() => planAreas(withFree(['f1', 'f1']), groups, LESSONS, FREE)); // 같은 영역에 두 번 적어도 카드는 한 장
+  assert.equal(planAreas(withFree(['f1', 'f1']), groups, LESSONS, FREE).find((e) => e.area.id === 'blocks').free.length, 1);
 });

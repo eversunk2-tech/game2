@@ -21,6 +21,7 @@ import {
   AREA_KEY,
   areaLabel,
   areaLine,
+  areaOfFree,
   areaOfLesson,
   gradeCardLabel,
   planAreas,
@@ -577,6 +578,12 @@ export function createGameApp({
   if (heroArt != null && typeof heroArt !== 'function') throw new Error('createGameApp: heroArt는 (h) => 요소 함수예요.');
   const allIds = allStages.map((s) => s.id);
   if (new Set(allIds).size !== allIds.length) throw new Error('createGameApp: 단계 id가 겹쳐요.');
+  // 자유 단계(free: true — 선택 기능, docs/engine.md 2절 "자유 공간"): 맞고 틀림이 없는 탐구 공간. 차시·진도(별·잠금·다음 단계)·별 합계·도장 판정·
+  // 학습 기록·점수에 들지 않고, 단계 지도 맨 위(영역을 쓰면 그 영역의 지도 — 영역의 free)에 넓은 카드로 보인다. 쓰지 않는 게임은 아래가 모두 지금과 같다
+  const freeStages = allStages.filter((s) => s.free === true);
+  const courseStages = allStages.filter((s) => s.free !== true);
+  if (courseStages.length === 0) throw new Error('createGameApp: 자유 단계(free) 말고 단계가 하나는 있어야 해요.');
+  if (freeStages.some((s) => s.challenge)) throw new Error('createGameApp: 자유 단계는 도전 주문서(challenge)가 될 수 없어요.');
   if (rewardOptions != null && typeof rewardOptions !== 'object') throw new Error('createGameApp: rewards는 { ranks, thresholds, badges, off } 객체예요.');
   const introPlan = planIntro(introDef, game); // 게임 인트로(선택). null이면 인트로가 없다 — 아래 화면이 모두 지금과 같다
   // 처음 화면·학년 화면 맨 아래 줄(선택 — spec-grade6 15-13·15-14): 선생님용 안내 페이지 주소, 저작권 글. 주지 않는 게임은 화면이 지금과 같다
@@ -593,7 +600,7 @@ export function createGameApp({
   const collections = normalizeCollections(collectionDefs);
 
   // 이번에 보이는 단계 (차시 묶음이면 차시 순서, ?lesson=이면 그 차시만. 묶음마다 일반 단계 먼저, 도전 주문서는 뒤)
-  const plan = planLessons(allStages, lessons, options.lessonId);
+  const plan = planLessons(courseStages, lessons, options.lessonId);
   const { stages } = plan;
   const stageIds = stages.map((s) => s.id);
   const groups = plan.groups ?? [{ lesson: null, number: null, stages }];
@@ -609,7 +616,7 @@ export function createGameApp({
 
   // 영역(선택 기능, core/areas.js): 보이는 영역과 그 차시 묶음. 영역을 쓰지 않는 게임은 null — 아래 화면이 모두 지금과 같다.
   // ?lesson=으로 한 차시만 열면 영역 카드·탭은 없다(areaMode가 아님). 그때도 놀이 방법·차시 칩은 그 차시가 든 영역의 것을 쓴다
-  const areaPlan = planAreas(areas, Array.isArray(lessons) && lessons.length ? planLessons(allStages, lessons, null).groups : [], lessons);
+  const areaPlan = planAreas(areas, Array.isArray(lessons) && lessons.length ? planLessons(courseStages, lessons, null).groups : [], lessons, freeStages);
   const areaMode = Boolean(areaPlan && !plan.current);
   const lessonArea = plan.current ? areaOfLesson(areaPlan, plan.current.id) : null;
   // 학년(영역에 grade가 있을 때): 처음 화면에 학년 카드 → 학년 화면(그 학년의 영역 카드) → 영역의 단계 지도
@@ -636,7 +643,7 @@ export function createGameApp({
     rewardStore.save();
   };
   const foundThisVisit = new Set(); // 도감 화면의 "새로!" 꼬리표 (이번에 열어 둔 동안 찾은 칸)
-  const lessonsForBadges = badgeLessons(allStages, lessons);
+  const lessonsForBadges = badgeLessons(courseStages, lessons);
   const lowFx = isLowFx({ fx: options.fx });
   const quietFx = () => lowFx || prefersReducedMotion();
 
@@ -1224,6 +1231,42 @@ export function createGameApp({
     );
   }
 
+  /**
+   * 자유 공간 카드(free: true 단계 — spec-grade6 15-19 결정 3): 단계 지도 맨 위의 넓은 카드 한 장. 작은 그림 · 제목 · 목표 · [들어가기].
+   * 차시 번호·단계 번호·별·잠금·"여기부터!"가 없고(늘 열려 있다), 모은 별·차시 수·도장에 들지 않는다
+   */
+  function freeCards(list) {
+    if (!list || list.length === 0) return null;
+    return h('ul', { class: 'free-space-list', 'aria-label': '혼자 탐구하는 곳' }, list.map((stage) => {
+      let thumb = null;
+      if (typeof stage.thumb === 'function') {
+        try {
+          thumb = stage.thumb(h);
+        } catch (error) {
+          console.error(error);
+        }
+      }
+      return h('li', null,
+        h('button', {
+          type: 'button',
+          class: 'free-space-card',
+          dataset: { stage: stage.id },
+          onclick: () => {
+            sfx.play('click');
+            startStage(stage);
+          },
+        },
+          thumb && h('span', { class: 'free-space-art', 'aria-hidden': 'true' }, thumb),
+          h('span', { class: 'free-space-body' },
+            h('span', { class: 'free-space-title' }, stage.title),
+            stage.goal && h('span', { class: 'free-space-goal' }, stage.goal),
+          ),
+          h('span', { class: 'go-pill', 'aria-hidden': 'true' }, '들어가기', icon('play')),
+        ),
+      );
+    }));
+  }
+
   function challengeRow(list) {
     if (list.length === 0) return null;
     return h('div', { class: 'challenge-row' },
@@ -1281,6 +1324,8 @@ export function createGameApp({
           h('p', { class: 'chip chip-ink chip-lg star-total' }, starIcon(true), `모은 별 ${progress.totalStars()} / ${progress.maxStars}`),
         ),
       ),
+      // 자유 공간 카드(영역을 쓰지 않는 게임 — 영역을 쓰면 그 영역의 지도에). 한 차시 주소(?lesson=)에는 없다
+      !plan.current && !areaPlan && freeCards(freeStages),
       plan.groups
         // 차시 칩: 차시 정의의 chip, 없으면 차시 순서대로 "n차시" (영역이 있는 게임을 ?lesson=으로 열어도 지금과 같다)
         ? plan.groups.map((g) => lessonGroup(g, lessonChipText(g.lesson, g.number)))
@@ -1340,7 +1385,8 @@ export function createGameApp({
       panel.dataset.area = currentArea;
       // 차시가 하나뿐인 영역은 차시 칩을 붙이지 않는다(영역 탭과 차시 제목이 알려 준다 — 수업 주소의 "2차시"와 어긋나는 "1차시"가 생기지 않게, B0a-2)
       const many = entry.groups.length > 1;
-      panel.replaceChildren(...entry.groups.map((g, i) => lessonGroup(g, many ? lessonChipText(g.lesson, i + 1, { useChip: false }) : null)));
+      // 맨 위에 그 영역의 자유 공간 카드(영역의 free — 없으면 아무것도 없다)
+      panel.replaceChildren(...[freeCards(entry.free), ...entry.groups.map((g, i) => lessonGroup(g, many ? lessonChipText(g.lesson, i + 1, { useChip: false }) : null))].filter(Boolean));
       howToButton.hidden = howToLines(entry).length === 0;
     }
     function pick(id) {
@@ -1397,8 +1443,10 @@ export function createGameApp({
   };
 
   function startStage(stage) {
+    // 자유 단계(free: true): 점수·별·학습 기록이 없는 탐구 공간 — 머리에 연속·솜씨 점수 칸이 없고, 답·설명·도감 알림과 finish는 기록하지 않는다
+    const free = stage.free === true;
     // 영역: 이 단계가 든 영역을 "지난번에 하던 영역"으로 기억하고(처음 화면의 "여기부터!"), 단계 지도로 돌아가면 그 영역의 지도
-    const stageArea = areaOfLesson(areaPlan, stage.lesson);
+    const stageArea = free ? areaOfFree(areaPlan, stage.id) : areaOfLesson(areaPlan, stage.lesson);
     if (stageArea) {
       if (areaMode) {
         currentArea = stageArea.area.id;
@@ -1408,8 +1456,8 @@ export function createGameApp({
     }
     const area = h('div', { class: 'play-area' });
     const meta = h('div', { class: 'play-meta' });
-    const chipText = stage.chip ?? (stage.challenge ? '도전 주문서' : `${stageNumber(stage)}단계`);
-    show(h('section', { class: `screen screen-play${stage.challenge ? ' is-challenge' : ''}` },
+    const chipText = free ? stage.chip ?? null : stage.chip ?? (stage.challenge ? '도전 주문서' : `${stageNumber(stage)}단계`);
+    show(h('section', { class: `screen screen-play${stage.challenge ? ' is-challenge' : ''}${free ? ' is-free' : ''}` },
       h('div', { class: 'play-header' },
         button('← 단계 선택', () => {
           log.cancelStage();
@@ -1418,7 +1466,7 @@ export function createGameApp({
         h('div', { class: 'play-header-text' },
           h('div', { class: 'play-title-row' },
             h('h2', { class: 'play-title' }, stage.title),
-            chipText !== stage.title && h('span', { class: 'chip chip-butter play-chip' }, chipText),
+            chipText && chipText !== stage.title && h('span', { class: 'chip chip-butter play-chip' }, chipText),
           ),
           stage.goal && h('p', { class: 'play-goal' }, stage.goal),
         ),
@@ -1440,7 +1488,7 @@ export function createGameApp({
       screenCleanups.push(() => headerWatch.disconnect());
     }
 
-    log.startStage(stage);
+    if (!free) log.startStage(stage);
     const startedAt = Date.now();
     // 다시 하기 점수 규칙: 판을 시작할 때 이미 별 3개인 단계는 연습 점수가 없다 (새로 찾음은 그대로)
     const play = createPlayReward({ startStars: progress.getStars(stage.id) });
@@ -1508,9 +1556,9 @@ export function createGameApp({
     const streakText = h('span', { class: 'streak-n' }, '');
     const streakBox = h('span', { class: 'meta-box meta-streak', hidden: true }, icon('spark'), h('b', null, streakText));
     const xpText = h('b', null, '+0');
-    if (rewardsOn) meta.append(streakBox, h('span', { class: 'meta-box meta-xp' }, h('small', null, '솜씨 점수'), xpText));
+    if (rewardsOn && !free) meta.append(streakBox, h('span', { class: 'meta-box meta-xp' }, h('small', null, '솜씨 점수'), xpText));
     function updateMeta() {
-      if (!rewardsOn) return;
+      if (!rewardsOn || free) return;
       xpText.textContent = `+${play.xp()}`;
       const n = play.streak();
       streakBox.hidden = n < 2;
@@ -1530,6 +1578,11 @@ export function createGameApp({
 
     const collectionsCtx = {
       collect(id, itemId) {
+        if (free) {
+          // 자유 단계는 도감에 올리지 않는다(점수 없음) — 지금 칸 수만 알려 준다
+          const s0 = collectionsCtx.collection(id);
+          return { isNew: false, count: s0.found.size, total: s0.total };
+        }
         const r = collectItem(collectionState, collections, id, itemId, { at: Date.now(), stage: stage.id });
         if (!r.known) return { isNew: false, count: r.count, total: r.total };
         if (r.isNew) {
@@ -1572,7 +1625,7 @@ export function createGameApp({
       rng: createRng(options.seed != null ? `${options.seed}:${stage.id}` : `${Date.now()}:${stage.id}`),
       log: {
         answer: (entry) => {
-          if (finished) return;
+          if (finished || free) return; // 자유 단계는 학습 기록이 없다
           log.answer(entry);
           const step = play.answer(entry ?? {});
           if (timerToggle) timerToggle.disabled = true; // 첫 답 뒤에는 켜고 끄기를 바꾸지 않는다
@@ -1589,7 +1642,7 @@ export function createGameApp({
       /** 학습 행동 알림: 'explain'(설명, { correct, itemId }), 'inspect'(까닭 장면을 돌려 보거나 접어 봄) */
       reward: {
         event(name, data) {
-          if (finished) return 0;
+          if (finished || free) return 0;
           const xp = play.event(name, data);
           saveInstant();
           updateMeta();
@@ -1633,6 +1686,11 @@ export function createGameApp({
       finish(result = {}) {
         if (finished) return;
         finished = true;
+        if (free) {
+          // 자유 단계에는 결과·별·기록이 없다: 단계 지도로 돌아간다
+          show(stageSelectScreen());
+          return;
+        }
         const cleared = result.cleared ?? true;
         const fromAccuracy = result.stars == null;
         const stars = cleared ? clampStars(result.stars ?? starsFromAccuracy(log.currentStats().accuracy)) : 0;
@@ -2001,7 +2059,9 @@ export function createGameApp({
       renderSoundButton();
       renderRankChip();
       const direct = options.stageId ? stages.find((s) => s.id === options.stageId) : null;
-      if (direct && progress.isUnlocked(direct.id)) startStage(direct);
+      const directFree = options.stageId ? freeStages.find((s) => s.id === options.stageId) : null; // 자유 단계는 늘 열려 있다(?stage=blocks-free)
+      if (directFree) startStage(directFree);
+      else if (direct && progress.isUnlocked(direct.id)) startStage(direct);
       else if (areaMode && areaEntry(options.areaId)?.ready) openArea(options.areaId); // ?area=<id>: 그 영역의 단계 지도로 바로 (없는·준비 중 영역이면 아래로)
       else if (areaMode && gradeEntry(Number(options.gradeId))?.ready) openGrade(Number(options.gradeId)); // ?grade=<n>: 그 학년 화면으로
       else if (introPlan && opensWithIntro(options)) openIntro(); // 게임 인트로: 수업 주소(?stage=·?lesson=·?area=·?grade=)가 없을 때만

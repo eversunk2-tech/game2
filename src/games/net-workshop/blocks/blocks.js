@@ -11,7 +11,8 @@ export const COLS = 3;
 export const ROWS = 3;
 export const MAX_H = 3;
 
-export const emptyMap = () => Array.from({ length: ROWS }, () => new Array(COLS).fill(0));
+/** 빈 판 (자유 쌓기는 판 크기를 준다 — 14×14·6×6. 주지 않으면 차시의 3×3) */
+export const emptyMap = (cols = COLS, rows = ROWS) => Array.from({ length: rows }, () => new Array(cols).fill(0));
 export const cloneMap = (h) => h.map((row) => [...row]);
 export const mapKey = (h) => h.map((row) => row.join('')).join('/');
 export const sameMap = (a, b) => mapKey(a) === mapKey(b);
@@ -417,12 +418,12 @@ const inBoard = (h, x, y) => y >= 0 && y < h.length && x >= 0 && x < h[y].length
 /**
  * 누른 곳 → 바뀌는 자리.
  * hit: { kind: 'tile', x, y }(판의 자리) 또는 { kind: 'face', x, y, z, face: 'top' | 'bottom' | 'front' | 'back' | 'left' | 'right' }
- * mode: 'add'(쌓기) · 'remove'(빼기)
- * → { x, y, z }(놓일 칸 또는 빠질 칸) 또는 { error: 'full'(3층이 참) | 'outside'(판 밖) | 'empty'(뺄 것이 없음), x, y }
+ * mode: 'add'(쌓기) · 'remove'(빼기) · maxH: 쌓을 수 있는 높이(차시 3층, 자유 쌓기 10층·6층)
+ * → { x, y, z }(놓일 칸 또는 빠질 칸) 또는 { error: 'full'(maxH층이 참) | 'outside'(판 밖) | 'empty'(뺄 것이 없음), x, y }
  *   쌓기: 판의 자리·윗면·아랫면은 그 자리의 맨 위에, 옆면은 그 면 쪽 이웃 자리의 맨 위에(아래로 내려앉는다)
  *   빼기: 어느 면을 누르든 그 자리의 맨 위 쌓기나무
  */
-export function targetOf(h, hit, mode = 'add') {
+export function targetOf(h, hit, mode = 'add', maxH = MAX_H) {
   let { x, y } = hit;
   if (mode === 'remove') {
     if (!inBoard(h, x, y) || h[y][x] === 0) return { error: 'empty', x, y };
@@ -434,13 +435,13 @@ export function targetOf(h, hit, mode = 'add') {
     y += step[1];
   }
   if (!inBoard(h, x, y)) return { error: 'outside', x, y };
-  if (h[y][x] >= MAX_H) return { error: 'full', x, y };
+  if (h[y][x] >= maxH) return { error: 'full', x, y };
   return { x, y, z: h[y][x] };
 }
 
 /** 그 자리의 맨 위에 하나 놓은 새 높이 지도 (못 놓으면 null) */
-export function place(h, { x, y }) {
-  if (!inBoard(h, x, y) || h[y][x] >= MAX_H) return null;
+export function place(h, { x, y }, maxH = MAX_H) {
+  if (!inBoard(h, x, y) || h[y][x] >= maxH) return null;
   const out = cloneMap(h);
   out[y][x] += 1;
   return out;
@@ -454,9 +455,9 @@ export function remove(h, { x, y }) {
   return out;
 }
 
-/** 그 자리를 그 높이로 맞춘 새 높이 지도 (숫자 키 0~3) */
-export function setHeight(h, { x, y }, value) {
-  if (!inBoard(h, x, y) || !Number.isInteger(value) || value < 0 || value > MAX_H) return null;
+/** 그 자리를 그 높이로 맞춘 새 높이 지도 (숫자 키 0~3, 자유 쌓기는 0~9) */
+export function setHeight(h, { x, y }, value, maxH = MAX_H) {
+  if (!inBoard(h, x, y) || !Number.isInteger(value) || value < 0 || value > maxH) return null;
   const out = cloneMap(h);
   out[y][x] = value;
   return out;
