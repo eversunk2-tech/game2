@@ -12,12 +12,13 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`cccf6fb`**(F1 쌓기나무 자유 쌓기 — CI 통과, 두 사이트 확인, 2026-10-19) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **G2 각기둥 4단계 `prism-free` + 도전 `prism-count`**(2026-10-20 사용자 시작 — 15-25) — Build 차례 1(배치 시안)부터 |
+| 지금 도는 것 | **G2 각기둥 4단계 `prism-free` + 도전 `prism-count`**(2026-10-20 사용자 시작 — 15-25) — 시안 B로 정해 Build가 완성하는 중(15-26) |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — G2 각기둥 4단계 + 도전 (2026-10-20 시작)
 
 - 사용자 결정 [spec-grade6.md](games/net-workshop/spec-grade6.md) 15-25(4단계 시작, 도전 `prism-count` 함께 넣기). 지침 [build-brief-g2.md](games/net-workshop/build-brief-g2.md). 작업 폴더 `.worktrees/cuboid`·`track/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g2/`. 차례 1 = 배치 시안만 → 사용자 확인 → "계속".
+- 차례 1 끝(2026-10-20): 시안 `build-g2/shots/compare-*.png`. 사용자 결정 15-26 — `prism-free` **시안 B**(만들 각기둥을 매트 오른쪽 위 창에 크게, 휴대폰은 주문서 맨 위), 도전 시안 그대로 → 같은 Build에게 "계속"(차례 2~: 완성·테스트·커밋). 다음: Build 보고 → Review(`review-brief-g2.md`, 포트 5363~5364, 결과 `review-prism-g2.md`).
 
 ### 끝난 일 — F1 자유 쌓기 (2026-10-19 올림)
 
