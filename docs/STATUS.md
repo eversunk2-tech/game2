@@ -12,13 +12,17 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`cccf6fb`**(F1 쌓기나무 자유 쌓기 — CI 통과, 두 사이트 확인, 2026-10-19) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **G2 각기둥 4단계 `prism-free` + 도전 `prism-count`**(2026-10-20 사용자 시작 — 15-25) — 시안 B로 정해 Build가 완성하는 중(15-26) |
+| 지금 도는 것 | **⏸ 일시정지(2026-10-20, 사용자 "일시정지해줘")** — 도는 서브에이전트·서버 0. G2 Build 차례 2 도중에 멈춤(2절 "일시정지") |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — G2 각기둥 4단계 + 도전 (2026-10-20 시작)
 
 - 사용자 결정 [spec-grade6.md](games/net-workshop/spec-grade6.md) 15-25(4단계 시작, 도전 `prism-count` 함께 넣기). 지침 [build-brief-g2.md](games/net-workshop/build-brief-g2.md). 작업 폴더 `.worktrees/cuboid`·`track/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g2/`. 차례 1 = 배치 시안만 → 사용자 확인 → "계속".
 - 차례 1 끝(2026-10-20): 시안 `build-g2/shots/compare-*.png`. 사용자 결정 15-26 — `prism-free` **시안 B**(만들 각기둥을 매트 오른쪽 위 창에 크게, 휴대폰은 주문서 맨 위), 도전 시안 그대로 → 같은 Build에게 "계속"(차례 2~: 완성·테스트·커밋). 다음: Build 보고 → Review(`review-brief-g2.md`, 포트 5363~5364, 결과 `review-prism-g2.md`).
+- **일시정지(2026-10-20)**: G2 Build를 멈추고 그가 띄운 개발 서버(5301, PID 35790, `.worktrees/cuboid`)를 내림. 다른 실행 없음(5361·5362 비어 있음).
+  - 커밋된 것: **없음** — `track/cuboid`는 `08d7596`(기준) 그대로.
+  - 도중인 것(커밋 안 됨, 작업 폴더에 그대로 둠 — 지우지 말 것): 새 파일 `grade6/edge-board.js`(375줄)·`play-pfree.js`(530)·`prism-free-logic.js`(797)·`prism-free-data.js`·`play-pcount.js`(186)·`prism-count-logic.js`(159), 새 검사 `tests/e2e/net-workshop-prism2.spec.js`(720)·`tests/unit/net-workshop-prism-{free,count}.test.js`·`net-workshop-prism-free-indep.js`, 고친 파일 14개(+338줄 — `grade6/index.js`·`play-parts.js`·`prism-play.js`·`prism-stages.js`·`prism.css`·`main.js`·`view3d.js`와 검사 7개). 마지막 전체 브라우저 검사(보통) 588 통과·**2 실패**·138 건너뜀(20:08) — 고치는 중이었음. 완성 그림 일부 `build-g2/shots-final/`.
+  - "이어서"면: 같은 Build(`a57636f…` — 코디네이터가 멈춤)에게 이어 맡기기, 안 되면 새 Build에게 "`git status`·`git diff`로 지금 파일을 다시 읽고 `build-brief-g2.md` + 15-26대로 차례 2를 이어서, 테스트 셋은 처음부터 다시"로.
 
 ### 끝난 일 — F1 자유 쌓기 (2026-10-19 올림)
 
