@@ -10,11 +10,32 @@
  *   판 옮기기(크롬북) 5.1초 → 120초, 두 손가락(태블릿) 3.0초 → 120초, 펼친 채 창 크기·방향 바꾸기(F1b-1) 27.3초 → 180초, 가장 작은 칸의 "10"(F1b-2) 1.9초
  */
 import { expect, test } from '@playwright/test';
-import { homeUnitFor } from '../../src/games/net-workshop/blocks/block-view.js';
 import { BLOCK_LESSONS, BLOCK_STAGES } from '../../src/games/net-workshop/blocks/blocks-logic.js';
 import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
 
 const FILE = 'net-workshop.html';
+/**
+ * 처음 보기 맞춤의 한 변(F2 — 자유 쌓기 판에 원근, spec-grade6 15-27·15-28). 독립 계산: 눈은 판 가운데(높이 1.5층)에서 판의 긴 변 × 3칸,
+ * 처음 보기(판 돌림 45°, 높이 35.26°)에서 판 n×n과 3층 상자의 꼭짓점 여덟을 원근으로 그린 범위 + 여백(높이 0.8·너비 0.6칸)이 무대에 꽉 차게
+ */
+function perspUnit(w, h, n) {
+  const D = 3 * n;
+  const c = Math.SQRT1_2;
+  const s3 = 1 / Math.sqrt(3);
+  const right = [c, c, 0];
+  const v = [c * Math.sqrt(2 / 3), -c * Math.sqrt(2 / 3), s3];
+  const down = [right[1] * v[2] - right[2] * v[1], right[2] * v[0] - right[0] * v[2], right[0] * v[1] - right[1] * v[0]];
+  const pts = [];
+  for (const x of [0, n]) for (const y of [0, n]) for (const z of [0, 3]) {
+    const q = [x - n / 2, y - n / 2, z - 1.5];
+    const dot = (a) => a[0] * q[0] + a[1] * q[1] + a[2] * q[2];
+    const f = D / (D - dot(v));
+    pts.push([f * dot(right), f * dot(down)]);
+  }
+  const ys = pts.map((p) => p[1]);
+  const side = Math.max(...pts.map((p) => Math.abs(p[0])));
+  return Math.max(8, Math.floor(Math.min(h / (Math.max(...ys) - Math.min(...ys) + 0.8), w / (2 * side + 0.6))));
+}
 const KEY14 = 'edu:net-workshop:free-14x14';
 const KEY6 = 'edu:net-workshop:free-6x6';
 const isTouch = (testInfo) => testInfo.project.name === 'tablet';
@@ -104,8 +125,8 @@ test('판(결정 4·7): 14×14칸, 처음 보기 맞춤 한 변, 오른쪽 좁�
   await openFree(page);
   const b = await board(page);
   expect(b.tiles).toBe(196);
-  expect(b.unit).toBe(homeUnitFor(b.stage.w, b.stage.h, { cols: 14, rows: 14, fitH: 3 }));
-  expect(b.unit).toBeGreaterThanOrEqual(36); // 계획 시안(34~36px)보다 크다 — 1366×768에서 40px
+  expect(b.unit).toBe(perspUnit(b.stage.w, b.stage.h, 14));
+  expect(b.unit).toBeGreaterThanOrEqual(36); // 계획 시안(34~36px)보다 크다 — 1366×768에서 39px(원근 — 원근 없을 때 40px, 가까운 쪽은 더 크다)
   expect(b.out).toBe(0);
   const names = await page.locator('.blk-free-strip button').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? el.textContent.trim()));
   expect(names).toEqual(['쌓기', '빼기', '되돌리기', '모두 치우기', '위에서 본 판', '층별로 벌려 보기', '위ㆍ앞ㆍ옆 모양', '쌓기나무 색 고르기, 지금 노랑']); // F1-6: 제목 글꼴로 그리는 버튼에는 "ㆍ"
@@ -405,7 +426,7 @@ test('휴대폰 390×844: 6×6칸·6층, [위에서 본 판]은 쪽 고르기 �
   await openFree(page);
   const b = await board(page);
   expect(b.tiles).toBe(36);
-  expect(b.unit).toBe(homeUnitFor(b.stage.w, b.stage.h, { cols: 6, rows: 6, fitH: 3 }));
+  expect(b.unit).toBe(perspUnit(b.stage.w, b.stage.h, 6));
   await expect(page.locator('.blk-free-count b')).toHaveText('0'); // 14×14 판의 저장은 휴대폰 판에 보이지 않는다
   expect(await hasHorizontalScroll(page)).toBe(false);
   const strip = await page.locator('.blk-free-strip').boundingBox();
@@ -510,7 +531,7 @@ test('배치(다섯 크기 + 960×768, 처음·위에서 본 판 펼침·끝까�
     const home = await board(page);
     const tiles = phone ? 36 : 196;
     expect([home.out, home.tiles], `${w}×${h}`).toEqual([0, tiles]);
-    expect(home.unit, `${w}×${h}`).toBe(homeUnitFor(home.stage.w, home.stage.h, { cols: phone ? 6 : 14, rows: phone ? 6 : 14, fitH: 3 }));
+    expect(home.unit, `${w}×${h}`).toBe(perspUnit(home.stage.w, home.stage.h, phone ? 6 : 14));
     await check('처음');
     await page.locator('.blk-free-pad').click();
     await settled(page);
@@ -699,8 +720,20 @@ test('펼친 채 창 크기·화면 방향 바꾸기(F1b-1): 무대가 새 크�
       // 엔진이 알림 폭을 화면 폭으로 정해 펼친 판의 아래쪽 칸을 잠깐 가린다 — 엔진은 고치지 않는다. 지금 값을 고정해 더 나빠지지 않게 본다:
       // 펼친 판의 칸만(띠·조작판 버튼은 가리지 않음), 앞 두 줄의 오른쪽 칸 8개(글꼴 흉내 10개 — 알림이 다 올라온 뒤에 잼) 이하, 약 2.9초 뒤 사라짐
       const sideNarrow = w <= 900 && !(await look(page)).tall;
+      // 앞 크기에서 띄운 같은 알림이 아직 떠 있으면(옮기기 횟수에 따라 3초가 안 지났을 수 있다 — F2 원근으로 옮기는 횟수가 바뀜) 사라진 뒤에 새로 띄운다
+      await expect(page.locator('.toast')).toHaveCount(0, { timeout: 5000 });
       await page.locator('.blk-free-strip .blk-mode[data-mode="remove"]').click();
-      const [tx, ty] = (await look(page)).seen.find((k) => k === '7,7') ? [7, 7] : (await look(page)).seen[0].split(',').map(Number);
+      // 누를 빈 판 칸: (7,7)이 보이면 그 칸, 아니면 보이는 첫 칸 — 그 가운데가 버튼(판 옮기기·조작판)에 덮이지 않은 칸이어야 한다
+      // (F2 원근으로 판의 화면 자리가 바뀌어 (7,7)이 [▶] 밑에 들어가는 크기가 생겼다 — 덮인 칸을 누르면 버튼이 눌린다)
+      const seenNow = (await look(page)).seen;
+      const free = await page.evaluate((keys) => keys.filter((k) => {
+        const [x, y] = k.split(',');
+        const tile = document.querySelector(`.blk-free .blk-stage polygon.blk-tile[data-x="${x}"][data-y="${y}"]`);
+        const r = tile.getBoundingClientRect();
+        return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === tile;
+      }), seenNow.includes('7,7') ? ['7,7', ...seenNow] : seenNow);
+      expect(free.length, `${label} 누를 수 있는 빈 칸`).toBeGreaterThan(0);
+      const [tx, ty] = free[0].split(',').map(Number);
       const tb = await page.locator(`.blk-free .blk-stage polygon.blk-tile[data-x="${tx}"][data-y="${ty}"]`).boundingBox();
       await page.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
       await expect(page.locator('.toast')).toContainText('여기에는 뺄 쌓기나무가 없어요.');

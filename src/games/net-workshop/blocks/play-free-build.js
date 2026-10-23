@@ -3,7 +3,9 @@
  * 점수·별·도장·학습 기록 없음(맞고 틀림이 없는 공간 — 엔진의 자유 단계 free: true). 이 기기에 하나 자동 저장(판 크기마다 열쇠 하나 — 결정 5), 다시 들어오면 이어서.
  *
  * 판(결정 4): 크롬북·태블릿 14×14칸·10층, 휴대폰(화면의 짧은 변 600px 미만) 6×6칸·6층 — 들어갈 때 한 번 정한다(도중에 창을 바꿔도 그대로).
- * 처음 크기: 처음 보기(교과서 방향)에서 판과 3층 높이가 무대에 꽉 차게(block-view.js homeUnitFor). [작게 보기]로 전체.
+ * 처음 크기: 처음 보기(교과서 방향)에서 판과 3층 높이가 무대에 꽉 차게(block-view.js homeFitPersp — 원근으로). [작게 보기]로 전체.
+ * 원근(사용자 결정 15-27·15-28): 이 판만 먼 쪽이 작아 보이게 그린다 — "A 약하게"(눈의 거리 = 판의 긴 변 × 3), 바로 위·앞·옆 가까이에서는 줄어
+ *   그 자세에서는 원근 없음(위·앞·옆에서 본 모양 그림과 같은 네모). 1~5차시·도전의 3×3 판은 원근 없이 그대로.
  *
  * 화면 배치(결정 7 — 사용자 요청 "오른쪽의 패널을 작게 … 세로로 한줄로 … 넓은 보드판은 처음엔 보이지 않다가 선택하면 펼쳐지게"):
  *   왼쪽 재단 매트 = 무대가 매트를 꽉 채운다 + [위][앞][옆](왼쪽 위) + 보기 조작판(오른쪽 위) + 펼치는 칸(왼쪽, [위][앞][옆] 아래 —
@@ -22,7 +24,7 @@
 import { icon } from '../../../shared/ui/icons.js';
 import { count, emptyMap, frontView, sideView, topView } from './blocks.js';
 import { createBlockTools } from './block-pad.js';
-import { createBlockView, createViewControls, prefersReducedMotion, svgEl } from './block-view.js';
+import { createBlockView, createViewControls, eyeDistance, homeFitPersp, prefersReducedMotion, svgEl } from './block-view.js';
 
 /** 판 크기 (결정 4): 넓은 판 = 알지오매스와 같은 14×14칸(높이 10층은 Plan이 고름), 휴대폰 = 6×6칸·6층 */
 export const FREE_BOARDS = Object.freeze({
@@ -31,6 +33,8 @@ export const FREE_BOARDS = Object.freeze({
 });
 /** 처음 보기 맞춤의 높이: 판과 3층 높이가 무대에 꽉 차게(결정 4) */
 const FIT_H = 3;
+/** 원근의 세기(사용자 결정 15-28 "A 약하게"): 눈이 판 가운데에서 판의 긴 변 × 3.0칸 떨어져 있다 */
+export const FREE_PERSP = 3.0;
 /** 화면의 짧은 변이 600px 미만이면 휴대폰 판 */
 export const boardFor = (width, height) => (Math.min(width, height) < 600 ? FREE_BOARDS.phone : FREE_BOARDS.wide);
 /** 저장 열쇠: 판 크기마다 하나 */
@@ -130,7 +134,7 @@ export function playFreeBuild(stage, ctx) {
   const board = boardFor(globalThis.innerWidth ?? 1366, globalThis.innerHeight ?? 768);
   const { cols, rows, maxH } = board;
   const storage = createFreeStore(ctx.game?.id ?? 'net-workshop');
-  const view = createBlockView({ h, cols, rows, maxH, fit: 'home', fitH: FIT_H });
+  const view = createBlockView({ h, cols, rows, maxH, fit: 'home', fitH: FIT_H, persp: FREE_PERSP });
   const controls = createViewControls({ ctx, view });
 
   // 위에서 본 판: 넓은 판은 작은 칸으로 14×14 전체를 한눈에(덧붙임 2), 휴대폰 6×6은 48px 칸
@@ -233,9 +237,9 @@ export function playFreeBuild(stage, ctx) {
   const mat = h('div', { class: 'mat blk-mat blk-free-mat' }, view.el, controls.dirs, controls.pad, panPrev, panNext, slot, colorPop, toastMark);
   ctx.el.append(h('div', { class: 'workbench blk-bench blk-free' }, mat, strip));
   ctx.feedback.anchor?.(mat, { lift: 16, narrow: 'below' });
-  // 휴대폰(560px 이하 — 무대가 매트 안 흐름에 놓인다)에서 무대의 높이를 판에 맞춘다: 처음 보기 맞춤이 너비로 정해지게(block-view.js homeUnitFor와 같은 비)
-  const R6 = 1 / Math.sqrt(6);
-  mat.style.setProperty('--free-ratio', `${((cols + rows) * Math.SQRT1_2 + 0.6).toFixed(3)} / ${((cols + rows) * R6 + 3 * 2 * R6 + 0.8).toFixed(3)}`);
+  // 휴대폰(560px 이하 — 무대가 매트 안 흐름에 놓인다)에서 무대의 높이를 판에 맞춘다: 처음 보기 맞춤이 너비로 정해지게(block-view.js homeFitPersp와 같은 비)
+  const fitBox = homeFitPersp(1, 1, { cols, rows, fitH: FIT_H, eye: eyeDistance({ cols, rows, maxH, fitH: FIT_H, persp: FREE_PERSP }) });
+  mat.style.setProperty('--free-ratio', `${fitBox.wide.toFixed(3)} / ${fitBox.tall.toFixed(3)}`);
 
   // ── 위·앞·옆 모양 ──
   const viewsBox = h('div', { class: 'blk-free-viewsbox' });

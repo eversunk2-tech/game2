@@ -500,3 +500,38 @@ export function visibleFaces(h, toViewer, { apart = false } = {}) {
   }
   return out;
 }
+
+/**
+ * 원근 그리기(자유 쌓기 — spec-grade6 15-27)의 그릴 면과 그리는 순서: 눈이 모델 좌표의 한 점 eye에 있다.
+ * 보이는 면 = 면이 놓인 평면의 눈 쪽에 눈이 있는 면(쌓기나무마다 따로 — 판 왼쪽의 탑은 오른쪽 면이, 오른쪽의 탑은 왼쪽 면이 보일 수 있다) 가운데
+ *   이웃 쌓기나무에 맞닿지 않은 면(벌려 놓으면 윗면·아랫면은 늘 드러나 있다).
+ * 그리는 순서: 축마다 눈에서 먼 칸부터(층 → 줄 → 칸, 그 축에서 칸 가운데와 눈의 거리가 큰 것부터). 같은 크기의 칸이 격자에 놓여 있으면
+ *   한 칸이 다른 칸을 가릴 수 있는 것은 두 칸을 가르는 평면의 그 칸 쪽에 눈이 있을 때뿐이라, 이 차례면 나중에 그린 것이 먼저 그린 것에 가려지는 일이 없다.
+ * zAt(z): z층 쌓기나무의 바닥 높이(층별로 벌려 놓으면 층마다 떠 있다 — 차례는 그대로 맞다).
+ * → [{ x, y, z, face }]
+ */
+export function visibleFacesFrom(h, eye, { apart = false, zAt = (z) => z } = {}) {
+  const filled = (x, y, z) => inBoard(h, x, y) && z >= 0 && z < h[y][x];
+  const key = ([x, y, z]) => [Math.abs(zAt(z) + 0.5 - eye[2]), Math.abs(y + 0.5 - eye[1]), Math.abs(x + 0.5 - eye[0])];
+  const cells = cellsOf(h).map((c) => ({ c, k: key(c) }));
+  cells.sort((p, q) => q.k[0] - p.k[0] || q.k[1] - p.k[1] || q.k[2] - p.k[2]);
+  const out = [];
+  for (const { c: [x, y, z] } of cells) {
+    const z0 = zAt(z);
+    const seen = {
+      top: eye[2] > z0 + 1 + 1e-9,
+      bottom: eye[2] < z0 - 1e-9,
+      front: eye[1] < y - 1e-9,
+      back: eye[1] > y + 1 + 1e-9,
+      left: eye[0] < x - 1e-9,
+      right: eye[0] > x + 1 + 1e-9,
+    };
+    for (const face of FACE_NAMES) {
+      if (!seen[face]) continue;
+      const n = FACE_NORMALS[face];
+      if (apart && n[2] !== 0) out.push({ x, y, z, face });
+      else if (!filled(x + n[0], y + n[1], z + n[2])) out.push({ x, y, z, face });
+    }
+  }
+  return out;
+}

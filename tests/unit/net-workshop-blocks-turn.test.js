@@ -1,15 +1,17 @@
 /**
  * R1 쌓기나무 판의 돌림판식 돌리기(turn-view.js) 검사. 기획서: spec-grade6.md 15-18·15-19, plan-rotate-free.md 4절·6절(R1 검사 ①②③).
  * 규칙은 저장소 코드를 쓰지 않고 기획서 문장만 보고 짠 독립 계산(아래 "독립 모형")과 견준다:
- *   가로 끌기 1px = 0.5°(오른쪽으로 끌면 판의 앞쪽이 오른쪽으로), 세로 끌기 1px = 0.5°(아래로 끌면 위가 더 보임, 0°~90°에서 멈춤),
+ *   가로 끌기 1px = 0.4°(오른쪽으로 끌면 판의 앞쪽이 오른쪽으로), 세로 끌기 1px = 0.4°(아래로 끌면 위가 더 보임, 0°~90°에서 멈춤) —
+ *   15-27 "약간만 더 느리게"(전개도 입체의 0.5°보다 약 20% 느리게, 모든 쌓기나무 판. R1의 0.5°에서 바뀜),
  *   버튼 판 45°·높이 15° 눈금, 방향키 판 15°·높이 15° 눈금, 처음 보기 = 교과서 그림 방향.
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRng } from '../../src/shared/core/random.js';
 import { POSES as VIEW_POSES, poseWord, projectPoint } from '../../src/games/net-workshop/blocks/block-view.js';
-import { mixStep } from '../../src/games/net-workshop/orbit.js';
+import { DRAG_DEG as ORBIT_DRAG_DEG, mixStep } from '../../src/games/net-workshop/orbit.js';
 import {
+  DRAG_DEG,
   PITCH_MAX,
   PITCH_MIN,
   PITCH_STEP,
@@ -113,11 +115,14 @@ test('자세: 어느 각도에서나 직교 행렬이고, 화면 오른쪽은 �
   }
 });
 
-test('끌기: 가로 1px = 판 0.5°(오른쪽으로 끌면 판의 앞쪽이 오른쪽으로, 끝없이), 세로 1px = 높이 0.5°(아래로 끌면 위가 더 보이고 수평~바로 위에서 멈춤)', () => {
+test('끌기: 가로 1px = 판 0.4°(오른쪽으로 끌면 판의 앞쪽이 오른쪽으로, 끝없이), 세로 1px = 높이 0.4°(아래로 끌면 위가 더 보이고 수평~바로 위에서 멈춤)', () => {
   const home = homeTurn();
-  // 오른쪽 120px: 판만 60° 돈다. 내려다보는 높이·배율 그대로
+  // 쌓기나무 판의 끌기(0.4°)는 전개도 입체의 끌기(orbit.js 0.5° — 5·6학년 전개도)와 따로다
+  assert.equal(DRAG_DEG, 0.4);
+  assert.equal(ORBIT_DRAG_DEG, 0.5);
+  // 오른쪽 120px: 판만 48° 돈다(전에는 60°). 내려다보는 높이·배율 그대로
   const r120 = dragTurn(home, 120, 0);
-  assert.equal(r120.yaw, 345);
+  assert.ok(Math.abs(r120.yaw - 357) < 1e-9);
   assert.equal(r120.pitch, home.pitch);
   assert.equal(r120.zoom, 1);
   // 판의 앞쪽 가운데(모델 [1.5, 0, 0])가 화면 오른쪽으로 간다 · 오른쪽 가운데는 앞으로 오지 않는다(멀어진다)
@@ -127,20 +132,23 @@ test('끌기: 가로 1px = 판 0.5°(오른쪽으로 끌면 판의 앞쪽이 오
     assert.ok(at(next, [1.5, 0, 0])[0] > at(home, [1.5, 0, 0])[0], `앞쪽이 오른쪽으로 ${dx}`);
     assert.ok(dot3(eyeOf(next.yaw, next.pitch), [1, 0, 0]) < dot3(eyeOf(home.yaw, home.pitch), [1, 0, 0]));
   }
-  // 끝없이: 720px = 한 바퀴(360°)면 제자리
-  assert.ok(sameTurn(dragTurn(home, 720, 0), home));
-  assert.ok(sameTurn(dragTurn(home, -1440, 0), home));
-  // 아래로 끌면 위가 더 보인다(윗면이 보는 사람을 더 향함). 110px 넘게 끌면 바로 위(90°)에서 멈춘다
+  // 끝없이: 900px = 한 바퀴(360°)면 제자리
+  assert.ok(sameTurn(dragTurn(home, 900, 0), home));
+  assert.ok(sameTurn(dragTurn(home, -1800, 0), home));
+  assert.ok(!sameTurn(dragTurn(home, 720, 0), home)); // 전의 한 바퀴(720px)는 이제 288°
+  // 아래로 끌면 위가 더 보인다(윗면이 보는 사람을 더 향함). 137px 넘게 끌면 바로 위(90°)에서 멈춘다
   const down = dragTurn(home, 0, 40);
-  assert.ok(Math.abs(down.pitch - (home.pitch + 20)) < 1e-12);
+  assert.ok(Math.abs(down.pitch - (home.pitch + 16)) < 1e-12);
+  assert.ok(dragTurn(home, 0, 136).pitch < 90);
+  assert.equal(dragTurn(home, 0, 137).pitch, 90);
   assert.ok(poseOf(down)[8] > poseOf(home)[8]);
   assert.equal(dragTurn(home, 0, 400).pitch, 90);
   assert.equal(dragTurn(home, 0, -400).pitch, 0);
   assert.equal(dragTurn(dragTurn(home, 0, -400), 0, -50).pitch, 0);
   // 비스듬히 끌어도 두 몫을 따로: 판은 기울지 않는다
   const slant = dragTurn(home, 160, 100);
-  assert.equal(slant.yaw, 325);
-  assert.equal(slant.pitch, 85.26438968275465);
+  assert.ok(Math.abs(slant.yaw - 341) < 1e-9);
+  assert.ok(Math.abs(slant.pitch - (HOME_PITCH + 40)) < 1e-9);
   assert.equal(poseOf(slant)[2], 0);
   // 한도에 걸리지 않으면 4px씩 나눠 끌어도 한 번에 끈 것과 같다(문턱으로 잃는 몫이 없다 — 무대가 문턱을 넘은 첫 움직임에 처음 자리부터 잰다)
   let pieces = home;
@@ -174,7 +182,7 @@ test('무작위 조작 10,000번(끌기·버튼·방향키·[위][앞][옆]·도
       const dx = rng.int(-300, 300);
       const dy = rng.next() < 0.5 ? rng.int(-40, 40) : rng.int(-300, 300);
       view = dragTurn(view, dx, dy);
-      model = { yaw: wrap(model.yaw - dx * 0.5), pitch: Math.max(0, Math.min(90, model.pitch + dy * 0.5)) };
+      model = { yaw: wrap(model.yaw - dx * 0.4), pitch: Math.max(0, Math.min(90, model.pitch + dy * 0.4)) };
       counts.drag += 1;
     } else if (r < 0.75) {
       const dir = rng.pick(['left', 'right', 'up', 'down']);
@@ -262,7 +270,7 @@ test('버튼·방향키는 눈금에 멈춘다: 버튼은 판 45°(여덟 방향
   assert.deepEqual(turnLimits(home), { up: false, down: false, zoomMax: false, zoomMin: false, home: true });
   // 판 돌리기·처음 보기·배율
   assert.equal(isHomeTurn(home), true);
-  assert.equal(isHomeTurn(dragTurn(home, 720, 0)), true);
+  assert.equal(isHomeTurn(dragTurn(home, 900, 0)), true); // 한 바퀴 = 900px(0.4°)
   assert.equal(isHomeTurn(dragTurn(home, 1, 0)), false);
   assert.equal(isHomeTurn({ ...home, zoom: 1.25 }), false);
   assert.equal(turnLimits({ ...home, zoom: 2 }).zoomMax, true);
