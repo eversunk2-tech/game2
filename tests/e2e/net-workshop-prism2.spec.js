@@ -152,6 +152,7 @@ const foldNow = async (page, how = 'mouse') => {
     await page.keyboard.press('Enter');
   } else await btn.click();
   await expect(page.locator('.free-host .fold-stage')).toHaveAttribute('data-fold', 'done');
+  await expect(page.locator('.pf-pic')).toBeHidden(); // 접는 동안 만들 각기둥 그림은 숨는다(휴대폰의 주문서 그림도)
 };
 
 /** 결과 화면: "오늘의 솜씨" 칸 점수 합 + 단계 완료·별 점수 줄 = "이번에 모은 솜씨 점수" */
@@ -298,6 +299,8 @@ test('전개도 완성하기(마우스 · 손가락): 주문 ① 완성 → 접�
   else await page.locator('.free-next').click();
   await expect(page.locator('.pf-step')).toContainText('주문 ②');
   await expect(page.locator('.pf-face')).toHaveCount(1); // 밑면 하나만 놓여 있다
+  await expect(page.locator('.pf-pic .net-face').first()).toBeAttached(); // 만들 각기둥 그림이 다시(입체와 이름표)
+  await expect(page.locator('.pf-pic .box-tag').first()).toBeVisible();
   await buildOrder(page, play, 2, used, how);
   await foldNow(page, how);
   // 2가지: [결과 보기]는 보통 버튼, "한 가지 더 찾기"가 주 버튼(spec 16-15)

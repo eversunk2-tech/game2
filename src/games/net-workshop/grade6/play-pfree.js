@@ -339,8 +339,9 @@ export function playPrismFree(stage, ctx, play) {
     legends.hidden = true;
     editTools.hidden = true;
     editSection.hidden = true;
+    // 만들 각기둥 그림은 접는 동안 숨긴다(휴대폰의 주문서 그림도 — 접은 입체가 무대에 있고, 그림의 입체는 내려 둔다)
     picture.stop();
-    if (!phone) picture.el.hidden = true;
+    picture.el.hidden = true;
     view.el.hidden = false;
     tools.el.hidden = false;
     tools.pad.hidden = false;
