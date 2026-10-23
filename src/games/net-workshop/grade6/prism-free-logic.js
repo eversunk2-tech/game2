@@ -774,6 +774,89 @@ export function placeSlots(facesPx, edges, area) {
   return result;
 }
 
+/** 가운데 (cx, cy) · 폭 w · 높이 h · 돌림 deg인 직사각형 → { pts(네 꼭짓점), axes(두 방향) } */
+export function labelBox(cx, cy, w, h, deg = 0) {
+  const a = (deg * Math.PI) / 180;
+  const [c, s] = [Math.cos(a), Math.sin(a)];
+  const pts = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([x, y]) => [cx + x * c - y * s, cy + x * s + y * c]);
+  return { pts, axes: [[c, s], [-s, c]] };
+}
+/** 두 직사각형이 pad(px) 넘게 떨어져 있나 (나눔축 검사) */
+export function boxesApart(p, q, pad = 1) {
+  return [...p.axes, ...q.axes].some(([ax, ay]) => {
+    const u = p.pts.map(([x, y]) => x * ax + y * ay);
+    const v = q.pts.map(([x, y]) => x * ax + y * ay);
+    return Math.min(Math.max(...u), Math.max(...v)) - Math.max(Math.min(...u), Math.min(...v)) <= -pad;
+  });
+}
+/** 볼록 다각형 안에 점들이 모두 들고, 변에서 margin(px) 넘게 떨어져 있나 */
+function insideWith(pts, poly, margin) {
+  return pts.every((pt) => insidePoly(pt, poly) && poly.every((a, i) => segDist(pt, a, poly[(i + 1) % poly.length]) >= margin));
+}
+const LABEL_STEP = 3;
+/**
+ * 판의 글 자리(px): 면마다 빈 모서리의 길이 글(변의 가운데에서 안쪽으로, 변을 따라 돌림)과 면 이름이 서로 겹치지 않고 면 안에 들게.
+ * 좁은 화면 · 작은 면(사다리꼴 밑면 · 육각기둥의 밑면)에서: 길이 글은 "2 cm" → "2"(수만)로, 그래도 안 되면 조금 더 안쪽으로, 그래도 안 되면 그 글을 뺀다
+ * (붙일 자리가 있는 변 → 긴 변 차례로 놓는다). 면 이름은 가운데에서 가장 가까운 빈 곳에 — 주는 차례(자물쇠와 함께 → 작게 → 이름만 …)로, 안 되면 뺀다.
+ * faces: [{ id, poly(px), lens: [{ key, p, q, open, texts: [{ text, w, h }] (긴 글 → 짧은 글) }], names: [{ variant, w, h }] }]
+ * → { lens: Map(key → { x, y, deg, text } | null), names: Map(id → { x, y, variant } | null) }
+ */
+export function placeBoardLabels(faces, { pad = 1, step = LABEL_STEP } = {}) {
+  const lens = new Map();
+  const names = new Map();
+  for (const f of faces) {
+    const [cx, cy] = centroid(f.poly);
+    const kept = [];
+    const edgeLen = (e) => Math.hypot(e.q[0] - e.p[0], e.q[1] - e.p[1]);
+    // 붙일 자리가 있는 변(open)부터, 그 안에서는 긴 변부터
+    for (const e of [...f.lens].sort((a, b) => Number(Boolean(b.open)) - Number(Boolean(a.open)) || edgeLen(b) - edgeLen(a))) {
+      const len = edgeLen(e) || 1;
+      const mid = [(e.p[0] + e.q[0]) / 2, (e.p[1] + e.q[1]) / 2];
+      let [nx, ny] = [-(e.q[1] - e.p[1]) / len, (e.q[0] - e.p[0]) / len];
+      if ((mid[0] - cx) * nx + (mid[1] - cy) * ny > 0) [nx, ny] = [-nx, -ny]; // 안쪽
+      let deg = (Math.atan2(e.q[1] - e.p[1], e.q[0] - e.p[0]) * 180) / Math.PI;
+      if (deg > 90) deg -= 180;
+      if (deg <= -90) deg += 180;
+      let placed = null;
+      for (const [k, t] of e.texts.entries()) {
+        // 긴 글("2 cm")은 변이 글 폭의 1.5배 넘을 때만 — 짧은 글("2")은 변 안에 들면
+        if (k < e.texts.length - 1 ? len < t.w * 1.5 : len < t.w + 4) continue;
+        for (const inset of [t.h / 2 + 3, t.h / 2 + 7]) {
+          const x = mid[0] + nx * inset;
+          const y = mid[1] + ny * inset;
+          const box = labelBox(x, y, t.w, t.h, deg);
+          if (!insideWith(box.pts, f.poly, 0.5) || kept.some((b) => !boxesApart(b, box, pad))) continue;
+          placed = { x: tidy(x), y: tidy(y), deg: tidy(deg), text: t.text, box };
+          break;
+        }
+        if (placed) break;
+      }
+      lens.set(e.key, placed && { x: placed.x, y: placed.y, deg: placed.deg, text: placed.text });
+      if (placed) kept.push(placed.box);
+    }
+    // 면 이름: 가운데(무게중심)부터 가까운 차례로 빈 곳을 찾는다
+    const { min, max } = bounds(f.poly);
+    let name = null;
+    for (const v of f.names) {
+      const spots = [[cx, cy]];
+      for (let x = min[0] + v.w / 2; x <= max[0] - v.w / 2 + 1e-9; x += step) {
+        for (let y = min[1] + v.h / 2; y <= max[1] - v.h / 2 + 1e-9; y += step) spots.push([x, y]);
+      }
+      const near = spots.map(([x, y], i) => ({ x, y, d: i === 0 ? -1 : Math.hypot(x - cx, y - cy) })).sort((a, b) => a.d - b.d);
+      const spot = near.find(({ x, y }) => {
+        const box = labelBox(x, y, v.w, v.h);
+        return insideWith(box.pts, f.poly, 1) && kept.every((b) => boxesApart(b, box, pad));
+      });
+      if (spot) {
+        name = { x: tidy(spot.x), y: tidy(spot.y), variant: v.variant };
+        break;
+      }
+    }
+    names.set(f.id, name);
+  }
+  return { lens, names };
+}
+
 /** 시험·화면 읽기용: 놓은 면 · 남은 카드의 수 */
 export function boardCounts(placed, cards) {
   return { placed: placed.length, total: cards.length };

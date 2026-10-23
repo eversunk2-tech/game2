@@ -180,6 +180,8 @@ export function playPrismFree(stage, ctx, play) {
   const stepHead = h('b');
   const stepText = h('span');
   const stepPill = h('p', { class: 'board-legend pf-step', role: 'status' }, stepHead, stepText);
+  // 안내 띠 둘은 위아래로 쌓는다: 좁은 화면에서 첫 띠가 두 줄이 되어도 주문 띠가 그 아래로 내려간다(겹치지 않게)
+  const legends = h('div', { class: 'pf-legends' }, legend, stepPill);
   const stamp = h('div', { class: 'stamp found-stamp', hidden: true, 'aria-hidden': 'true' });
   const tool = (cls, iconName, text, onclick) => h('button', { type: 'button', class: `btn ${cls}`, 'aria-label': text, title: text, onclick }, icon(iconName), h('span', null, text));
   const resetBtn = tool('tool-clear', 'trash', '처음으로', () => board.reset());
@@ -189,7 +191,7 @@ export function playPrismFree(stage, ctx, play) {
   const status = h('p', { class: 'mat-status', 'aria-hidden': 'true' }, icon('grid'), h('span', null, '붙인 면'), statusCount);
   const editTools = h('div', { class: 'mat-tools edit-tools' }, resetBtn, undoBtn, turnBtn, status);
   const picture = createOrderPicture({ h, fs, inPanel: phone });
-  const mat = h('div', { class: 'mat free-mat pf-mat' }, legend, stepPill, host, phone ? null : picture.el, stamp, editTools, tools.el, tools.pad);
+  const mat = h('div', { class: 'mat free-mat pf-mat' }, legends, host, phone ? null : picture.el, stamp, editTools, tools.el, tools.pad);
   host.append(view.el);
 
   // ── 작업 지시서 ───────────────────────
@@ -317,8 +319,7 @@ export function playPrismFree(stage, ctx, play) {
     resultSection.hidden = true;
     buttonsSlot.replaceChildren();
     board.el.hidden = false;
-    legend.hidden = false;
-    stepPill.hidden = false;
+    legends.hidden = false;
     editTools.hidden = false;
     editSection.hidden = false;
     picture.el.hidden = false;
@@ -335,8 +336,7 @@ export function playPrismFree(stage, ctx, play) {
     mode = 'fold';
     board.setEnabled(false);
     board.el.hidden = true;
-    legend.hidden = true;
-    stepPill.hidden = true;
+    legends.hidden = true;
     editTools.hidden = true;
     editSection.hidden = true;
     picture.stop();

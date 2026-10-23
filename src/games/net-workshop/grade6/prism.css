@@ -135,9 +135,21 @@
 .prism-free { --pic-w: 250px; }
 @media (max-width: 1199px) { .prism-free { --pic-w: 200px; } }
 @media (max-width: 1023px) { .prism-free { --pic-w: 180px; } }
-.prism-free .board-legend { max-width: calc(100% - 32px - var(--pic-w) - 10px); white-space: normal; }
-.pf-step { top: auto; margin-top: 0; }
-.prism-free .board-legend.pf-step { top: 52px; font-weight: 700; background: var(--paper); }
+/* 안내 띠 둘(하는 법 · 지금 주문)은 위아래로 쌓는다 — 좁은 화면에서 첫 띠가 두 줄이어도 겹치지 않게 */
+.pf-legends {
+  position: absolute;
+  left: 16px;
+  top: 20px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100% - 32px - var(--pic-w) - 10px);
+}
+.pf-legends[hidden] { display: none; }
+.prism-free .pf-legends .board-legend { position: static; max-width: 100%; white-space: normal; }
+.prism-free .pf-legends .board-legend.pf-step { font-weight: 700; background: var(--paper); }
 .pf-step b { margin-right: 2px; }
 .pf-board { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
 .pf-board[hidden] { display: none; }
@@ -149,26 +161,31 @@
 .pf-face-label {
   position: absolute;
   transform: translate(-50%, -50%);
-  display: grid;
-  justify-items: center;
-  gap: 1px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
   font-family: var(--font-display);
   font-weight: 700;
   font-size: 1.2rem;
   line-height: 1;
   color: var(--ink);
 }
-.pf-lock { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--paper); border: 1.5px solid var(--ink); }
-.pf-lock .icon { width: 12px; height: 12px; }
+.pf-lock { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--paper); border: 1.5px solid var(--ink); }
+.pf-lock .icon { width: 11px; height: 11px; }
+/* 좁은 판의 작은 면: 이름 · 자물쇠를 작게(길이 글과 겹치지 않을 때까지 — placeBoardLabels) */
+.pf-face-label.is-small { font-size: 0.9rem; gap: 1px; }
+.pf-face-label.is-small .pf-lock { width: 15px; height: 15px; border-width: 1.2px; }
+.pf-face-label.is-small .pf-lock .icon { width: 9px; height: 9px; }
 .pf-len {
   position: absolute;
   white-space: nowrap;
-  padding: 0 4px;
+  padding: 0 3px;
   border-radius: 6px;
   background: rgb(255 253 248 / 78%);
   font-size: 0.74rem;
   font-weight: 800;
-  line-height: 1.35;
+  line-height: 1.2;
   color: var(--ink);
 }
 /* 붙일 자리: 카드를 골랐거나 끄는 동안에만. 모두 같은 모습(어느 자리가 맞는지 알리지 않는다) */
@@ -250,6 +267,13 @@
 @media (max-height: 720px) and (min-width: 1200px) {
   .prism-free { --pic-w: 220px; }
 }
+/* 좁은 크롬북(1024 · 960): 조작 띠의 [처음으로] · [되돌리기]는 그림만(글은 이름표 · 풍선 도움말) — "붙인 면 n / m"이 잘리지 않게 */
+@media (min-width: 901px) and (max-width: 1199px) {
+  .prism-free .edit-tools .tool-clear,
+  .prism-free .edit-tools .tool-undo { flex: none; width: var(--tap); padding: 0; }
+  .prism-free .edit-tools .tool-clear span,
+  .prism-free .edit-tools .tool-undo span { display: none; }
+}
 @media (max-width: 900px) {
   .prism-free { --pic-w: 230px; }
   .prism-free .free-mat.pf-mat { height: 600px; }
@@ -257,8 +281,8 @@
 }
 @media (max-width: 560px) {
   .prism-free .free-mat.pf-mat { height: calc(124px + (100vw - 60px) * 1.3); }
-  .prism-free .board-legend { max-width: calc(100% - 24px); }
-  .prism-free .board-legend.pf-step { top: 50px; font-size: 0.72rem; }
+  .pf-legends { max-width: calc(100% - 32px); }
+  .prism-free .pf-legends .board-legend.pf-step { font-size: 0.72rem; }
   .prism-free .free-edit { grid-template-columns: minmax(0, 1fr); }
   .prism-free .edit-tools .tool-clear,
   .prism-free .edit-tools .tool-undo { width: var(--tap); padding: 0; }

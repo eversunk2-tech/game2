@@ -379,6 +379,92 @@ test('붙일 자리(px): 크롬북 · 태블릿 · 휴대폰 판 크기에서 �
   assert.equal(overlaps, 0, `${overlaps} / ${total}`);
 });
 
+test('판의 글(px): 무작위로 붙여 가는 판 450개 × 1 cm 14 · 22 · 34px — 길이 글 · 면 이름이 서로 겹치지 않고 제 면 안에 든다(독립 계산: 돌린 직사각형의 꼭짓점 · 나눔축). 1 cm 34px(크롬북)에서는 빈 모서리의 95% 넘게 길이 · 면마다 이름, 22px에서는 80% 넘게', () => {
+  // 독립: 직사각형 네 꼭짓점, 두 볼록 다각형이 겹치나(나눔축), 점이 다각형 안인가(반직선)
+  const corners = (b) => {
+    const a = (b.deg * Math.PI) / 180;
+    return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([sx, sy]) => [b.x + (sx * b.w) / 2 * Math.cos(a) - (sy * b.h) / 2 * Math.sin(a), b.y + (sx * b.w) / 2 * Math.sin(a) + (sy * b.h) / 2 * Math.cos(a)]);
+  };
+  const overlap = (P, Q) => {
+    for (const poly of [P, Q]) {
+      for (let i = 0; i < poly.length; i += 1) {
+        const [a, b] = [poly[i], poly[(i + 1) % poly.length]];
+        const n = [b[1] - a[1], a[0] - b[0]];
+        const len = Math.hypot(...n);
+        const proj = (pts) => pts.map(([x, y]) => (x * n[0] + y * n[1]) / len);
+        const [u, v] = [proj(P), proj(Q)];
+        if (Math.min(Math.max(...u), Math.max(...v)) - Math.max(Math.min(...u), Math.min(...v)) <= 0) return false;
+      }
+    }
+    return true;
+  };
+  const inside = ([x, y], poly) => {
+    let c = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+      if ((poly[i][1] > y) !== (poly[j][1] > y) && x < ((poly[j][0] - poly[i][0]) * (y - poly[i][1])) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c;
+    }
+    return c;
+  };
+  const textW = (t) => t.length * 7.2 + 6;
+  const stats = {};
+  for (const unit of [14, 22, 34]) {
+    stats[unit] = { edges: 0, lens: 0, faces: 0, names: 0 };
+    for (let seed = 0; seed < 150; seed += 1) {
+      const rng = createRng(`labels-${unit}-${seed}`);
+      const play = L.makeFreePlay(STAGE, rng, { portrait: seed % 3 === 0 });
+      const fs = L.freeSolid(play.solidId);
+      const cards = L.freeCards(fs);
+      const placed = L.givenFaces(play, rng.int(1, 2)).map((f) => ({ ...f, given: true }));
+      for (let step = 0; step < cards.length; step += 1) {
+        const px = ([x, y]) => [300 + x * unit, 300 + y * unit];
+        const free = L.freeEdges(placed);
+        const open = L.openEdges(placed, cards.filter((c) => !placed.some((p) => p.id === c.id)));
+        const input = placed.map((f) => ({
+          id: f.id,
+          poly: f.poly.map(px),
+          lens: free.filter((e) => e.face === f.id).map((e) => {
+            const v = Math.round(L.edgeLengthOf(f.poly, e.edge) * 100) / 100;
+            return { key: `${e.face}:${e.edge}`, p: px(e.p), q: px(e.q), open: open.some((o) => o.face === e.face && o.edge === e.edge), texts: [`${v} cm`, `${v}`].map((text) => ({ text, w: textW(text), h: 14 })) };
+          }),
+          names: [...(f.given ? [{ variant: 'lock', w: 40, h: 22 }, { variant: 'lock-small', w: 32, h: 17 }] : []), { variant: 'name', w: 20, h: 22 }, { variant: 'name-small', w: 15, h: 17 }],
+        }));
+        const out = L.placeBoardLabels(input);
+        const boxes = [];
+        for (const f of input) {
+          for (const e of f.lens) {
+            const at = out.lens.get(e.key);
+            stats[unit].edges += 1;
+            if (!at) continue;
+            stats[unit].lens += 1;
+            const t = e.texts.find((x) => x.text === at.text);
+            boxes.push({ face: f, pts: corners({ ...at, w: t.w, h: t.h }) });
+          }
+          const nm = out.names.get(f.id);
+          stats[unit].faces += 1;
+          if (nm) {
+            stats[unit].names += 1;
+            const v = f.names.find((x) => x.variant === nm.variant);
+            boxes.push({ face: f, pts: corners({ ...nm, deg: 0, w: v.w, h: v.h }) });
+          }
+        }
+        for (const b of boxes) assert.ok(b.pts.every((pt) => inside(pt, b.face.poly)), `${unit} ${seed} 면 밖`);
+        for (let i = 0; i < boxes.length; i += 1) for (let j = i + 1; j < boxes.length; j += 1) assert.ok(!overlap(boxes[i].pts, boxes[j].pts), `${unit} ${seed} 글끼리 겹침`);
+        const left = cards.filter((c) => !placed.some((p) => p.id === c.id));
+        if (left.length === 0) break;
+        const card = rng.pick(left);
+        const k = rng.pick(L.attachEdges(card));
+        const fit = free.filter((f) => Math.abs(Math.hypot(f.q[0] - f.p[0], f.q[1] - f.p[1]) - L.edgeLengthOf(card.poly, k)) < 1e-6);
+        const target = rng.pick(fit.length > 0 ? fit : free);
+        const poly = L.attachPoly(card.poly, k, [target.p, target.q]);
+        if (!L.overlapsPlaced(poly, placed)) placed.push({ id: card.id, role: card.role, label: card.label, poly });
+      }
+    }
+  }
+  assert.ok(stats[34].lens / stats[34].edges > 0.95, JSON.stringify(stats));
+  assert.equal(stats[34].names, stats[34].faces, JSON.stringify(stats));
+  assert.ok(stats[22].lens / stats[22].edges > 0.8, JSON.stringify(stats));
+});
+
 test('도장 "기둥 설계사"(spec-grade6 8절): 전개도 완성하기에서 서로 다른 전개도를 2가지 맞게 만든 학습 기록이 있으면 — 같은 모양 · 안 되는 모양 · 다른 단계는 세지 않는다. 모음은 보이지 않는 모음(칸 962)', () => {
   const badge = PRISM_BADGES.find((b) => b.id === 'prism-designer');
   assert.equal(badge.title, '기둥 설계사');

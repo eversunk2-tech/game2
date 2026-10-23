@@ -227,6 +227,28 @@ async function expectMatClear(page, label = '') {
       }
       if (pts.some(([x, y]) => x < mat.left || x > mat.right || y < mat.top || y > mat.bottom)) out.push(`면 매트 밖 ${f.key}`);
     }
+    // 안내 띠끼리 겹치지 않고(좁은 화면에서 두 줄이 되어도), 조작 띠의 "붙인 면 n / m"이 잘리지 않는다
+    const legends = [...document.querySelectorAll('.mat .board-legend')].filter(vis).map(rect);
+    if (legends.length === 2 && hit(legends[0], legends[1])) out.push('안내 띠끼리');
+    const status = document.querySelector('.mat .edit-tools .mat-status');
+    if (vis(status) && status.scrollWidth > status.clientWidth + 1) out.push(`상태 글 잘림 ${status.textContent}`);
+    // 판의 글(빈 모서리의 길이 · 면 이름)끼리 겹치지 않는다 — 돌린 길이 글은 돌린 직사각형으로 견준다(나눔축 검사)
+    const boxes = [...document.querySelectorAll('.pf-len, .pf-face-label')].map((el) => {
+      const r = rect(el);
+      const deg = Number(/rotate\((-?[\d.]+)deg\)/.exec(el.style.transform)?.[1] ?? 0);
+      const a = (deg * Math.PI) / 180;
+      const [c, s] = [Math.cos(a), Math.sin(a)];
+      const [cx, cy, hw, hh] = [r.left + r.width / 2, r.top + r.height / 2, el.offsetWidth / 2, el.offsetHeight / 2];
+      return { text: el.textContent, axes: [[c, s], [-s, c]], pts: [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [cx + x * c - y * s, cy + x * s + y * c]) };
+    });
+    const apart = (p, q) => [...p.axes, ...q.axes].some(([ax, ay]) => {
+      const proj = (b) => b.pts.map(([x, y]) => x * ax + y * ay);
+      const [u, v] = [proj(p), proj(q)];
+      return Math.min(Math.max(...u), Math.max(...v)) - Math.max(Math.min(...u), Math.min(...v)) <= 0.5;
+    });
+    for (let i = 0; i < boxes.length; i += 1) {
+      for (let j = i + 1; j < boxes.length; j += 1) if (!apart(boxes[i], boxes[j])) out.push(`글끼리 ${boxes[i].text} × ${boxes[j].text}`);
+    }
     return { out, slots: slots.length };
   });
   expect(m.out, label).toEqual([]);
@@ -575,7 +597,10 @@ test('모서리와 꼭짓점(도전 주문서): 다섯 문항을 모두 맞히�
   await expect(page.locator('.timer-toggle')).toBeVisible();
   const qs = countQuestions('1');
   for (const q of qs) {
+    // 문항 수는 한 가지(5): 주문서의 칸과 머리의 점 막대가 같다(코디네이터가 시안에서 본 것 ①)
     await expect(page.locator('.q-counter')).toHaveText(`문제 ${q.number} / 5`);
+    await expect(page.locator('.meta-progress small')).toHaveText(`문제 ${q.number} / 5`);
+    await expect(page.locator('.meta-progress .q-dots i')).toHaveCount(5);
     if (q.kind === 'count') {
       await expect(page.locator('.pc-fact')).toContainText(`한 밑면의 변이 ${q.n}개`);
       await expect(page.locator('.mat .fold-stage')).toBeVisible();
@@ -717,4 +742,48 @@ test('각기둥 차시: 네 단계를 마치면 도전 주문서 "모서리와 �
   await page.getByRole('button', { name: '단계 선택' }).click();
   await expect(page.locator('.challenge-card')).toBeEnabled();
   await expect(page.locator('.challenge-card')).toContainText('모서리와 꼭짓점');
+});
+
+// ── 4. G1이 남긴 것: 거의 옆으로 선 면 (review-prism-g1 R5) ─────────────
+test('밑면과 옆면: 거의 옆으로 서서 가는 띠로 보이는 면을 누르면 고르지 않고 "돌려서 눌러 봐요" 알림 — 돌려 가며 가장 가는 앞면을 찾아 누른다', async ({ page }, testInfo) => {
+  test.skip(touchOf(testInfo), '마우스로 크롬북에서');
+  test.setTimeout(90_000); // 보통 6초 안팎
+  const errors = collectErrors(page);
+  await page.goto(STAGE_URL('prism-parts', '', '2'));
+  await expect(page.locator('.mat .fold-stage .net-face').first()).toBeAttached();
+  await settled(page);
+  const box = await page.locator('.mat .fold-stage').boundingBox();
+  // 무대의 돌림이 멈출 때까지(끌기 뒤 미끄러짐 포함): 두 그림 틀 동안 같은 모습
+  const still = () => page.waitForFunction(() => new Promise((done) => {
+    const scene = document.querySelector('.mat .net-scene');
+    const before = scene.style.transform;
+    requestAnimationFrame(() => requestAnimationFrame(() => done(scene.style.transform === before)));
+  }));
+  const thinnest = () => page.evaluate(() => [...document.querySelectorAll('.mat .net-face')].map((f) => {
+    const r = f.getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    return { ratio: Math.min(r.width, r.height) / Math.max(r.width, r.height), front: document.elementFromPoint(x, y)?.closest('.net-face') === f, x, y };
+  }).filter((f) => f.front).sort((a, b) => a.ratio - b.ratio)[0]);
+  let shown = false;
+  for (let step = 0; step < 200 && !shown; step += 1) {
+    await page.mouse.move(box.x + 30, box.y + 30);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 42, box.y + 30, { steps: 3 });
+    await page.mouse.up();
+    await still();
+    const thin = await thinnest();
+    if (!thin || thin.ratio >= 0.08) continue;
+    await page.mouse.click(thin.x, thin.y);
+    const picked = await page.locator('.mat .net-face.is-picked').count();
+    if (picked) {
+      await page.mouse.click(thin.x, thin.y); // 골라졌으면(아직 덜 기운 면) 풀고 더 돌린다
+      continue;
+    }
+    await expect(page.locator('.toast')).toContainText('거의 옆으로 서 있어서 고를 수 없어요');
+    shown = true;
+  }
+  expect(shown, '거의 옆으로 선 면을 눌러 알림을 봄').toBe(true);
+  await expect(page.locator('.mat .net-face.is-picked')).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

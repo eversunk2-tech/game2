@@ -10,7 +10,6 @@
 import { enableDragDrop } from '../../../shared/ui/drag-drop.js';
 import { icon } from '../../../shared/ui/icons.js';
 import { LABELS } from '../fold.js';
-import { centroid } from '../geometry.js';
 import {
   SLOT_SIZE,
   attachEdges,
@@ -21,6 +20,7 @@ import {
   nextBoardView,
   openEdges,
   overlapsPlaced,
+  placeBoardLabels,
   placeSlots,
 } from './prism-free-logic.js';
 
@@ -169,31 +169,54 @@ export function createEdgeBoard({ ctx, root, host, cards, area, onChange = null,
         svg.append(svgEl('line', { x1: a[0].toFixed(2), y1: a[1].toFixed(2), x2: b[0].toFixed(2), y2: b[1].toFixed(2), class: open ? 'pf-cut' : 'pf-fold' }));
       });
     }
-    // 면 이름(+ 처음부터 놓인 면의 자물쇠)과 빈 모서리의 길이
-    for (const f of placed) {
-      const [cx, cy] = px(centroid(f.poly));
-      const tag = h('span', { class: `pf-face-label${f.given ? ' is-given' : ''}`, style: { left: `${cx.toFixed(1)}px`, top: `${cy.toFixed(1)}px` } }, f.label);
-      if (f.given) tag.append(h('span', { class: 'pf-lock' }, icon('lock')));
-      marks.append(tag);
-    }
-    for (const e of free) {
-      const face = placed.find((f) => f.id === e.face);
-      const [a, b] = [px(e.p), px(e.q)];
-      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const [cx, cy] = px(centroid(face.poly));
-      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-      let [nx, ny] = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
-      if ((mid[0] - cx) * nx + (mid[1] - cy) * ny > 0) [nx, ny] = [-nx, -ny]; // 안쪽
-      let deg = (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
-      if (deg > 90) deg -= 180;
-      if (deg <= -90) deg += 180;
-      marks.append(h('span', {
-        class: 'pf-len',
-        style: { left: `${(mid[0] + nx * 11).toFixed(1)}px`, top: `${(mid[1] + ny * 11).toFixed(1)}px`, transform: `translate(-50%, -50%) rotate(${deg.toFixed(1)}deg)` },
-      }, cm(edgeLengthOf(face.poly, e.edge))));
-    }
-    // 붙일 자리 (바깥이 실틈뿐인 빈 모서리는 빼고 — openEdges)
     const open = openEdges(placed, cards.filter((c) => !placed.some((f) => f.id === c.id)));
+    const isOpen = (face, edge) => open.some((o) => o.face === face && o.edge === edge);
+    // 면 이름(+ 처음부터 놓인 면의 자물쇠)과 빈 모서리의 길이: 글을 먼저 만들어 크기를 재고(보이지 않게), 서로 겹치지 않고 면 안에 드는 자리에 놓는다
+    // (placeBoardLabels — 좁은 판에서는 "2 cm" → "2", 면 이름은 가운데에서 가까운 빈 곳 · 자물쇠와 함께 → 이름만)
+    const nameEls = placed.map((f) => ({
+      id: f.id,
+      // 자물쇠와 함께(처음부터 놓인 면) → 작은 글로 → 이름만 → 작은 이름만
+      variants: [
+        ...(f.given ? ['', ' is-small'].map((small) => ({
+          variant: `lock${small ? '-small' : ''}`,
+          el: h('span', { class: `pf-face-label is-given${small}` }, h('span', null, f.label), h('span', { class: 'pf-lock' }, icon('lock'))),
+        })) : []),
+        ...['', ' is-small'].map((small) => ({ variant: `name${small ? '-small' : ''}`, el: h('span', { class: `pf-face-label${f.given ? ' is-given' : ''}${small}` }, f.label) })),
+      ],
+    }));
+    const lenEls = free.map((e) => {
+      const value = edgeLengthOf(placed.find((f) => f.id === e.face).poly, e.edge);
+      const texts = [cm(value), String(Math.round(value * 100) / 100)].map((text) => ({ text, el: h('span', { class: 'pf-len' }, text) }));
+      return { key: `${e.face}:${e.edge}`, face: e.face, p: px(e.p), q: px(e.q), open: isOpen(e.face, e.edge), texts };
+    });
+    const trial = [...nameEls.flatMap((n) => n.variants), ...lenEls.flatMap((l) => l.texts)];
+    for (const v of trial) {
+      v.el.style.visibility = 'hidden';
+      marks.append(v.el);
+    }
+    // 판이 숨어 있으면(접은 장면) 잴 수 없다 — 글자 수로 어림
+    const sizeOf = (el, guess) => (el.offsetWidth > 0 ? { w: el.offsetWidth, h: el.offsetHeight } : guess);
+    const labelSpots = placeBoardLabels(placed.map((f) => ({
+      id: f.id,
+      poly: f.poly.map(px),
+      lens: lenEls.filter((l) => l.face === f.id).map((l) => ({ key: l.key, p: l.p, q: l.q, open: l.open, texts: l.texts.map((t) => ({ text: t.text, ...sizeOf(t.el, { w: t.text.length * 7.2 + 8, h: 16 }) })) })),
+      names: nameEls.find((n) => n.id === f.id).variants.map((v) => ({ variant: v.variant, ...sizeOf(v.el, { w: (v.variant.startsWith('lock') ? 42 : 22) * (v.variant.endsWith('small') ? 0.75 : 1), h: v.variant.endsWith('small') ? 17 : 22 }) })),
+    })));
+    for (const l of lenEls) {
+      const s = labelSpots.lens.get(l.key);
+      for (const t of l.texts) {
+        if (!s || t.text !== s.text) t.el.remove();
+        else Object.assign(t.el.style, { visibility: '', left: `${s.x}px`, top: `${s.y}px`, transform: `translate(-50%, -50%) rotate(${s.deg}deg)` });
+      }
+    }
+    for (const n of nameEls) {
+      const s = labelSpots.names.get(n.id);
+      for (const v of n.variants) {
+        if (!s || v.variant !== s.variant) v.el.remove();
+        else Object.assign(v.el.style, { visibility: '', left: `${s.x}px`, top: `${s.y}px` });
+      }
+    }
+    // 붙일 자리 (바깥이 실틈뿐인 빈 모서리는 빼고 — openEdges: 위에서 구해 둠)
     const edges = open.map((e) => ({ key: `${e.face}:${e.edge}`, face: e.face, p: px(e.p), q: px(e.q) }));
     const spots = placeSlots(facesPx, edges, box);
     const focusedKey = document.activeElement?.closest?.('.pf-slot')?.dataset.slot ?? null;
