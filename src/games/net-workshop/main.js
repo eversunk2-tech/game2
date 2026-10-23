@@ -25,6 +25,7 @@ import { BLOCK_FREE_STAGES } from './blocks/index.js'; // 자유 쌓기(spec-gra
 // 쌓기나무의 플레이(문제 만들기·판정·화면)는 그 영역의 단계에 들어갈 때 받는다 — 처음 화면이 그려진 뒤 한가할 때 미리 받아 둔다(spec-grade6 7-4절, B0b)
 const BLOCKS_PLAY = lazyModule(() => import('./blocks/blocks-play.js'));
 import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES } from './grade6/index.js'; // 각기둥의 전개도 영역(6학년): 차시·단계 목록(바탕 묶음)
+import { PRISM_BADGES, PRISM_COLLECTIONS } from './grade6/index.js'; // 각기둥 도장 "기둥 설계사"(spec-grade6 8절 — 도장판 17칸) · 찾은 각기둥 전개도 모음(보이지 않는 모음 — G2)
 // 각기둥의 플레이(문제 만들기·판정·화면)도 그 영역의 단계에 들어갈 때 받는다(쌓기나무와 같은 방법 — Build G1)
 const PRISM_PLAY = lazyModule(() => import('./grade6/prism-play.js'));
 
@@ -96,6 +97,7 @@ const BADGES = [
 ];
 BADGES.push(...CUBOID_BADGES); // 직육면체 도감 완성 (cuboid-main.js, spec 16-17)
 BADGES.push(...BLOCK_BADGES); // 쌓기나무 도장 셋 (blocks/blocks-stages.js, spec-grade6 8절)
+BADGES.push(...PRISM_BADGES); // 각기둥 도장: 기둥 설계사 (grade6/prism-stages.js, spec-grade6 8절 — G2)
 
 // 도감 2개: 내 맘대로 전개도와 도감 주문에서 직접 만들어 접은 모양만 등록한다 (판별에서 본 것, 주사위 주문에서 접은 것은 아님)
 // "도감 n / 11" 칩에는 전개도 도감만 세고, 노트는 label로 따로 "노트 n / 24". 노트 등록 점수는 +1 (spec 16-8)
@@ -118,6 +120,7 @@ const COLLECTIONS = [
     items: NOTE_ITEMS.map((n) => ({ id: n.name, name: noteItemName(n), thumb: () => miniNet(n.cells, { invalid: true }) })),
   },
   ...CUBOID_COLLECTIONS, // 직육면체 차시에서 찾은 전개도(화면에 보이지 않는 모음, cuboid-main.js)
+  ...PRISM_COLLECTIONS, // 각기둥 차시의 전개도 완성하기에서 찾은 전개도(화면에 보이지 않는 모음, grade6/prism-stages.js — G2)
 ];
 
 // ── 학년 → 영역 (spec-grade6 7-1절 · 2026-10-16 사용자 수정 요청: 학년으로 먼저 고른다) ──

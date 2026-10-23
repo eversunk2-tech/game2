@@ -2,7 +2,7 @@
  * 6학년 전개도 영역(각기둥 — 원기둥도 나중에 여기에)의 들머리(바탕 묶음). main.js는 여기서 차시·단계 목록(단계 카드 그림 포함)만 가져간다.
  * 플레이(문제 만들기·판정·화면)는 단계에 들어갈 때 받는 묶음 prism-play.js에 있다(spec-grade6.md 7-4절 "영역을 들어갈 때 불러오기" — B0b의 쌓기나무와 같은 방법).
  */
-import { PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES as STAGE_LIST } from './prism-stages.js';
+import { PRISM_BADGES, PRISM_COLLECTIONS, PRISM_HOW_TO, PRISM_LESSONS, PRISM_STAGES as STAGE_LIST } from './prism-stages.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 const svgEl = (tag, attrs = {}, children = []) => {
@@ -40,6 +40,23 @@ const THUMBS = {
     poly('22,22 38,22 30,8', face(1)), poly('38,44 54,44 46,58', face(1)),
     svgEl('path', { d: 'M6 22v22M54 22v22', style: 'fill:none;stroke:var(--primary);stroke-width:4.5' }),
   ],
+  /** 전개도 완성하기: 놓인 옆면 둘 + 밑면 하나, 빈 모서리에 붙일 자리(+) */
+  pfree: () => [
+    poly('8,24 24,24 24,46 8,46', face(2)), poly('24,24 40,24 40,46 24,46', face(3)),
+    poly('8,24 24,24 16,10', face(1)),
+    svgEl('path', { d: 'M24 24v22', style: 'fill:none;stroke:var(--ink);stroke-width:1.6;stroke-dasharray:3 2.5' }),
+    svgEl('circle', { cx: 55, cy: 35, r: 9, style: 'fill:var(--paper);stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3' }),
+    svgEl('path', { d: 'M55 30v10M50 35h10', style: 'fill:none;stroke:var(--ink);stroke-width:2.5;stroke-linecap:round' }),
+  ],
+  /** 모서리와 꼭짓점: 선 삼각기둥의 옆으로 선 모서리 셋을 굵게 + 꼭짓점 점 */
+  pcount: () => [
+    poly('14,16 38,16 50,24 26,24', face(5)),
+    poly('14,16 26,24 26,52 14,44', face(4)), poly('26,24 50,24 50,52 26,52', face(6)),
+    svgEl('path', { d: 'M14 16v28M26 24v28M50 24v28', style: 'fill:none;stroke:var(--primary);stroke-width:3.2;stroke-linecap:round' }),
+    ...[[14, 16], [38, 16], [50, 24], [26, 24], [14, 44], [26, 52], [50, 52]].map(([cx, cy]) => svgEl('circle', { cx, cy, r: 2.4, style: 'fill:var(--ink)' })),
+    svgEl('circle', { cx: 66, cy: 18, r: 9, style: paint('var(--butter)') }),
+    svgEl('text', { x: 66, y: 22, 'text-anchor': 'middle', style: 'font:800 10px var(--font);fill:var(--ink)' }, [document.createTextNode('×3')]),
+  ],
 };
 
 function thumbOf(kind) {
@@ -47,5 +64,5 @@ function thumbOf(kind) {
   return make ? () => svgEl('svg', { viewBox: '0 0 80 60', class: `stage-art stage-art-${kind}`, 'aria-hidden': 'true', focusable: 'false' }, make()) : undefined;
 }
 
-export { PRISM_HOW_TO, PRISM_LESSONS };
+export { PRISM_BADGES, PRISM_COLLECTIONS, PRISM_HOW_TO, PRISM_LESSONS };
 export const PRISM_STAGES = STAGE_LIST.map((stage) => ({ ...stage, thumb: thumbOf(stage.kind) }));

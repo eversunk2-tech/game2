@@ -626,7 +626,7 @@ test('더 붙여서 만들기: 예상이 틀리면 만들 수 있는 보기와 �
 });
 
 // ── 도장 셋 ───────────────────────────────
-test('쌓기나무 도장 셋: 도장판 16칸에 받는 방법이 보이고(숨은 도장 없음), 지난 학습 기록으로 조건을 채운 학생은 다음에 단계를 마칠 때 한 번만 받는다', async ({ page }, testInfo) => {
+test('쌓기나무 도장 셋: 도장판 17칸에 받는 방법이 보이고(숨은 도장 없음), 지난 학습 기록으로 조건을 채운 학생은 다음에 단계를 마칠 때 한 번만 받는다', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북에서 확인');
   test.setTimeout(90_000); // CPU 4배 느리게 한 실행에서 4초
   const errors = collectErrors(page);
@@ -647,7 +647,7 @@ test('쌓기나무 도장 셋: 도장판 16칸에 받는 방법이 보이고(숨
   });
   await page.goto(fileUrl(FILE, '?seed=1&sound=off&intro=0'));
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.badge-item')).toHaveCount(16);
+  await expect(page.locator('.badge-item')).toHaveCount(17); // 각기둥 기둥 설계사(G2)가 더해져 17칸
   await expect(page.locator('.badge-item[data-badge="blocks-hidden-finder"]')).toContainText('숨겨진 쌓기나무가 있는 개수 문제를 처음에 3번 맞혀요');
   await expect(page.locator('.badge-item[data-badge="blocks-three-eyes"]')).toContainText('위, 앞, 옆을 보고 쌓기를 첫 [확인하기]에 3번 맞혀요');
   await expect(page.locator('.badge-item[data-badge="blocks-layer-builder"]')).toContainText('층별 모양을 보고 쌓기를 첫 [확인하기]에 3번 맞혀요');
