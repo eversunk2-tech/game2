@@ -69,10 +69,11 @@ export const PRISM_FREE_GOAL = 2;
 export const PRISM_FREE_FULL = 3;
 /**
  * 점수 상한(common-rules 3절 — 모을 것이 아주 많은 탐구): 이 기기에서 처음 찾는 각기둥 전개도(모든 각기둥을 합쳐) 10가지까지는 만들기 성공(+2 · 연속)과
- * 등록 +5, 11번째부터는 새로 찾을 때마다 등록 +1뿐(직육면체 전개도와 같은 규칙 — spec 16-14)
+ * 등록 +5, 11~30번째는 새로 찾을 때마다 등록 +1뿐, 31번째부터는 0점(사용자 결정 15-29 — 962가지라 이 단계 최대 104점). "찾은 가지 수"는 계속 오른다
  */
 export const PRISM_FREE_FULL_SCORE = 10;
 export const PRISM_FREE_LATER_XP = 1;
+export const PRISM_FREE_LATER_UNTIL = 30;
 
 export const PRISM_STAGES = [
   {
@@ -136,7 +137,7 @@ export const PRISM_COLLECTIONS = [
     title: '각기둥 전개도',
     lesson: 'prism',
     quiet: true,
-    xpAfter: { count: PRISM_FREE_FULL_SCORE, xp: PRISM_FREE_LATER_XP },
+    xpAfter: { count: PRISM_FREE_FULL_SCORE, xp: PRISM_FREE_LATER_XP, until: PRISM_FREE_LATER_UNTIL },
     items: PRISM_FREE_SOLIDS.flatMap((s) => Array.from({ length: s.count }, (_, i) => ({ id: prismFreeItemId(s.id, i), name: `각기둥 전개도 ${prismFreeItemId(s.id, i)}` }))),
   },
 ];

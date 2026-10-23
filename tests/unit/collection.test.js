@@ -145,6 +145,28 @@ test('xpAfter: 칸이 count개 찬 뒤에 등록하는 칸은 xp 대신 그 점�
   assert.doesNotThrow(bad({ count: 2, xp: 2 }, { xp: 2 }));
 });
 
+test('xpAfter.until: until을 넘은 칸(until + 1번째부터)은 0점 — 962칸 가운데 처음 10가지 +5, 11~30번째 +1, 그 뒤 0이면 어떤 순서로 등록해도 합이 10 × 5 + 20 × 1 = 70', () => {
+  const items = (n) => Array.from({ length: n }, (_, i) => ({ id: `i${i}`, name: `칸 ${i}` }));
+  const [big] = normalizeCollections([{ id: 'big', title: '아주 많은 모음', quiet: true, xpAfter: { count: 10, xp: 1, until: 30 }, items: items(962) }]);
+  assert.deepEqual([1, 10, 11, 30, 31, 962].map((n) => discoverXp(collectionXp(big, n))), [5, 5, 1, 1, 0, 0]);
+  for (const order of [items(962), items(962).reverse()]) {
+    let state = normalizeCollectionState(null, [big]);
+    let sum = 0;
+    for (const item of order) {
+      const r = collectItem(state, [big], 'big', item.id);
+      state = r.state;
+      sum += discoverXp(collectionXp(big, r.count));
+    }
+    assert.equal(sum, 70);
+  }
+  // until이 없으면 지금과 같다, until은 count 이상 정수
+  const [capped] = normalizeCollections([{ id: 'c', title: 'C', xpAfter: { count: 10, xp: 1 }, items: items(54) }]);
+  assert.equal(discoverXp(collectionXp(capped, 54)), 1);
+  const bad = (xpAfter) => () => normalizeCollections([{ id: 'a', title: 'A', items: items(3), xpAfter }]);
+  for (const until of [5, 9.5, 'x', -1]) assert.throws(bad({ count: 10, xp: 1, until }), /until/, String(until));
+  assert.doesNotThrow(bad({ count: 10, xp: 1, until: 10 }));
+});
+
 test('xpAfter.with: 몇 번째인지를 함께 적은 모음의 칸까지 합쳐 센다 — 두 모음을 어떤 순서로 섞어 등록해도 점수의 합이 같고, with가 없으면 지금과 같다', () => {
   const items = (n, p) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, name: `칸 ${i}` }));
   const defs = normalizeCollections([

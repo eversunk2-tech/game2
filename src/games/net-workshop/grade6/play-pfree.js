@@ -15,6 +15,7 @@ import { MAT_TOOLS_LIFT, createFoldTools, createNetView } from '../view3d.js';
 import { createEdgeBoard, faceFill } from './edge-board.js';
 import {
   FREE_LATER_NOTE,
+  FREE_OVER_NOTE,
   FREE_REPLAY_NOTE,
   createFreeSession,
   fitBoard,
@@ -30,6 +31,7 @@ import {
   freeSummary,
   givenFaces,
   isLaterFree,
+  isOverFree,
   judgeFreeReason,
   orderText,
   primaryFreeProblem,
@@ -286,11 +288,17 @@ export function playPrismFree(stage, ctx, play) {
   /** 판 안쪽이 넘칠 때만 찾은 전개도 띠를 머리 한 줄로 (spec 16-10과 같은 규칙) */
   function fitShelf() {
     shelf.classList.remove('is-folded');
+    shelf.hidden = false;
     shelfBody.hidden = false;
-    if (orderSheet.el.scrollHeight > orderSheet.el.clientHeight) {
+    // 넓은 화면: 주문서 안쪽이 넘치면 · 태블릿 세로(주문서가 매트 아래): 화면이 세로로 넘치면 — 휴대폰은 세로 스크롤을 허용한다(도전의 fitFound와 같은 조건, review-prism-g2 G2-2)
+    // 넘치면 찾은 전개도 칸을 머리 한 줄로 접고, 그래도 넘치면 숨긴다(찾은 가지 수는 머리의 "찾은 전개도 n / 3" 칩에도 있다)
+    const over = () => orderSheet.el.scrollHeight > orderSheet.el.clientHeight
+      || (globalThis.matchMedia?.('(min-width: 561px) and (max-width: 900px)').matches && document.documentElement.scrollHeight > globalThis.innerHeight);
+    if (over()) {
       shelf.classList.add('is-folded');
       shelfBody.hidden = true;
     }
+    if (over()) shelf.hidden = true;
   }
 
   // ── 주문 ─────────────────────────────
@@ -349,10 +357,10 @@ export function playPrismFree(stage, ctx, play) {
   }
 
   /** 까닭 표시: 길이가 다른 두 선분에 같은 무늬 띠와 길이 이름표 (까닭을 고른 뒤에만) */
-  function showMarks(step) {
+  function showMarks(step, chosen = null) {
     view.reveal();
     if (step.valid) return;
-    const problem = primaryFreeProblem(step.problems);
+    const problem = primaryFreeProblem(step.problems, chosen);
     const mismatch = problem?.type === 'edge-length' ? problem : null;
     view.setEdgeMarks((mismatch?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone: 'a', text: cm(mismatch.lengths[i]) })));
   }
@@ -371,6 +379,7 @@ export function playPrismFree(stage, ctx, play) {
     const afterCollect = playXp();
     const first = step.first && Boolean(collected?.isNew);
     const later = first && isLaterFree(deviceFound().size);
+    const over = first && isOverFree(deviceFound().size);
     if (step.log) ctx.log.answer({ itemId: step.itemId, correct: step.valid, tag: step.tag, given: step.given, expected: step.expected, scored: first && !later ? 'once' : false });
     const gain = { discover: afterCollect - before, answer: playXp() - afterCollect };
     earned.answer += gain.answer;
@@ -393,7 +402,7 @@ export function playPrismFree(stage, ctx, play) {
     } else ctx.feedback.info(feedback.toast);
     if (first) showStamp();
     showNote(feedback);
-    showBonus(step, first, gain, later);
+    showBonus(step, first, gain, later, over);
     renderShelf();
     setProgress();
     const was = reached;
@@ -407,10 +416,11 @@ export function playPrismFree(stage, ctx, play) {
         problems: step.problems,
         reasons: PRISM_JUDGE_REASONS,
         judge: (problems, choice) => judgeFreeReason(problems, choice, PRISM_JUDGE_REASONS),
-        onDone: () => {
+        onDone: ({ chosen }) => {
           orderSheet.el.classList.remove('is-picking');
-          showMarks(step);
-          showNote(freeFeedback(step, { picked: true, order }));
+          // 고른 까닭이 참이면 그 까닭의 문장 · 표시를 먼저(review-prism-g2 G2-5)
+          showMarks(step, chosen);
+          showNote(freeFeedback(step, { picked: true, order, chosen }));
           fitShelf();
           buttonsSlot.querySelector('button')?.focus({ preventScroll: true });
         },
@@ -437,7 +447,7 @@ export function playPrismFree(stage, ctx, play) {
   }
 
   /** 보너스 쪽지: 이번 접기로 엔진이 준 점수를 글로 보인다. 점수는 이 기기에서 처음 만든 전개도에만 있다 */
-  function showBonus(step, first, gain, later) {
+  function showBonus(step, first, gain, later, over = false) {
     const peek = ctx.reward.peek?.();
     bonusSlot.replaceChildren();
     if (!peek?.on || !step.valid || step.kind === 'repeat') return;
@@ -452,6 +462,8 @@ export function playPrismFree(stage, ctx, play) {
       if (gain.answer > XP.first) parts.push(`연속 +${gain.answer - XP.first}`);
     }
     if (parts.length > 0) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, parts.join(' · ')), later ? ` · ${FREE_LATER_NOTE}` : null));
+    // 31번째부터: 점수는 없고 찾은 가지 수만 오른다(15-29)
+    else if (over) bonusSlot.replaceChildren(ctx.ui.bonus(h('b', null, '새 전개도'), ` · ${FREE_OVER_NOTE}`));
   }
 
   const actionButton = (cls, iconName, text, onclick, { after = false } = {}) => h('button', { type: 'button', class: `btn ${cls}`, onclick },

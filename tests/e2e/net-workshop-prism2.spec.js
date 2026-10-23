@@ -9,7 +9,7 @@ import { createRng } from '../../src/shared/core/random.js';
 import { polyNetKey, prismNetCatalog } from '../../src/games/net-workshop/solids.js';
 import { PRISM_STAGES } from '../../src/games/net-workshop/grade6/prism-stages.js';
 import * as L from '../../src/games/net-workshop/grade6/prism-free-logic.js';
-import { makeCountQuestions } from '../../src/games/net-workshop/grade6/prism-count-logic.js';
+import { judgeCount, makeCountQuestions } from '../../src/games/net-workshop/grade6/prism-count-logic.js';
 import { collectErrors, fileUrl, hasHorizontalScroll, touchFlick } from './helpers.js';
 
 const FILE = 'net-workshop.html';
@@ -358,6 +358,32 @@ test('전개도 완성하기: 다시 하는 판에서 이미 찾은 전개도는
   expect(errors).toEqual([]);
 });
 
+test('전개도 완성하기 점수 상한(15-29): 이 기기에서 10가지를 찾은 뒤 새 전개도는 등록 +1뿐, 30가지를 찾은 뒤는 점수 없이 찾은 가지 수만 오른다 — 쪽지 · 저장 점수', async ({ page }, testInfo) => {
+  test.skip(touchOf(testInfo), '크롬북에서 확인');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  for (const [have, xp, note] of [[10, 1, /새 발견 \+1.*10가지를 넘으면 새 전개도마다 1점/], [30, 0, /새 전개도.*30가지를 넘은 전개도는 점수 없이/]]) {
+    await page.goto(fileUrl(FILE, '?seed=1&sound=off&intro=0'));
+    // 다른 각기둥(시드 1은 사다리꼴기둥)의 전개도를 have가지 찾아 둔 기기
+    await page.evaluate((k) => {
+      const items = {};
+      for (let i = 0; i < k; i += 1) items[`hex-b-${String(i + 1).padStart(3, '0')}`] = { at: 1, stage: 'prism-free' };
+      localStorage.setItem('edu:net-workshop:collections', JSON.stringify({ 'prism-nets': items }));
+    }, have);
+    await openStage(page, 'prism-free');
+    await expect(page.locator('.found-count')).toHaveText(`각기둥 전개도 ${have}가지`);
+    const before = await storedXpOf(page);
+    const play = freePlay('1', page);
+    await buildOrder(page, play, 1, new Set());
+    await foldNow(page);
+    await expect(page.locator('.reason')).toContainText('새 전개도 발견');
+    await expect(page.locator('.bonus-note')).toContainText(note);
+    await expect(page.locator('.found-count')).toHaveText(`각기둥 전개도 ${have + 1}가지`);
+    expect(await storedXpOf(page), `${have}가지 뒤`).toBe(before + xp); // 등록 점수는 바로 저장, 만들기 성공(+2)은 처음 10가지만이라 없음
+  }
+  expect(errors).toEqual([]);
+});
+
 test('전개도 완성하기: 안 되는 모양을 접으면 "왜 안 될까요?"(고르기 전에는 까닭 글 · 표시 없음) → 고르면 까닭과 표시, 별은 깎이지 않는다. [펴서 고치기]는 놓은 그대로, [처음부터]는 처음 놓인 면만', async ({ page }) => {
   test.setTimeout(150_000);
   const errors = collectErrors(page);
@@ -403,6 +429,56 @@ test('전개도 완성하기: 안 되는 모양을 접으면 "왜 안 될까요?
   await expect(page.locator('.pf-face')).toHaveCount(play.given1.length);
   const log = (await storedLog(page)).find((r) => r.stageId === 'prism-free');
   expect(log ?? null).toBe(null); // 판을 마치기 전에는 학습 기록이 남지 않는다
+  expect(errors).toEqual([]);
+});
+
+/** 주문 ①의 마지막 카드를 다른 빈 모서리에 붙여 "겹침"과 "길이"가 둘 다 참인 안 되는 판을 만드는 붙이기 — 화면의 판과 같은 규칙(펼친 그림이 겹치지 않는 자리) */
+function bothReasonsMove(play) {
+  const cards = L.freeCards(L.freeSolid(play.solidId));
+  const moves = planMoves(play, 1, targetFor(play, 1, new Set()));
+  const placed = L.givenFaces(play, 1).map((f) => ({ ...f }));
+  for (const m of moves.slice(0, -1)) {
+    const card = cards.find((c) => c.group === m.group && !placed.some((q) => q.id === c.id));
+    const [faceId, e] = m.slot.split(':');
+    const parent = placed.find((f) => f.id === faceId);
+    placed.push({ id: card.id, role: card.role, label: card.label, poly: L.attachPoly(card.poly, m.edge, [parent.poly[Number(e)], parent.poly[(Number(e) + 1) % parent.poly.length]]) });
+  }
+  const last = moves.at(-1);
+  const card = cards.find((c) => c.group === last.group && !placed.some((q) => q.id === c.id));
+  for (const e of L.openEdges(placed, [card])) {
+    for (const edge of L.attachEdges(card)) {
+      const poly = L.attachPoly(card.poly, edge, [e.p, e.q]);
+      if (L.overlapsPlaced(poly, placed)) continue;
+      const faces = [...placed, { id: card.id, role: card.role, label: card.label, poly }];
+      const r = L.createFreeSession({ solidId: play.solidId }).fold(faces, faces[0].id);
+      const truths = L.freeReasons(r.problems ?? []);
+      if (!r.valid && truths.includes('overlap') && truths.includes('length') && r.problems.some((p) => p.type === 'edge-length')) {
+        return { moves, wrong: { group: last.group, edge, slot: `${e.face}:${e.edge}` }, net: r.net, problems: r.problems };
+      }
+    }
+  }
+  return null;
+}
+
+test('전개도 완성하기: 까닭이 둘 다 참인 판에서 "길이"를 고르면 쪽지 · 무대 표시가 그 까닭(길이가 다른 두 선분 — 같은 무늬 · 길이 이름표)을 먼저 보인다 (review-prism-g2 G2-5)', async ({ page }, testInfo) => {
+  test.skip(touchOf(testInfo), '크롬북에서 확인');
+  test.setTimeout(90_000);
+  const errors = collectErrors(page);
+  let found = null;
+  let seed = 0;
+  for (seed = 1; seed <= 20 && !found; seed += 1) found = bothReasonsMove(freePlay(String(seed), page));
+  seed -= 1;
+  expect(found, '까닭이 둘인 판').not.toBeNull();
+  await openStage(page, 'prism-free', '', String(seed));
+  for (const m of found.moves.slice(0, -1)) await attach(page, m);
+  await attach(page, found.wrong);
+  await foldNow(page);
+  await page.locator('.reason-chip[data-reason="length"]').click();
+  await expect(page.locator('.reason-pick-result')).toContainText('맞아요');
+  await expect(page.locator('.reason')).toContainText(/길이가 .+로 달라요/);
+  await expect(page.locator('.reason')).not.toContainText('겹쳐요');
+  await expect(page.locator('.free-host .edge-band')).toHaveCount(2); // 길이가 다른 두 선분에 같은 무늬
+  await expect(page.locator('.free-host .edge-tag')).toHaveCount(2);
   expect(errors).toEqual([]);
 });
 
@@ -514,8 +590,8 @@ test('전개도 완성하기: 판에서 무대로 이어 접을 때 펼친 모�
   }
 });
 
-test('전개도 완성하기 배치(여섯 크기): 처음 · 카드를 고른 장면 · 다 붙인 장면 · 접은 장면(맞음 · 안 됨 · 까닭 고른 뒤) · 주문 ② — 스크롤 · 판 넘침 0, 버튼 48px, 붙일 자리끼리 · 만들 각기둥 창 · 띠와 겹침 0, 알림이 조작을 가리지 않음', async ({ page }, testInfo) => {
-  test.setTimeout(420_000);
+test('전개도 완성하기 배치(여섯 크기): 처음 · 카드를 고른 장면 · 다 붙인 장면 · 접은 장면(맞음 · 안 됨 · 까닭 고른 뒤) · 주문 ② · 2가지 · 3가지를 찾은 장면 — 스크롤 · 판 넘침 0, 버튼 48px, 붙일 자리끼리 · 만들 각기둥 창 · 띠와 겹침 0, 알림이 조작을 가리지 않음', async ({ page }, testInfo) => {
+  test.setTimeout(600_000); // 보통 1분 안팎(크롬북 네 크기), CPU 12배에서 약 4분
   const how = touchOf(testInfo) ? 'touch' : 'mouse';
   for (const size of sizesFor(testInfo)) {
     await page.setViewportSize(size);
@@ -551,6 +627,20 @@ test('전개도 완성하기 배치(여섯 크기): 처음 · 카드를 고른 �
       await expectMatClear(page, `${label} 주문 ② 고름`);
       await noScroll(page, `${label} 주문 ②`);
       await expectPanelFits(page, `${label} 주문 ②`);
+      // 2가지째 · 3가지째를 찾은 장면(주문서에 "…찾았어요!" 줄과 버튼 둘이 더해진다 — review-prism-g2 G2-2)
+      await pressCard(moves2[0].group);
+      for (const m of moves2) await attach(page, m, how);
+      await foldNow(page, how);
+      await expect(page.locator('.free-finish')).toBeVisible();
+      await noScroll(page, `${label} 2가지 찾음`);
+      await expectPanelFits(page, `${label} 2가지 찾음`);
+      if (how === 'touch') await page.locator('.free-next').tap();
+      else await page.locator('.free-next').click();
+      await buildOrder(page, play, 3, used, how);
+      await foldNow(page, how);
+      await expect(page.locator('.free-finish')).toHaveClass(/btn-primary/);
+      await noScroll(page, `${label} 3가지 찾음`);
+      await expectPanelFits(page, `${label} 3가지 찾음`);
     }
     // 안 되는 모양: 까닭 고르기 · 고른 뒤
     await openStage(page, 'prism-free', '', '3');
@@ -638,9 +728,12 @@ test('모서리와 꼭짓점: 흔한 실수(옆으로 선 모서리만 · 한 �
   test.setTimeout(90_000);
   await openStage(page, 'prism-count');
   const qs = countQuestions('1');
+  // 흔한 실수 n은 판마다 셈 문항 하나에만 있다(15-29) — 그 문항에서 고른다
+  const mustQ = qs.find((q) => q.kind === 'count' && q.choices.some((c) => c.value === q.n));
+  expect(qs.filter((q) => q.kind === 'count' && q.choices.some((c) => c.value === q.n))).toHaveLength(1);
   let wrong = 0;
   for (const q of qs) {
-    if (q.kind === 'count' && wrong === 0) {
+    if (q === mustQ) {
       await page.locator(`.pc-answers .answer-btn[data-value="${q.n}"]`).click();
       wrong += 1;
       await expect(page.locator('.reason')).toContainText(q.what === 'edges' ? '옆으로 선 모서리만' : '한 밑면의 꼭짓점만');
@@ -655,7 +748,7 @@ test('모서리와 꼭짓점: 흔한 실수(옆으로 선 모서리만 · 한 �
   }
   await expect(page.locator('.screen-result .stars-big')).toHaveAttribute('aria-label', '별 3개 중 2개');
   const rec = (await storedLog(page)).find((r) => r.stageId === 'prism-count');
-  expect(rec.answers.filter((a) => !a.correct).map((a) => a.tag)).toEqual([qs.find((q) => q.kind === 'count').what === 'edges' ? '모서리의 수' : '꼭짓점의 수']);
+  expect(rec.answers.filter((a) => !a.correct).map((a) => a.tag)).toEqual([mustQ.what === 'edges' ? '모서리의 수' : '꼭짓점의 수']);
 });
 
 test('모서리와 꼭짓점 정답 노출 0: 답하기 전 무대에는 띠 · 이름표 · 수가 없고(면은 모두 같은 색 · 글자 없음), 보기 버튼은 같은 모습 — 끌어 돌려도 그대로 (시드 6개)', async ({ page }, testInfo) => {
@@ -717,7 +810,9 @@ test('모서리와 꼭짓점 배치(여섯 크기): 셈 문항(답하기 전 · 
       await noScroll(page, `${label} 답하기 전`);
       await expectPanelFits(page, `${label} 답하기 전`);
       // 틀린 답(가장 긴 까닭 쪽지)도 넣어 본다
-      const wrong = q.kind === 'count' ? page.locator(`.pc-answers .answer-btn[data-value="${q.n}"]`) : page.locator(`.pc-answers .answer-btn:not([data-rule="${q.answer}"])`).first();
+      // 틀린 답: 셈 문항은 까닭 쪽지가 가장 긴 보기
+      const longest = q.kind === 'count' && q.choices.filter((c) => c.value !== q.answer).sort((a, b) => judgeCount(q, b.value).message.length - judgeCount(q, a.value).message.length)[0];
+      const wrong = q.kind === 'count' ? page.locator(`.pc-answers .answer-btn[data-value="${longest.value}"]`) : page.locator(`.pc-answers .answer-btn:not([data-rule="${q.answer}"])`).first();
       if (touchOf(testInfo)) await wrong.tap();
       else await wrong.click();
       await expectToastClear(page, `${label} 답함`);

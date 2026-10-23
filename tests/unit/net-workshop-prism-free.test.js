@@ -15,6 +15,8 @@ import {
   PRISM_BADGES, PRISM_COLLECTIONS, PRISM_FREE_COLLECTION, PRISM_FREE_FULL_SCORE, PRISM_FREE_SOLIDS, PRISM_STAGES, PRISM_TAGS, prismDesigns, prismFreeItemId,
 } from '../../src/games/net-workshop/grade6/prism-stages.js';
 import { countNets, foldsToPrism } from './net-workshop-prism-free-indep.js';
+import { collectItem, collectionXp, normalizeCollectionState, normalizeCollections } from '../../src/shared/core/collection.js';
+import { discoverXp } from '../../src/shared/core/rewards.js';
 
 const STAGE = PRISM_STAGES.find((s) => s.id === 'prism-free');
 const near = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1e-6;
@@ -301,6 +303,39 @@ test('한 판의 점수(common-rules 3절 · spec 16-8 · 16-9 · 16-14): 처음
   assert.equal(L.freeStarNote(3), null);
 });
 
+test('점수 상한(사용자 결정 15-29): 이 기기에서 처음 10가지는 제 점수, 11~30번째는 하나에 +1, 31번째부터 0점 — 962칸을 어떤 순서로 찾아도 등록 점수의 합 70, 이 단계 최대 104점(독립 계산). 찾은 가지 수는 계속 오른다', () => {
+  // 독립: 기획서 문장 그대로 — 처음 10가지 × (등록 5 + 만들기 성공 2) + 연속(처음 시도 3번마다 +1) 3 + 11~30번째 20가지 × 1 + 단계 완료 5 + 별 3개 6
+  const indepMax = 10 * (5 + 2) + Math.floor(10 / 3) + 20 * 1 + 5 + 6;
+  assert.equal(indepMax, 104);
+  // 엔진의 모음 점수(xpAfter): 962칸을 무작위 순서 3가지로 모두 찾을 때 등록 점수의 합
+  const [def] = normalizeCollections(PRISM_COLLECTIONS);
+  assert.equal(def.items.length, 962);
+  for (const seed of ['a', 'b', 'c']) {
+    let state = normalizeCollectionState(null, [def]);
+    let sum = 0;
+    let found = 0;
+    for (const item of createRng(`cap-${seed}`).shuffle(def.items)) {
+      const r = collectItem(state, [def], def.id, item.id);
+      state = r.state;
+      found = r.count;
+      sum += discoverXp(collectionXp(def, r.count));
+    }
+    assert.equal(sum, 10 * 5 + 20 * 1);
+    assert.equal(found, 962, '찾은 가지 수는 끝까지 오른다');
+  }
+  // 한 판의 흐름: 기기에 n가지가 있을 때 새 전개도는 — 10가지 안 · 11~30번째 later · 31번째부터 over (만들기 성공 점수는 처음 10가지만)
+  const play = L.makeFreePlay(STAGE, createRng('cap-play'));
+  const fs = L.freeSolid(play.solidId);
+  const faces = rebuild(fs, prismNetCatalog(fs.solid)[0].net);
+  const other = (k) => Array.from({ length: k }, (_, i) => prismFreeItemId(play.solidId === 'hex-a' ? 'hex-b' : 'hex-a', i));
+  const flags = [0, 9, 10, 29, 30, 200].map((k) => {
+    const step = L.createFreeSession({ solidId: play.solidId, deviceFound: other(k) }).fold(faces, faces[0].id);
+    return [k + 1, step.kind, step.later, step.over, step.deviceCount];
+  });
+  assert.deepEqual(flags, [[1, 'new', false, false, 1], [10, 'new', false, false, 10], [11, 'new', true, false, 11], [30, 'new', true, false, 30], [31, 'new', true, true, 31], [201, 'new', true, true, 201]]);
+  assert.match(L.FREE_OVER_NOTE, /30가지/);
+});
+
 test('점수 독립 계산: 무작위 접기 순서 300판 — 안 되는 모양을 일부러 끼워도 점수 받는 답(once)은 처음 만든 전개도 수와 같고, 같은 모양을 두 번 접어 점수를 두 번 받는 길이 없다', () => {
   const nets = new Map(); // 각기둥마다 다시 만든 전개도 몇 개(앞의 여섯 — 같은 판에서 되풀이해 접는다)
   for (const s of PRISM_FREE_SOLIDS) {
@@ -477,7 +512,31 @@ test('도장 "기둥 설계사"(spec-grade6 8절): 전개도 완성하기에서 
   assert.equal(col.quiet, true);
   assert.equal(col.items.length, PRISM_FREE_SOLIDS.reduce((s, x) => s + x.count, 0));
   assert.equal(col.items.length, 962);
-  assert.deepEqual(col.xpAfter, { count: 10, xp: 1 });
+  assert.deepEqual(col.xpAfter, { count: 10, xp: 1, until: 30 }); // 처음 10가지 제 점수, 11~30번째 +1, 31번째부터 0(15-29)
+});
+
+test('고른 까닭 먼저(review-prism-g2 G2-5): 까닭이 둘 다 참인 판(겹침 · 길이)에서 "길이"를 고르면 쪽지와 표시가 길이를, "겹침"을 고르면 겹침을 말한다. 틀리게 골랐거나 넘어가면 지금처럼(겹침 먼저)', () => {
+  let both = 0;
+  for (let seed = 0; seed < 400 && both < 30; seed += 1) {
+    const rng = createRng(`reason-${seed}`);
+    const play = L.makeFreePlay(STAGE, rng);
+    const faces = randomBuild(play, 1, rng, false);
+    if (!faces) continue;
+    const r = L.createFreeSession({ solidId: play.solidId }).fold(faces, faces[0].id);
+    if (r.valid) continue;
+    const truths = L.freeReasons(r.problems);
+    if (!(truths.includes('overlap') && truths.includes('length'))) continue;
+    if (!r.problems.some((p) => p.type === 'edge-length')) continue;
+    both += 1;
+    assert.equal(L.primaryFreeProblem(r.problems, 'length').type, 'edge-length');
+    assert.match(L.explainFreeProblem(r.net, r.problems, 'length'), /길이가 .+로 달라요/);
+    assert.equal(L.freeFeedback(r, { picked: true, chosen: 'length' }).note, L.explainFreeProblem(r.net, r.problems, 'length'));
+    const plain = L.explainFreeProblem(r.net, r.problems);
+    assert.equal(L.explainFreeProblem(r.net, r.problems, 'overlap'), plain); // 겹침이 먼저인 지금 규칙과 같다
+    assert.equal(L.explainFreeProblem(r.net, r.problems, null), plain);
+    assert.equal(L.explainFreeProblem(r.net, r.problems, 'nope'), plain);
+  }
+  assert.ok(both >= 10, `까닭이 둘인 판 ${both}개`);
 });
 
 test('화면 글: 접기 전 안내 · 까닭 고르기 전의 글에는 까닭 낱말(겹쳐 · 길이 · 비어)이 없다, 주문 글 · 별 기준', () => {

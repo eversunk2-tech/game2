@@ -21,7 +21,7 @@ import { hasFinalSound, josa } from '../../../shared/core/korean.js';
 import { LABELS, checkNet, findHinges, solidEdges, spanningTree, spanningTrees } from '../fold.js';
 import { bounds, centroid, convexIntersectionArea, cross, dot, interiorAngle, normalize, signedArea, sub } from '../geometry.js';
 import { BASE_NAMES, PRISM_NAMES, flatOk, isoTrapezoid, polyNetKey, prismNet, prismSolid, regularPolygon, stripTree, triangleBySides } from '../solids.js';
-import { PRISM_FREE_COLLECTION, PRISM_FREE_FULL, PRISM_FREE_FULL_SCORE, PRISM_FREE_GOAL, PRISM_FREE_LATER_XP, PRISM_FREE_SOLIDS, PRISM_TAGS as TAGS, prismFreeItemId } from './prism-stages.js';
+import { PRISM_FREE_COLLECTION, PRISM_FREE_FULL, PRISM_FREE_FULL_SCORE, PRISM_FREE_GOAL, PRISM_FREE_LATER_UNTIL, PRISM_FREE_LATER_XP, PRISM_FREE_SOLIDS, PRISM_TAGS as TAGS, prismFreeItemId } from './prism-stages.js';
 import { FREE_NET_CODES } from './prism-free-data.js';
 
 const EPS = 1e-6;
@@ -386,9 +386,15 @@ export function netItemId(solidId, code) {
 
 // ── 판정 ─────────────────────────────────
 const PROBLEM_ORDER = ['overlap', 'wrong-hinge', 'vertex-full', 'edge-length', 'gap', 'disconnected', 'face-count'];
-/** 까닭을 하나만 말할 때 먼저 고르는 것: 겹침 → 접을 수 없는 경첩 → 한 점을 둘러쌈 → 길이(이어 붙인 곳 먼저) → 빈 곳 */
-export function primaryFreeProblem(problems) {
-  for (const type of PROBLEM_ORDER) {
+/** 고른 까닭(PRISM_JUDGE_REASONS의 id)에 드는 문제의 꼴 */
+const REASON_TYPES = Object.freeze({ overlap: ['overlap', 'wrong-hinge', 'vertex-full'], length: ['edge-length', 'gap'] });
+/**
+ * 까닭을 하나만 말할 때 먼저 고르는 것: 겹침 → 접을 수 없는 경첩 → 한 점을 둘러쌈 → 길이(이어 붙인 곳 먼저) → 빈 곳.
+ * chosen: 학생이 고른 까닭이 참이면 그 까닭의 문제를 먼저(쪽지 · 무대 표시가 학생이 찾은 까닭을 보이게 — review-prism-g2 G2-5)
+ */
+export function primaryFreeProblem(problems, chosen = null) {
+  const prefer = chosen && freeReasons(problems).includes(chosen) ? REASON_TYPES[chosen] ?? [] : [];
+  for (const type of [...PROBLEM_ORDER.filter((t) => prefer.includes(t)), ...PROBLEM_ORDER.filter((t) => !prefer.includes(t))]) {
     const found = (type === 'edge-length' ? problems.find((p) => p.type === type && p.hinge) : null) ?? problems.find((p) => p.type === type);
     if (found) return found;
   }
@@ -433,9 +439,9 @@ export function judgeFreeReason(problems, choice, reasons) {
 const labelOf = (net, id) => net.faces.find((f) => f.id === id)?.label ?? '?';
 const byLabel = (a, b) => LABELS.indexOf(a) - LABELS.indexOf(b);
 
-/** 까닭 문장 (까닭을 고른 뒤 · 넘어간 뒤) */
-export function explainFreeProblem(net, problems) {
-  const p = primaryFreeProblem(problems);
+/** 까닭 문장 (까닭을 고른 뒤 · 넘어간 뒤) — chosen: 학생이 고른 까닭(참이면 그 까닭을 말한다) */
+export function explainFreeProblem(net, problems, chosen = null) {
+  const p = primaryFreeProblem(problems, chosen);
   if (!p) return '';
   if (p.type === 'overlap') {
     const bases = net.faces.filter((f) => f.role === 'base');
@@ -484,18 +490,22 @@ export function judgeFreeNet(fs, faces, rootId) {
 // ── 한 판의 흐름 (순수 상태 — 화면 play-pfree.js와 점수 검사가 같은 규칙을 쓴다) ─────────────
 export const FREE_EXPECTED = '전개도';
 export const FREE_REPLAY_NOTE = '처음 만든 전개도는 점수를 받아요. 만들어 본 전개도는 다시 만들어도 점수가 없어요.';
-export const FREE_LATER_NOTE = `${PRISM_FREE_FULL_SCORE}가지를 넘으면 새 전개도마다 ${PRISM_FREE_LATER_XP}점이에요.`;
+export const FREE_LATER_NOTE = `${PRISM_FREE_FULL_SCORE}가지를 넘으면 새 전개도마다 ${PRISM_FREE_LATER_XP}점이에요(${PRISM_FREE_LATER_UNTIL}가지까지).`;
+export const FREE_OVER_NOTE = `${PRISM_FREE_LATER_UNTIL}가지를 넘은 전개도는 점수 없이 찾은 가지 수에만 더해져요.`;
 export const FREE_NOTE_BEFORE_PICK = '접어 보니 각기둥이 안 돼요. 왜 그런지 골라 볼까요?';
 export const isLaterFree = (count) => count > PRISM_FREE_FULL_SCORE;
+/** 이 기기에서 찾은 가지 수가 이만큼을 넘으면(31번째부터) 등록 점수도 없다(15-29) */
+export const isOverFree = (count) => count > PRISM_FREE_LATER_UNTIL;
 /** 별: 이번 판에 찾은 서로 다른 전개도 수(1 · 2 · 3가지 → 별 1 · 2 · 3개). 2가지부터 끝낼 수 있다(spec 16-14) */
 export const freeStars = (found) => Math.max(0, Math.min(3, Math.floor(Number(found) || 0)));
 export const freeStarNote = (stars) => (stars >= 3 ? null : '서로 다른 전개도 3가지를 찾으면 별 3개!');
 
 /**
  * 한 판: deviceFound — 이 기기에서 찾은 각기둥 전개도(모음 칸 id, 모든 각기둥을 합쳐 — 점수 상한을 세는 수).
- * fold(faces) → judgeFreeNet 결과 + { kind: 'new' | 'known' | 'repeat' | 'invalid', log, itemId, collect, first, later, tag, given, found, done, full, fixed }
+ * fold(faces) → judgeFreeNet 결과 + { kind: 'new' | 'known' | 'repeat' | 'invalid', log, itemId, collect, first, later, over, tag, given, found, done, full, fixed }
  *   repeat: 이번 판에 이미 접어 본 모양(되는 것은 열쇠, 안 되는 것은 펼친 그림의 모양) — 기록하지 않는다.
- *   new: 이 기기에서 처음 — 모음에 넣고(collect) 만들기 성공은 처음 PRISM_FREE_FULL_SCORE가지까지만 점수(scored: 'once'), 그 뒤는 등록 1점뿐(later).
+ *   new: 이 기기에서 처음 — 모음에 넣고(collect) 만들기 성공은 처음 PRISM_FREE_FULL_SCORE가지까지만 점수(scored: 'once'), 그 뒤는 등록 1점뿐(later),
+ *     PRISM_FREE_LATER_UNTIL가지를 넘으면 등록 점수도 없다(over — 15-29). 등록 점수는 엔진이 모음의 xpAfter로 준다.
  *   안 되는 모양은 끝없이 많아 "모양마다 한 번"을 적어 둘 수 없다 → 점수 없음(기록 · 까닭 고르기는 있다)
  */
 export function createFreeSession({ stageId = 'prism-free', solidId, deviceFound = [], goal = PRISM_FREE_GOAL } = {}) {
@@ -537,6 +547,7 @@ export function createFreeSession({ stageId = 'prism-free', solidId, deviceFound
         collect,
         first,
         later: first && isLaterFree(device.size),
+        over: first && isOverFree(device.size),
         tag,
         given: r.valid ? `전개도 ${r.id ?? ''}`.trim() : `안 됨: ${tag}`,
         expected: FREE_EXPECTED,
@@ -557,7 +568,7 @@ export function createFreeSession({ stageId = 'prism-free', solidId, deviceFound
 }
 
 /** 접은 뒤 보일 글. 안 되는 모양은 까닭 고르기가 먼저 — 고르기 전에는 까닭 문장도 무대의 까닭 표시도 없다 */
-export function freeFeedback(step, { picked = false, order = 1 } = {}) {
+export function freeFeedback(step, { picked = false, order = 1, chosen = null } = {}) {
   const waiting = step.kind === 'invalid' && !picked;
   let toast;
   let title;
@@ -579,7 +590,7 @@ export function freeFeedback(step, { picked = false, order = 1 } = {}) {
   } else {
     toast = '각기둥이 안 돼요. 왜 그런지 골라 볼까요?';
     title = waiting ? '각기둥이 안 돼요' : '까닭';
-    note = waiting ? FREE_NOTE_BEFORE_PICK : explainFreeProblem(step.net, step.problems);
+    note = waiting ? FREE_NOTE_BEFORE_PICK : explainFreeProblem(step.net, step.problems, chosen);
   }
   let tone = 'info';
   if (step.kind === 'new' || step.kind === 'known') tone = 'correct';

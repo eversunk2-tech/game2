@@ -276,6 +276,8 @@
 }
 @media (max-width: 900px) {
   .prism-free { --pic-w: 230px; }
+  /* 접힌 찾은 전개도 칸(넘칠 때)은 머리 한 줄로 */
+  .prism-free .found-nets.is-folded .found-head { flex-direction: row; align-items: baseline; gap: 10px; }
   .prism-free .free-mat.pf-mat { height: 600px; }
   .prism-free .free-edit { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }

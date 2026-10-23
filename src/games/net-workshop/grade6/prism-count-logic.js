@@ -5,8 +5,9 @@
  * 5문항: 셈 3(각기둥을 돌려 보며 모서리 또는 꼭짓점의 수 — 모서리 · 꼭짓점이 한 번 이상씩) → 규칙 2(모서리 · 꼭짓점의 수를 구하는 식을 보기에서).
  *   셈 문항의 각기둥은 서로 다른 밑면(삼각형 · 사각형 · 오각형 · 육각형 가운데 셋). 답한 뒤에는 그 각기둥의 모서리와 꼭짓점을 함께 세어 보이고
  *   "알아낸 것" 표에 한 줄(각기둥 · 한 밑면의 변 · 모서리 · 꼭짓점)이 더해진다 — 규칙 문항은 그 표를 보고 고른다.
- * 보기(셈): 정답 + 흔한 실수 셋. 모서리를 옆으로 선 모서리만 셈(n) · 꼭짓점을 한 밑면만 셈(n)은 판마다 늘 나온다(사용자 결정 15-25의 지침).
- *   정답의 자리(크기 차례)는 고르게 — 값만 보고 고르는 길(가장 큰 수 · 가장 작은 수 · n의 몇 배인 수 …)이 찍기(25%)보다 크게 높지 않게(검사).
+ * 보기(셈): 정답 + 흔한 실수 셋. 셈 문항은 모서리 둘 · 꼭짓점 하나(차례는 섞음). 흔한 실수 "한 밑면의 변의 수 n"(옆으로 선 모서리만 · 한 밑면만)은
+ *   판마다 셈 문항 하나에만 꼭 넣고(사용자 결정 15-29), 모서리 문항에는 "두 밑면의 모서리만 2n"을 늘 넣는다(review-prism-g2 R7).
+ *   정답의 자리는 문항마다 따로 뽑고(G2-1), 자리 · 값 · 꼴만 보고 고르는 규칙이 모두 0.36 아래(단위 검사 — 독립 계산).
  * 별: 엔진 기본(5문항을 한 번씩 답함 — 한 번 틀리면 80% ★2). 답하기 전 무대에는 수 · 표시가 없다(정답 노출 0).
  */
 import { josa } from '../../../shared/core/korean.js';
@@ -23,37 +24,71 @@ const pieces = (v) => `${v}개`;
 /**
  * 셈 문항의 보기 후보(값 → 까닭 id): 모서리(정답 3n) · 꼭짓점(정답 2n).
  * side: 옆으로 선 모서리만 · one: 한 밑면만 · base2: 두 밑면의 모서리만(= 꼭짓점 수) · edges: 모서리의 수 · faces: 면의 수 ·
- * twice: 면마다 세어 같은 것을 두 번 셈 · plus: 한 줄 더 셈
+ * twice: 면마다 세어 같은 것을 여러 번 셈(모서리 4n · 6n, 꼭짓점 4n · 6n) · plus: 더 세었거나 빠뜨림
  */
 export function countPool(what, n) {
   if (what === 'edges') {
     return [
       { value: n, why: 'side' }, { value: 2 * n, why: 'base2' }, { value: n + 2, why: 'faces' },
-      { value: 4 * n, why: 'plus' }, { value: 6 * n, why: 'twice' }, { value: 3 * n + 2, why: 'plus' },
+      { value: 4 * n, why: 'twice' }, { value: 6 * n, why: 'twice' }, { value: 3 * n + 2, why: 'plus' }, { value: 3 * n - 1, why: 'plus' },
     ];
   }
   return [
     { value: n, why: 'one' }, { value: 3 * n, why: 'edges' }, { value: n + 2, why: 'faces' },
-    { value: 4 * n, why: 'twice' }, { value: 2 * n + 2, why: 'plus' }, { value: 2 * n - 2, why: 'plus' }, { value: n + 1, why: 'plus' },
+    { value: 4 * n, why: 'twice' }, { value: 6 * n, why: 'twice' }, { value: 2 * n + 2, why: 'plus' }, { value: 2 * n - 2, why: 'plus' }, { value: 2 * n - 1, why: 'plus' }, { value: n + 1, why: 'plus' },
   ];
 }
-/** 판마다 늘 넣는 흔한 실수 (모서리 — 옆으로 선 모서리만, 꼭짓점 — 한 밑면만) */
+/** 흔한 실수: 모서리 — 옆으로 선 모서리만(n), 꼭짓점 — 한 밑면만(n). 판마다 셈 문항 하나에만 꼭 넣는다(사용자 결정 15-29) */
 const MUST = Object.freeze({ edges: 'side', vertices: 'one' });
 
-/** 정답 · 실수 셋으로 보기 넷: 정답보다 작은 보기의 수(below)가 rank가 되게 — 흔한 실수(MUST)는 늘 넣는다 */
-function countChoices(rng, what, n, rank) {
+/**
+ * 정답의 자리(크기 차례 1~4)를 뽑는 무게: [모서리 · 꼭짓점][흔한 실수 n이 없는 문항 · 있는 문항]. 될 수 없는 자리는 빼고 나머지 무게로 뽑는다.
+ * 모서리 문항은 2n(두 밑면의 모서리만)이 늘 정답 아래라 첫째 자리가 없다 — 꼭짓점 문항을 첫째에 더 두어 판 전체의 자리가 고르게:
+ * 자리 · 값 · 꼴만 보고 고르는 규칙(자리 하나 · 가장 작은 것 빼기 · 가장 큰 것 빼기 · 가운데 둘 · 지워 가며 · n 빼기 · n 다음 n의 배수 · 가장 큰 n의 배수 ·
+ * n이 있으면 가장 큰 것)이 모두 1/3 안팎(단위 검사 — 0.36 아래, review-prism-g2 G2-1 · R7)
+ */
+const RANK_WEIGHTS = Object.freeze({
+  edges: [[0, 0.42, 0.33, 0.25], [0, 0, 0.6, 0.4]],
+  vertices: [[0.7, 0.05, 0.05, 0.2], [0, 0.5, 0.25, 0.25]],
+});
+/** 같은 자리에서 고를 때 n의 배수 보기가 많은 짝을 더 자주(4n · 6n · 3n …) — "n의 배수만 보고 고르기"가 맞히기 어렵게 */
+const MULTIPLE_PULL = 3;
+const pickWeighted = (rng, items, weights) => {
+  let x = rng.next() * weights.reduce((a, b) => a + b, 0);
+  for (const [i, item] of items.entries()) {
+    x -= weights[i];
+    if (x < 0) return item;
+  }
+  return items.at(-1);
+};
+
+/**
+ * 정답 · 실수 셋으로 보기 넷(작은 수부터): 꼭 넣을 보기(흔한 실수 n — 판에서 한 문항 · 15-29, 모서리 문항의 두 밑면 모서리 2n — review-prism-g2 R7)를 넣은
+ * 세 실수의 모든 짝 가운데, 정답의 자리를 RANK_WEIGHTS로 먼저 뽑고(문항마다 따로 — G2-1) 그 자리가 되는 짝 하나를 뽑는다.
+ * 흔한 실수를 넣지 않는 문항에는 n을 넣지 않는다(정답이 가장 작은 보기일 수도 있게 — 15-29).
+ */
+function countChoices(rng, what, n, { must = false } = {}) {
   const answer = what === 'edges' ? 3 * n : 2 * n;
-  const pool = countPool(what, n).filter((c) => c.value !== answer && c.value > 0);
   const uniq = [];
-  for (const c of pool) if (!uniq.some((u) => u.value === c.value)) uniq.push(c);
-  const must = uniq.find((c) => c.why === MUST[what]);
-  const below = uniq.filter((c) => c.value < answer && c !== must);
-  const above = uniq.filter((c) => c.value > answer);
-  // must(n)은 늘 정답보다 작다 → 정답 아래에 rank − 1개를 더, 위에 3 − rank개
-  const needBelow = Math.max(0, rank - 1);
-  const needAbove = 3 - 1 - needBelow;
-  if (below.length < needBelow || above.length < needAbove) return null;
-  const picked = [must, ...rng.shuffle(below).slice(0, needBelow), ...rng.shuffle(above).slice(0, needAbove)];
+  for (const c of countPool(what, n)) if (c.value !== answer && c.value > 0 && !uniq.some((u) => u.value === c.value)) uniq.push(c);
+  const forced = uniq.filter((c) => (must && c.why === MUST[what]) || (what === 'edges' && c.why === 'base2'));
+  const free = uniq.filter((c) => !forced.includes(c) && c.why !== MUST[what]);
+  const sets = [];
+  const need = 3 - forced.length;
+  const walk = (from, picked) => {
+    if (picked.length === need) {
+      sets.push([...forced, ...picked]);
+      return;
+    }
+    for (let i = from; i < free.length; i += 1) walk(i + 1, [...picked, free[i]]);
+  };
+  walk(0, []);
+  const rankOf = (set) => set.filter((c) => c.value < answer).length + 1;
+  const weights = RANK_WEIGHTS[what][must ? 1 : 0];
+  const ranks = [1, 2, 3, 4].filter((r) => weights[r - 1] > 0 && sets.some((set) => rankOf(set) === r));
+  const rank = pickWeighted(rng, ranks, ranks.map((r) => weights[r - 1]));
+  const same = sets.filter((set) => rankOf(set) === rank);
+  const picked = pickWeighted(rng, same, same.map((set) => (1 + set.filter((c) => c.value % n === 0).length) ** MULTIPLE_PULL));
   return [{ value: answer, why: 'answer' }, ...picked].sort((a, b) => a.value - b.value);
 }
 
@@ -83,12 +118,12 @@ function countSolid(rng, n) {
  */
 export function makeCountQuestions(stage, rng) {
   const ns = rng.shuffle([3, 4, 5, 6]).slice(0, 3);
-  const whats = rng.shuffle(['edges', 'vertices', rng.pick(['edges', 'vertices'])]);
-  const ranks = rng.shuffle([1, 2, 3]); // 정답보다 작은 보기의 수(1~3) — 흔한 실수 n이 늘 정답보다 작아 0은 없다
+  // 모서리 둘 · 꼭짓점 하나(차례는 섞음) — 꼭짓점 문항은 "n의 배수 가운데 n 다음 수"가 곧 정답(2n)이라 그 몫을 셋에 하나로(review-prism-g2 R7)
+  const whats = rng.shuffle(['edges', 'edges', 'vertices']);
+  const mustAt = rng.int(0, 2); // 흔한 실수 n을 넣는 문항(판마다 한 번 — 15-29)
   const out = ns.map((n, i) => {
     const what = whats[i];
-    let choices = null;
-    for (let r = 0; r < 4 && !choices; r += 1) choices = countChoices(rng, what, n, ((ranks[i] - 1 + r) % 3) + 1);
+    const choices = countChoices(rng, what, n, { must: i === mustAt });
     const { base, height, solid } = countSolid(rng, n);
     const answer = what === 'edges' ? 3 * n : 2 * n;
     return {
@@ -119,7 +154,7 @@ const WHY_TEXT = {
   base2: () => '두 밑면의 모서리만 셌어요.',
   edges: () => '그 수는 모서리의 수예요.',
   faces: () => '그 수는 면의 수예요.',
-  twice: () => '같은 것을 두 번 센 것 같아요.',
+  twice: () => '면마다 세어 같은 것을 여러 번 센 것 같아요.',
   plus: () => '더 세었거나 빠뜨린 것 같아요.',
 };
 

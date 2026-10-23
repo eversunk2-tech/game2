@@ -12,6 +12,7 @@
  *     "이 기기에서 한 번만 점수"를 지키려고 찾은 것을 적어 둬야 할 때 쓴다(예: 직육면체 전개도 54가지) — 가지 수는 게임이 보여 준다
  *   xpAfter: { count, xp } — 칸이 count개 찬 뒤에(count + 1번째 칸부터) 처음 등록하는 칸은 xp 대신 이 점수를 준다(0~xp 사이 정수).
  *     칸이 아주 많은 모음에서 점수가 끝없이 쌓이지 않게 할 때 쓴다(예: 54가지 가운데 처음 10가지만 +5, 그 뒤는 +1).
+ *     xpAfter.until: 이 수를 넘은 칸(until + 1번째부터)은 0점 — 칸이 아주 많아 +1도 끝없이 쌓일 때(예: 962가지 가운데 11~30번째만 +1, 그 뒤 0)
  *     몇 번째인지는 등록하는 순간 그 모음에 든 칸 수로 센다 — 어떤 칸을 먼저 찾든, 몇 판에 나눠 찾든 점수의 합이 같다
  *     xpAfter.with: [다른 모음 id] — 몇 번째인지를 그 모음들에 든 칸까지 합쳐 센다(한 묶음으로 "처음 count가지"를 셀 때.
  *     예: 직육면체 전개도 54가지 + 두 길이가 같은 직육면체 전개도 29가지를 합쳐 처음 10가지). 묶음의 모음끼리 서로 적어 두면 어느 쪽에 먼저 넣든 같다
@@ -38,10 +39,13 @@ export function normalizeCollections(defs) {
     }
     if (def.quiet != null && typeof def.quiet !== 'boolean') throw new Error(`collections(${def.id}): quiet는 true나 false예요.`);
     if (def.xpAfter != null) {
-      const { count, xp } = def.xpAfter ?? {};
+      const { count, xp, until } = def.xpAfter ?? {};
       const top = def.xp ?? XP.discover;
       if (!(Number.isInteger(count) && count >= 1 && Number.isInteger(xp) && xp >= 0 && xp <= top)) {
         throw new Error(`collections(${def.id}): xpAfter는 { count: 1 이상 정수, xp: 0~${top} 사이 정수 }예요.`);
+      }
+      if (until != null && !(Number.isInteger(until) && until >= count)) {
+        throw new Error(`collections(${def.id}): xpAfter.until은 count(${count}) 이상 정수예요.`);
       }
       const group = def.xpAfter.with;
       if (group != null && !(Array.isArray(group) && group.every((id) => typeof id === 'string' && id && id !== def.id))) {
@@ -159,9 +163,10 @@ export function reportedQuiet(state, defs) {
 
 /**
  * 그 도감에 count번째로 등록한 칸이 받는 솜씨 점수: 도감 정의의 xp(없으면 undefined → 엔진 기본 +5),
- * xpAfter가 있고 count가 xpAfter.count를 넘으면 xpAfter.xp
+ * xpAfter가 있고 count가 xpAfter.count를 넘으면 xpAfter.xp, xpAfter.until까지 넘으면 0
  */
 export function collectionXp(def, count) {
   const after = def?.xpAfter;
-  return after && count > after.count ? after.xp : def?.xp;
+  if (!after || count <= after.count) return def?.xp;
+  return after.until != null && count > after.until ? 0 : after.xp;
 }
