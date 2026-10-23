@@ -2,14 +2,14 @@
  * R1 쌓기나무 판의 돌림판식 돌리기 — 브라우저 검사. 기획서: spec-grade6.md 15-18·15-19, plan-rotate-free.md 4절·6절(R1 검사 ②③④)
  * - 끄는 동안·놓은 뒤·버튼과 [위][앞][옆]으로 도는 움직임 도중에도 화면에서 쌓기나무의 세로 모서리가 곧다(앞·뒤·왼쪽·오른쪽 면 <polygon>의
  *   세로 변 두 점의 x가 같고, 위 끝이 아래 끝보다 위에 있다). 판 밑에서 보는 일(판 칸의 is-under)이 없다.
- * - 화면의 다각형 = 기획서 규칙(가로 1px = 판 0.5°, 세로 1px = 높이 0.5°, 0°~90°에서 멈춤, 8px 문턱)으로 따라 계산한 자세의 투영.
- *   자세는 게임과 같은 turn-view.js의 값으로 계산한다(다른 쌓기나무 검사가 orbit.js 값으로 하던 것과 같은 방식).
+ * - 화면의 다각형 = 기획서 규칙(가로 1px = 판 0.4°, 세로 1px = 높이 0.4°, 0°~90°에서 멈춤, 8px 문턱 — 15-27 "약간만 더 느리게"로 0.5°에서 바뀜)으로
+ *   따라 계산한 자세의 투영. 끌기의 각도는 이 검사가 기획서 문장대로 따로 센다(독립), 자세 행렬은 게임과 같은 turn-view.js의 값으로 계산한다.
  * - 버튼은 판 45°·높이 15° 눈금, 방향키는 판 15°·높이 15° 눈금, 높이가 한도에 닿으면 그 버튼이 꺼진다(점선).
  * 정해진 시간으로 기다리지 않는다(움직임이 끝난 것은 .is-easing이 사라진 것으로, 그리기는 화면 프레임 두 번으로 본다).
  */
 import { expect, test } from '@playwright/test';
 import { POSES, projectPoint, sceneShapes } from '../../src/games/net-workshop/blocks/block-view.js';
-import { dragTurn, homeTurn, poseOf, snapTurn, stepTurn } from '../../src/games/net-workshop/blocks/turn-view.js';
+import { homeTurn, poseOf, snapTurn, stepTurn } from '../../src/games/net-workshop/blocks/turn-view.js';
 import { collectErrors, fileUrl } from './helpers.js';
 
 const FILE = 'net-workshop.html';
@@ -104,7 +104,8 @@ function follow(points, upto = points.length, from = homeTurn()) {
       if (Math.hypot(x - x0, y - y0) <= 8) continue;
       last = [x0, y0];
     }
-    view = dragTurn(view, x - last[0], y - last[1]);
+    // 독립: 가로 1px = 판 0.4°(오른쪽으로 끌면 판 돌림이 줄어든다, 끝없이), 세로 1px = 높이 0.4°(아래로 끌면 커진다, 0°~90°에서 멈춤)
+    view = { ...view, yaw: (((view.yaw - (x - last[0]) * 0.4) % 360) + 360) % 360, pitch: Math.min(90, Math.max(0, view.pitch + (y - last[1]) * 0.4)) };
     last = [x, y];
   }
   return view;

@@ -4,9 +4,13 @@
  * 그리기: 원근 없는 투영(평행 투영). 쌓기나무의 면을 <polygon>으로, 눈에서 먼 것부터 차례로 그린다(blocks.js paintOrder) —
  *   브라우저의 3D 정렬에 기대지 않아 깊이 순서가 늘 맞고, 면이 2D 다각형이라 누른 곳의 판정이 정확하다.
  *   [위] [앞] [옆]으로 돌리면 화면의 쌓기나무가 2D 그림과 똑같은 네모들로 보인다.
+ *   자유 쌓기 판만 원근이 있다(persp — 사용자 결정 15-27·15-28 "A 약하게": 눈이 판 가운데에서 판의 긴 변 × 3칸 떨어져 있다. 넓은 판의 먼 쪽이
+ *   작아 보여 정사각형 판이 평행사변형으로 보이지 않는다). 면·차례는 눈의 자리에서 정하고(blocks.js visibleFacesFrom), 누른 곳은 지금처럼
+ *   그 자리의 <polygon>이라 원근에서도 누른 칸 = 쌓이는 칸이다. 바로 위·앞·옆 가까이에서는 원근이 줄어 그 자세에서는 2D 그림과 같은 네모다.
  * 보기 값: 돌림판식(turn-view.js — spec-grade6 15-19, 알지오매스와 같은 방식) { yaw(판 돌림), pitch(내려다보는 높이), zoom }.
  *   가로로 끌면 판이 제 세로축 둘레로 돌고, 세로로 끌면 내려다보는 높이만 바뀐다(수평 ~ 바로 위). 판은 화면에서 기울지 않는다.
- *   끌기 1px = 0.5°·문턱 8px·관성 없음과 크게·작게(벌리기·휠·단계)는 전개도 무대와 같은 orbit.js의 값·함수를 그대로 쓴다.
+ *   끌기 1px = 0.4°(turn-view.js — 전개도 입체의 0.5°보다 약 20% 느리게, 15-27). 문턱 8px·관성 없음과 크게·작게(벌리기·휠·단계)는
+ *   전개도 무대와 같은 orbit.js의 값·함수를 그대로 쓴다.
  *   처음 보기는 교과서 입체 그림의 방향(앞이 왼쪽 아래, 옆이 오른쪽 아래)이다.
  * 좌표: 모델은 x 오른쪽(칸), y 뒤쪽(줄), z 위쪽(층). 화면은 x 오른쪽, y 아래, z 보는 사람 쪽(orbit.js와 같다).
  *
@@ -27,6 +31,7 @@ import {
   dragTurn,
   homeTurn,
   isHomeTurn,
+  perspWeight,
   poseOf,
   sameTurn,
   snapTurn,
@@ -34,7 +39,7 @@ import {
   turnLimits,
   turnToward,
 } from './turn-view.js';
-import { COLS, FACE_NORMALS, MAX_H, ROWS, count, picturedFaces, targetOf, visibleFaces } from './blocks.js';
+import { COLS, FACE_NORMALS, MAX_H, ROWS, count, picturedFaces, targetOf, visibleFaces, visibleFacesFrom } from './blocks.js';
 
 const NS = 'http://www.w3.org/2000/svg';
 
@@ -76,6 +81,8 @@ const APART_FIT = 0.86;
 const PINCH_START = 0.12;
 /** Shift+방향키 → 그쪽을 보기 [x, y] (판 옮기기) */
 const PAN_KEYS = Object.freeze({ ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] });
+/** 층별 개수 글자 사이의 가장 좁은 세로 간격(px — 칩 높이 26 + 틈 2) */
+const CHIP_STEP = 28;
 /** 무대 위 글자 칩의 너비(px) — 글자 수로 어림한다 */
 const chipWidth = (text) => Math.max(30, [...text].length * 15 + 14);
 /** 벌려 놓은 z층이 뜨는 높이:가운데 층(mid — 차시는 3층 판의 2층, 자유 쌓기는 쌓은 층들의 가운데)은 그대로, 아래층은 내려가고 위층은 올라간다 */
@@ -84,10 +91,10 @@ const liftOf = (z, apart, mid = (MAX_H - 1) / 2) => (apart ? (z - mid) * APART_G
 /**
  * 그릴 것들(그리는 순서대로): 판의 자리(tile)와 쌓기나무의 면(face). 점은 모델 좌표.
  * 위에서 보면 판을 먼저(쌓기나무 밑에), 아래에서 보면 판을 맨 나중에(쌓기나무를 가린다 — 무대는 반투명하게 그린다).
- * still이면 교과서 방향의 그림에 보이는 면만.
+ * still이면 교과서 방향의 그림에 보이는 면만. eye(모델 좌표의 점)를 주면 원근 — 그 점에서 보이는 면을 그 점에서 먼 것부터(자유 쌓기).
  * → [{ kind: 'tile', x, y, pts } | { kind: 'face', x, y, z, face, pts }]
  */
-export function sceneShapes(map, pose, { apart = false, board = true, still = false, mid } = {}) {
+export function sceneShapes(map, pose, { apart = false, board = true, still = false, mid, eye = null } = {}) {
   const d = toViewerOf(pose);
   const tiles = [];
   if (board) {
@@ -96,7 +103,7 @@ export function sceneShapes(map, pose, { apart = false, board = true, still = fa
     const cols = map[0]?.length ?? 0;
     for (let y = 0; y < rows; y += 1) for (let x = 0; x < cols; x += 1) tiles.push({ kind: 'tile', x, y, pts: FACE_CORNERS.bottom.map(([dx, dy]) => [x + dx, y + dy, liftOf(0, apart, mid)]) });
   }
-  let faces = visibleFaces(map, d, { apart });
+  let faces = eye ? visibleFacesFrom(map, eye, { apart, zAt: (z) => z + liftOf(z, apart, mid) }) : visibleFaces(map, d, { apart });
   if (still) {
     const pictured = new Set(picturedFaces(map).map((f) => `${f.x},${f.y},${f.z},${f.face}`));
     faces = faces.filter((f) => pictured.has(`${f.x},${f.y},${f.z},${f.face}`));
@@ -105,17 +112,24 @@ export function sceneShapes(map, pose, { apart = false, board = true, still = fa
     const lift = liftOf(f.z, apart, mid);
     return { kind: 'face', ...f, pts: FACE_CORNERS[f.face].map(([dx, dy, dz]) => [f.x + dx, f.y + dy, f.z + dz + lift]) };
   });
-  return d[2] >= 0 ? [...tiles, ...shapes] : [...shapes, ...tiles];
+  // 판은 쌓기나무 밑에(위에서 볼 때 먼저). 원근이면 눈이 판보다 위에 있는가로 — 자유 쌓기는 늘 위(높이 0°~90°, 돌기의 중심이 판보다 위)
+  return (eye ? eye[2] >= liftOf(0, apart, mid) : d[2] >= 0) ? [...tiles, ...shapes] : [...shapes, ...tiles];
 }
 
 /** 판 전체(3×3×3)의 가운데 */
 const CENTER = [COLS / 2, ROWS / 2, MAX_H / 2];
-/** 모델 점 → 화면 점 [x, y] (k = 쌓기나무 한 변의 화면 길이, 가운데 = [cx, cy], 돌기의 중심 = center — 차시는 판 3×3×3의 가운데) */
-export const projectPoint = (pose, k, cx, cy, p, center = CENTER) => {
+/**
+ * 모델 점 → 화면 점 [x, y] (k = 쌓기나무 한 변의 화면 길이, 가운데 = [cx, cy], 돌기의 중심 = center — 차시는 판 3×3×3의 가운데).
+ * eye > 0이면 원근: 눈이 돌기의 중심에서 보는 사람 쪽으로 eye칸 떨어져 있다. 중심과 같은 깊이의 점은 원근 없을 때와 같은 자리,
+ * 깊이 z(보는 사람 쪽 +)인 점은 eye ÷ (eye − z)배 — 가까우면 크게, 멀면 작게. eye가 0이면 원근 없음(차시 — 지금 그대로)
+ */
+export const projectPoint = (pose, k, cx, cy, p, center = CENTER, eye = 0) => {
   const x = p[0] - center[0];
   const y = p[1] - center[1];
   const z = p[2] - center[2];
-  return [cx + k * (pose[0] * x + pose[1] * y + pose[2] * z), cy + k * (pose[3] * x + pose[4] * y + pose[5] * z)];
+  if (!(eye > 0)) return [cx + k * (pose[0] * x + pose[1] * y + pose[2] * z), cy + k * (pose[3] * x + pose[4] * y + pose[5] * z)];
+  const f = eye / (eye - (pose[6] * x + pose[7] * y + pose[8] * z));
+  return [cx + k * f * (pose[0] * x + pose[1] * y + pose[2] * z), cy + k * f * (pose[3] * x + pose[4] * y + pose[5] * z)];
 };
 /** 모델 점의 깊이(클수록 눈에 가깝다) */
 export const depthOf = (pose, p, center = CENTER) => pose[6] * (p[0] - center[0]) + pose[7] * (p[1] - center[1]) + pose[8] * (p[2] - center[2]);
@@ -142,6 +156,46 @@ export function homeUnitFor(width, height, { cols, rows, fitH = 3 }) {
   const tall = (cols + rows) * R6 + fitH * 2 * R6 + HOME_MARGIN.h;
   const wide = (cols + rows) * Math.SQRT1_2 + HOME_MARGIN.w;
   return Math.max(8, Math.floor(Math.min(height / tall, width / wide)));
+}
+/**
+ * 원근 판(자유 쌓기)의 눈의 거리(칸): 판의 긴 변 × persp. 다만 판 전체(maxH층을 층별로 벌려 놓은 높이까지)를 감싸는 공보다 2칸 넘게 바깥이다
+ * (눈이 쌓기나무 안에 들어가지 않게 — persp 3.0이면 14×14·10층 42칸 · 6×6·6층 18칸으로 이 한도에 걸리지 않는다). persp가 0이면 0(원근 없음)
+ */
+export function eyeDistance({ cols, rows, maxH, fitH = 3, persp }) {
+  if (!(persp > 0)) return 0;
+  const tall = maxH + (maxH - 1) * APART_GAP;
+  const reach = Math.hypot(cols / 2, rows / 2, Math.max(fitH / 2, tall - fitH / 2, tall / 2));
+  return Math.max(persp * Math.max(cols, rows), reach + 2);
+}
+/** 원근에서 판 돌림 45°·높이 pitch로 본 판과 fitH층 상자(꼭짓점 여덟)의 화면 범위(쌓기나무 한 변 = 1, 돌기의 중심 = 0) */
+function perspBox(pitch, { cols, rows, fitH, eye }) {
+  const pose = poseOf({ yaw: 45, pitch });
+  const center = [cols / 2, rows / 2, fitH / 2];
+  const pts = [];
+  for (const x of [0, cols]) for (const y of [0, rows]) for (const z of [0, fitH]) pts.push(projectPoint(pose, 1, 0, 0, [x, y, z], center, eye));
+  const ys = pts.map((p) => p[1]);
+  return { top: Math.min(...ys), bottom: Math.max(...ys), side: Math.max(...pts.map((p) => Math.abs(p[0]))) };
+}
+/**
+ * 원근 판의 처음 보기 맞춤(결정 4 "판이 꽉 차게"를 원근에서): 처음 보기에서 판과 fitH층 상자가 무대에 꽉 차는 쌓기나무 한 변(px — 돌기의 중심과 같은 깊이).
+ * 원근에서는 가까운 쪽(화면 아래)이 크고 먼 쪽이 작아 상자가 돌기의 중심보다 아래로 치우치므로, 상자의 위아래 범위로 맞추고 그만큼 판을 올린다(perspRise).
+ * → { unit, wide, tall } (wide·tall = 여백을 넣은 상자의 너비·높이, 한 변 = 1 — 휴대폰은 무대의 가로세로 비로 쓴다)
+ */
+export function homeFitPersp(width, height, { cols, rows, fitH = 3, eye }) {
+  const { top, bottom, side } = perspBox(SNAP.home.pitch, { cols, rows, fitH, eye });
+  const wide = 2 * side + HOME_MARGIN.w;
+  const tall = bottom - top + HOME_MARGIN.h;
+  return { unit: Math.max(8, Math.floor(Math.min(height / tall, width / wide))), wide, tall };
+}
+/**
+ * 원근에서 판(과 fitH층 상자)이 돌기의 중심보다 아래로 치우친 정도(한 변 = 1): 내려다보는 높이마다 판 돌림 45°의 상자로 잰다 — 판 돌림과 무관해
+ * 가로로 돌릴 때는 판이 움직이지 않는다. 옆에서(0°)·바로 위(90°)에서는 0, 비스듬히 내려다볼 때 가장 크다. 무대는 돌기의 중심을 이만큼 올려 그린다
+ * (판이 무대 가운데에 — 돌기의 중심은 그대로 판 가운데). eye가 0이면 0
+ */
+export function perspRise(pitch, { cols, rows, fitH = 3, eye }) {
+  if (!(eye > 0)) return 0;
+  const { top, bottom } = perspBox(pitch, { cols, rows, fitH, eye });
+  return (top + bottom) / 2;
 }
 /**
  * 자유 쌓기에서 층별로 벌렸을 때 줄이는 배율: 쌓은 층(n개)을 벌린 높이가 처음 보기 맞춤의 높이(fitH층)에 들어오게. 1보다 크게는 키우지 않는다
@@ -256,9 +310,19 @@ export function poseWord(pose, names = SIDE_NAMES) {
  * - edge: 판 가장자리 글자 [{ text, at: 'front' | 'right' | 'back' | 'left' }] (기본: 앞·옆)
  * - names: 화면 읽기 알림에 쓰는 방향 이름
  */
-export function createBlockView({ h, still = false, board = true, edge = DEFAULT_EDGE, names = SIDE_NAMES, cols = COLS, rows = ROWS, maxH = MAX_H, fit = 'all', fitH = 3 }) {
+export function createBlockView({ h, still = false, board = true, edge = DEFAULT_EDGE, names = SIDE_NAMES, cols = COLS, rows = ROWS, maxH = MAX_H, fit = 'all', fitH = 3, persp = 0 }) {
   // 판 크기: 차시는 3×3칸·3층(기본값 — 지금 그대로). 자유 쌓기는 14×14칸·10층, 휴대폰 6×6칸·6층에 처음 보기 맞춤(fit 'home')
   const freeFit = fit === 'home';
+  // 원근(자유 쌓기 — 15-27·15-28): 눈의 거리(칸). 0이면 원근 없음(차시 — 지금 그대로)
+  const eyeBase = freeFit ? eyeDistance({ cols, rows, maxH, fitH, persp }) : 0;
+  /** 그 보기에서 눈의 거리(0 = 원근 없음): 바로 위·앞·옆 가까이에서는 원근이 줄어든다(perspWeight — 그 자세에서는 0) */
+  const eyeOf = (v) => {
+    if (!(eyeBase > 0)) return 0;
+    const w = perspWeight(v);
+    return w > 1e-6 ? eyeBase / w : 0;
+  };
+  /** 판을 무대 가운데에 두려고 돌기의 중심을 올리는 거리(px) — 원근에서만 */
+  const riseOf = (v, eye, k) => (eye > 0 ? perspRise(v.pitch, { cols, rows, fitH, eye }) * k : 0);
   const gBack = svgEl('g', { class: 'blk-marks blk-marks-back' }); // 쌓기나무 뒤쪽에 있는 판 가장자리 글자(쌓기나무에 가려진다)
   const gShapes = svgEl('g', { class: 'blk-shapes' });
   const gGhost = svgEl('g', { class: 'blk-ghost' });
@@ -311,7 +375,9 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (box.width < 1 || box.height < 1) return;
     // 휴대폰 배치(blocks.css)에서는 조작 칸이 무대 아래로 내려가고 무대는 흐름 안에 놓인다(position: relative)
     const overlaid = getComputedStyle(el).position === 'absolute';
-    const unit = freeFit ? homeUnitFor(box.width, box.height, { cols, rows, fitH }) : unitFor(box.width, box.height, overlaid ? SIDE_ROOM : 0);
+    let unit;
+    if (freeFit && eyeBase > 0) unit = homeFitPersp(box.width, box.height, { cols, rows, fitH, eye: eyeBase }).unit;
+    else unit = freeFit ? homeUnitFor(box.width, box.height, { cols, rows, fitH }) : unitFor(box.width, box.height, overlaid ? SIDE_ROOM : 0);
     size = { w: box.width, h: box.height, unit };
     svg.setAttribute('viewBox', `0 0 ${box.width.toFixed(1)} ${box.height.toFixed(1)}`);
     el.style.setProperty('--blk-unit', `${size.unit}px`);
@@ -341,19 +407,22 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const pose = poseOf(shown);
     const d = toViewerOf(pose);
     const k = scaleNow();
+    const eyeDist = eyeOf(shown);
     let cx = size.w / 2 + shiftX;
-    const cy = size.h / 2 + shiftY;
+    const cy = size.h / 2 + shiftY - riseOf(shown, eyeDist, k);
     const center = centerNow();
     const mid = freeFit ? apartMid() : undefined;
     if (freeFit && apart && marks.layers && Math.abs(d[2]) < 0.92) {
       // 자유 쌓기에서 층별로 벌려 층마다 개수를 쓸 때: 글자(판 왼쪽)가 판을 가리지 않게, 판 왼쪽 자리가 모자라면 판을 오른쪽으로 비킨다(오른쪽에 남는 만큼만 — 휴대폰)
-      const xs = BOARD_CORNERS.map(([a, b]) => projectPoint(pose, k, cx, cy, [a * cols, b * rows, 0], center)[0]);
+      const xs = BOARD_CORNERS.map(([a, b]) => projectPoint(pose, k, cx, cy, [a * cols, b * rows, 0], center, eyeDist)[0]);
       const room = 16 + Math.max(0, ...layerChips().map((c) => chipWidth(c.text)));
       const need = room - Math.min(...xs);
       if (need > 0) cx += Math.max(0, Math.min(need, size.w - 6 - Math.max(...xs)));
     }
-    const at = (p) => projectPoint(pose, k, cx, cy, p, center);
-    const shapes = sceneShapes(map, pose, { apart, board: withBoard, still: frozen, mid });
+    const at = (p) => projectPoint(pose, k, cx, cy, p, center, eyeDist);
+    // 원근이면 눈의 자리(모델 좌표): 돌기의 중심에서 보는 사람 쪽으로 eyeDist칸
+    const eye = eyeDist > 0 ? [center[0] + eyeDist * d[0], center[1] + eyeDist * d[1], center[2] + eyeDist * d[2]] : null;
+    const shapes = sceneShapes(map, pose, { apart, board: withBoard, still: frozen, mid, eye });
     const used = new Set();
     const usedMarks = new Set();
     const order = [];
@@ -437,9 +506,20 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const sig = shapes.map((s) => (s.kind === 'tile' ? `t${s.x}${s.y}` : `${s.x}${s.y}${s.z}${s.face[0]}${s.face[1]}`)).join('|') + (numberFace ? `#${[...numberFace].join('|')}` : '');
     if (sig !== orderSig) {
       orderSig = sig;
-      gShapes.replaceChildren(...order);
+      // 자리가 바뀐 것만 옮긴다: 원근(자유 쌓기)에서는 눈이 판 위를 지날 때마다 이웃 칸끼리 차례가 바뀌어, 모두 다시 넣으면(쌓기나무 980개면 면 2,000개)
+      // 끄는 동안 느려진다. 다 옮기고 나면 무대의 차례는 order와 똑같다(쓰지 않는 것은 위에서 이미 뺐다)
+      let at = gShapes.firstChild;
+      for (const node of order) {
+        if (node === at) at = at.nextSibling;
+        else gShapes.insertBefore(node, at);
+      }
+      while (at) {
+        const next = at.nextSibling;
+        at.remove();
+        at = next;
+      }
     }
-    renderGhost(pose, d, at);
+    renderGhost(pose, d, at, eye);
     renderMarks(pose, d, at, k);
     // 내가 쌓은 개수(검사용). 멈춘 그림·자리 값을 싣지 않는 무대에는 싣지 않는다
     if (frozen || bare) delete el.dataset.count;
@@ -455,8 +535,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     orderSig = '';
   }
 
-  /** 놓일 자리(점선 쌓기나무) · 빠질 쌓기나무 */
-  function renderGhost(pose, d, at) {
+  /** 놓일 자리(점선 쌓기나무) · 빠질 쌓기나무. eye: 원근이면 눈의 자리(그 점에서 보이는 면만) */
+  function renderGhost(pose, d, at, eye) {
     const target = editable && hover ? targetOf(map, hover, mode, maxH) : null;
     if (!target || target.error) {
       gGhost.replaceChildren();
@@ -466,7 +546,12 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     const nodes = [];
     for (const [face, corners] of Object.entries(FACE_CORNERS)) {
       const n = FACE_NORMALS[face];
-      if (n[0] * d[0] + n[1] * d[1] + n[2] * d[2] <= 1e-6) continue;
+      if (eye) {
+        // 원근: 면이 놓인 평면의 눈 쪽에 눈이 있는 면만(면의 한 꼭짓점에서 눈으로 가는 방향 · 법선 > 0)
+        const c = corners[0];
+        const toEye = [eye[0] - (target.x + c[0]), eye[1] - (target.y + c[1]), eye[2] - (target.z + c[2])];
+        if (n[0] * toEye[0] + n[1] * toEye[1] + n[2] * toEye[2] <= 1e-9) continue;
+      } else if (n[0] * d[0] + n[1] * d[1] + n[2] * d[2] <= 1e-6) continue;
       nodes.push(svgEl('polygon', {
         class: `blk-ghost-face is-${mode}`,
         points: points(corners.map(([dx, dy, dz]) => at([target.x + dx, target.y + dy, target.z + dz]))),
@@ -575,9 +660,13 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     if (marks.layers && apart && Math.abs(d[2]) < 0.92) {
       const list = layerChips();
       const widest = Math.max(0, ...list.map((c) => chipWidth(c.text)));
+      let below = Infinity; // 바로 아래층 글자의 세로 자리
       for (const { z, text } of list) {
         const lift = z + 0.5 + liftOf(z, apart, mid);
-        const [, y] = at([cols / 2, rows / 2, lift]);
+        let [, y] = at([cols / 2, rows / 2, lift]);
+        // 원근(자유 쌓기)에서는 아래층(눈에서 먼 쪽)이 작아 보여 층 사이가 좁아진다 — 글자(높이 26px)끼리 겹치지 않게 위층 글자를 조금 올린다
+        if (eyeOf(shown) > 0) y = Math.min(y, below - CHIP_STEP);
+        below = y;
         // 층별 개수 글자: 차시는 3×3 판의 왼쪽, 자유 쌓기는 판 모서리 가운데 가장 왼쪽 점에서 8px 왼쪽에 가장 긴 글자의 오른쪽 끝이 오게(넓은 판을 가리지 않게)
         const left = freeFit ? Math.min(...BOARD_CORNERS.map(([a, b]) => at([a * cols, b * rows, lift])[0])) - 8 - widest / 2 : size.w / 2 - k * 2.9;
         nodes.push(chip(text, [Math.max(freeFit ? 4 + widest / 2 : 52, left), y], 'blk-layer'));
@@ -1060,7 +1149,8 @@ export function createBlockView({ h, still = false, board = true, edge = DEFAULT
     boxOf(pts) {
       const pose = poseOf(view);
       const k = size.unit * view.zoom * (apart ? (freeFit ? homeApartFit({ cols, rows, fitH }, apartLayers()) : APART_FIT) : 1);
-      const xy = pts.map((p) => projectPoint(pose, k, size.w / 2, size.h / 2, p, centerNow()));
+      const eyeDist = eyeOf(view);
+      const xy = pts.map((p) => projectPoint(pose, k, size.w / 2, size.h / 2 - riseOf(view, eyeDist, k), p, centerNow(), eyeDist));
       const xs = xy.map((p) => p[0]);
       const ys = xy.map((p) => p[1]);
       return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
