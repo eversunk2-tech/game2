@@ -12,10 +12,15 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`f44a588`**(F2 판 돌리기 0.4°·자유 쌓기 원근 — CI 통과, 두 사이트 확인, 2026-10-23) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **G2 Review**(2026-10-23) — Build 끝(`track/cuboid` `3181f77`, 단위 410·e2e 591·0 보통·글꼴 흉내), 코디네이터가 `main` `98524f0`(F2)을 합침(`66a6c6b`) → Review(`review-brief-g2.md`, 5363~5364, 결과 `review-prism-g2.md`, 불변 기준 `98524f0`) |
+| 지금 도는 것 | **⏸ 일시정지(2026-10-23, 사용자 "일시정지해줘")** — 도는 서브에이전트·서버 0. **G2 Review 도중**(2절 "G2 일시정지") |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — G2 각기둥 4단계 + 도전 (2026-10-20 시작)
+
+- **G2 일시정지(2026-10-23)**: Review(`ae7e551…` — 코디네이터가 멈춤, 이어 맡기기 가능)를 멈추고 그가 띄운 미리 보기 서버(5364, scratchpad `review-g2/src-head`, PID 38535)를 내림. 다른 실행 없음.
+  - 커밋된 것: `track/cuboid` `3181f77`(Build 4커밋) + 코디네이터가 `main` `98524f0`을 합친 `66a6c6b`. Build 보고: 단위 410·e2e 591·0(보통·글꼴 흉내, 합치기 전).
+  - 도중인 것: Review가 남긴 **쓰다 만 결과** `.worktrees/cuboid/docs/games/net-workshop/review-prism-g2.md`(커밋 안 함, 138줄) — 맨 위 판정 "수정 필요 — 반드시 2건": **G2-1** 도전 "모서리와 꼭짓점"의 정답 자리가 판마다 둘째·셋째·넷째에 한 번씩이라 지워 가며 맞히면 셈 문항 60.9%, **G2-2** 세로 태블릿 글꼴 흉내에서 2·3가지를 찾은 장면이 세로 스크롤. 불변 비교(보통)는 끝났고 차이 분석 중에 멈춤. 로그 scratchpad `review-g2/logs/`.
+  - "이어서"면: 같은 Review에게 "남은 확인(불변 차이 분석·글꼴 흉내 쪽 등)을 마저 하고 결과 파일을 끝내라"로 이어 맡김(끝까지 돌지 못한 측정은 다시) → 판정이 "수정 필요"면 같은 Build(`a57636f…`)에게 고치기 라운드(`build-fix-brief-g2b.md`) → 같은 Review가 재검토.
 
 - 사용자 결정 [spec-grade6.md](games/net-workshop/spec-grade6.md) 15-25(4단계 시작, 도전 `prism-count` 함께 넣기). 지침 [build-brief-g2.md](games/net-workshop/build-brief-g2.md). 작업 폴더 `.worktrees/cuboid`·`track/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g2/`. 차례 1 = 배치 시안만 → 사용자 확인 → "계속".
 - 차례 1 끝(2026-10-20): 시안 `build-g2/shots/compare-*.png`. 사용자 결정 15-26 — `prism-free` **시안 B**(만들 각기둥을 매트 오른쪽 위 창에 크게, 휴대폰은 주문서 맨 위), 도전 시안 그대로 → 같은 Build에게 "계속"(차례 2~: 완성·테스트·커밋). 다음: Build 보고 → Review(`review-brief-g2.md`, 포트 5363~5364, 결과 `review-prism-g2.md`).
