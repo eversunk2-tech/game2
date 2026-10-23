@@ -615,6 +615,8 @@ test('모서리와 꼭짓점(도전 주문서): 다섯 문항을 모두 맞히�
     if (q.kind === 'count') {
       await expect(page.locator('.mat .edge-band')).toHaveCount(q.what === 'edges' ? 3 * q.n : 2 * q.n);
       await expect(page.locator('.pc-legend')).toBeVisible();
+      await expect(page.locator('.pc-legend .pc-key')).toHaveText(q.what === 'edges' ? ['위 밑면', '아래 밑면', '옆으로 선 모서리'] : ['위 밑면', '아래 밑면']);
+      await expect(page.locator('.pc-legend')).not.toContainText('null');
       await expect(page.locator('.pc-found tbody tr')).toHaveCount(q.number);
     }
     if (touch) await page.locator('.next-btn').tap();
@@ -641,6 +643,10 @@ test('모서리와 꼭짓점: 흔한 실수(옆으로 선 모서리만 · 한 �
       await expect(page.locator('.reason')).toContainText(q.what === 'edges' ? '옆으로 선 모서리만' : '한 밑면의 꼭짓점만');
       await expect(page.locator('.reason')).toContainText(`${q.answer}개`);
       await expect(choiceButton(page, q)).toHaveClass(/is-answer/);
+      await expect(page.locator('.toast')).toHaveCount(1); // 틀린 까닭 알림
+      await page.locator('.next-btn').click();
+      await expect(page.locator('.toast')).toHaveCount(0); // 다음 문제로 가면 앞 문제의 알림은 지운다
+      continue;
     } else await choiceButton(page, q).click();
     await page.locator('.next-btn').click();
   }

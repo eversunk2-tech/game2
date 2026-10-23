@@ -63,11 +63,11 @@ export function playPrismCount(stage, ctx, questions) {
     if (q.what === 'edges') for (const f of faces.filter((x) => x.role === 'side')) marks.push({ face: f.id, edge: 1, tone: 'v' });
     view.setEdgeMarks(marks);
     // 무늬의 뜻 (색만으로 알리지 않는다: 무늬 + 글)
-    legend.replaceChildren(
+    legend.replaceChildren(...[
       h('span', { class: 'pc-key' }, h('i', { class: 'pc-swatch is-a', 'aria-hidden': 'true' }), '위 밑면'),
       h('span', { class: 'pc-key' }, h('i', { class: 'pc-swatch is-q', 'aria-hidden': 'true' }), '아래 밑면'),
       q.what === 'edges' ? h('span', { class: 'pc-key' }, h('i', { class: 'pc-swatch is-v', 'aria-hidden': 'true' }), '옆으로 선 모서리') : null,
-    );
+    ].filter(Boolean));
     legend.hidden = false;
   }
 
@@ -175,6 +175,7 @@ export function playPrismCount(stage, ctx, questions) {
       return;
     }
     index += 1;
+    ctx.feedback.clear?.(); // 앞 문제의 알림(틀린 까닭)이 다음 문제 위에 남지 않게
     showQuestion();
   }
 
