@@ -1,6 +1,6 @@
 # 지금 상태 (STATUS)
 
-> 마지막으로 고친 날: **2026-10-19**(F1 자유 쌓기 올림). 일이 한 고비 넘을 때마다 이 문서를 고친다.
+> 마지막으로 고친 날: **2026-10-23**(F2 올림, G2 이어서). 일이 한 고비 넘을 때마다 이 문서를 고친다.
 > 규칙은 [CLAUDE.md](../CLAUDE.md)와 [common-rules.md](games/net-workshop/common-rules.md), 예전 경위와 "끝난 것" 목록은 [HANDOFF.md](HANDOFF.md)에 있다.
 
 ## 1. 한눈에
@@ -10,14 +10,19 @@
 | 앱 | **"입체도형 공방"**(id `net-workshop` — 주소·저장 열쇠는 그대로) — 초등 5~6학년 수학. 화면 차례: **사이트 맨 위 주소 = 게임 인트로 → [입장하기] → 학년 고르기(시안 A "큰 두 칸") → 학년 화면(영역 카드) → 영역 단계 지도 → 단계**. 학년 고르기 오른쪽 아래 [선생님용 안내] → `teacher.html` |
 | 영역 | 5학년: 정육면체의 전개도(4단계 + 도전 2) · 직육면체의 전개도(차시 + 상자 크기 정하기 + 도감 주문 54칸) / 6학년: **각기둥의 전개도 1~3단계**(4단계·도전은 G2에서 만드는 중) · **쌓기나무 자유 쌓기 + 1~5차시 + 도전**(판은 알지오매스처럼 돌림판식) · 원기둥("준비 중", 멈춤) |
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
-| `origin/main`(사이트) | 코드 **`cccf6fb`**(F1 쌓기나무 자유 쌓기 — CI 통과, 두 사이트 확인, 2026-10-19) + 이 문서 정리 |
+| `origin/main`(사이트) | 코드 **`f44a588`**(F2 판 돌리기 0.4°·자유 쌓기 원근 — CI 통과, 두 사이트 확인, 2026-10-23) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **G2 각기둥 4단계 `prism-free` + 도전 `prism-count`**(2026-10-20 사용자 시작 — 15-25) — Build 차례 1(배치 시안)부터 |
+| 지금 도는 것 | **G2 각기둥 4단계 + 도전 Build**(사용자 "지금 이어서 하기", 2026-10-23 — 같은 Build가 차례 2를 이어 감, `.worktrees/cuboid`, 기준 `08d7596`, 합칠 때 F2와 맞춤) → 그다음 Review(`review-brief-g2.md`). F2는 2026-10-23 올림(2절) |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — G2 각기둥 4단계 + 도전 (2026-10-20 시작)
 
 - 사용자 결정 [spec-grade6.md](games/net-workshop/spec-grade6.md) 15-25(4단계 시작, 도전 `prism-count` 함께 넣기). 지침 [build-brief-g2.md](games/net-workshop/build-brief-g2.md). 작업 폴더 `.worktrees/cuboid`·`track/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g2/`. 차례 1 = 배치 시안만 → 사용자 확인 → "계속".
+- 차례 1 끝(2026-10-20): 시안 `build-g2/shots/compare-*.png`. 사용자 결정 15-26 — `prism-free` **시안 B**(만들 각기둥을 매트 오른쪽 위 창에 크게, 휴대폰은 주문서 맨 위), 도전 시안 그대로 → 같은 Build에게 "계속"(차례 2~: 완성·테스트·커밋). 다음: Build 보고 → Review(`review-brief-g2.md`, 포트 5363~5364, 결과 `review-prism-g2.md`).
+- **일시정지(2026-10-20)**: G2 Build를 멈추고 그가 띄운 개발 서버(5301, PID 35790, `.worktrees/cuboid`)를 내림. 다른 실행 없음(5361·5362 비어 있음).
+  - 커밋된 것: **없음** — `track/cuboid`는 `08d7596`(기준) 그대로.
+  - 도중인 것(커밋 안 됨, 작업 폴더에 그대로 둠 — 지우지 말 것): 새 파일 `grade6/edge-board.js`(375줄)·`play-pfree.js`(530)·`prism-free-logic.js`(797)·`prism-free-data.js`·`play-pcount.js`(186)·`prism-count-logic.js`(159), 새 검사 `tests/e2e/net-workshop-prism2.spec.js`(720)·`tests/unit/net-workshop-prism-{free,count}.test.js`·`net-workshop-prism-free-indep.js`, 고친 파일 14개(+338줄 — `grade6/index.js`·`play-parts.js`·`prism-play.js`·`prism-stages.js`·`prism.css`·`main.js`·`view3d.js`와 검사 7개). 마지막 전체 브라우저 검사(보통) 588 통과·**2 실패**·138 건너뜀(20:08) — 고치는 중이었음. 완성 그림 일부 `build-g2/shots-final/`.
+  - "이어서"면: 같은 Build(`a57636f…` — 코디네이터가 멈춤)에게 이어 맡기기, 안 되면 새 Build에게 "`git status`·`git diff`로 지금 파일을 다시 읽고 `build-brief-g2.md` + 15-26대로 차례 2를 이어서, 테스트 셋은 처음부터 다시"로.
 
 ### 끝난 일 — F1 자유 쌓기 (2026-10-19 올림)
 

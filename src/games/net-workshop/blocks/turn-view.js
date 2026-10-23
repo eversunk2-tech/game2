@@ -6,7 +6,8 @@
  *   화면의 오른쪽 방향은 늘 판과 나란하다(높이 성분 0) — 쌓기나무의 세로 모서리가 화면에서 늘 곧게 서고, 판이 옆으로 기울지 않는다.
  *   돌기의 중심은 늘 판 가운데다(누른 곳과 무관 — 결정 1). 판 아래로는 가지 않는다(결정 2).
  * 전개도 입체(5학년 정육면체·직육면체, 6학년 각기둥)는 이 모듈을 쓰지 않는다 — 그쪽은 orbit.js의 화면 기준 돌리기 그대로다(15-18).
- * 끌기 1px = 0.5°(DRAG_DEG), 크게·작게 단계는 orbit.js의 값을 그대로 쓴다(common-rules 4절).
+ * 끌기 1px = 0.4°(DRAG_DEG — 사용자 결정 15-27 "약간만 더 느리게": 전개도 입체의 0.5°보다 약 20% 덜 돈다. 모든 쌓기나무 판),
+ * 크게·작게 단계는 orbit.js의 값을 그대로 쓴다(common-rules 4절). 버튼·방향키는 눈금(판 45°·15°, 높이 15°)이라 그대로다.
  *
  * 보기 값(view): { yaw(판을 돌린 각도, 도, 0 이상 360 미만), pitch(내려다보는 높이, 도, 0~90), zoom(배율, 처음 1) }
  *   yaw 0 = 앞에서, 90 = 옆(오른쪽)에서, 180 = 뒤에서, 270 = 왼쪽에서 본다. pitch 0 = 옆에서(수평), 90 = 바로 위에서.
@@ -14,7 +15,13 @@
  *   모델은 x 오른쪽(칸), y 뒤쪽(줄), z 위쪽(층).
  *   화면 오른쪽 = [cos yaw, sin yaw, 0] · 보는 사람 쪽 = [sin yaw · cos pitch, −cos yaw · cos pitch, sin pitch] · 화면 아래 = 오른쪽 × 보는 사람 쪽
  */
-import { DRAG_DEG, ZOOM_MAX, ZOOM_MIN, clamp } from '../orbit.js';
+import { ZOOM_MAX, ZOOM_MIN, clamp } from '../orbit.js';
+
+/**
+ * 끌기 1px에 도는 각도(가로 = 판 돌림, 세로 = 내려다보는 높이). 전개도 입체(orbit.js DRAG_DEG 0.5° — 5·6학년 전개도가 같이 쓴다)와 따로 둔다:
+ * 쌓기나무 판만 약 20% 느리게(사용자 결정 15-27 — 1~5차시·도전·자유 쌓기). 한 바퀴 = 900px
+ */
+export const DRAG_DEG = 0.4;
 
 export const PITCH_MIN = 0; // 옆에서(수평) — 판 아래로는 가지 않는다
 export const PITCH_MAX = 90; // 바로 위에서
@@ -152,4 +159,20 @@ export function turnToward(a, b, f) {
     pitch: a.pitch + (b.pitch - a.pitch) * f,
     zoom: a.zoom * (b.zoom / a.zoom) ** f,
   };
+}
+
+// ── 원근을 줄이는 자세 (자유 쌓기) ─────────────
+/** 바로 위·바로 앞·옆·뒤·왼쪽 자세에서 이 각도(°) 안으로 들어오면 원근이 서서히 줄어든다 */
+export const PERSP_BAND = 15;
+/**
+ * 원근의 세기 비율(0~1) — 자유 쌓기 판의 원근(사용자 결정 15-28 "그 자세에서는 원근 줄이기"): 바로 위(높이 90°)나 옆에서 본 네 자세
+ * (높이 0°, 판 돌림 0°·90°·180°·270° — [앞][옆]·뒤·왼쪽)에 PERSP_BAND°보다 가까워지면 서서히 줄어 딱 그 자세에서는 0(원근 없음 —
+ * 위·앞·옆에서 본 모양 그림과 같은 네모). 멀어지면 다시 1. 거리는 바로 위까지 남은 높이, 옆 자세까지는 높이와 판 돌림 차이의 빗변이다
+ */
+export function perspWeight(view, band = PERSP_BAND) {
+  const top = PITCH_MAX - view.pitch;
+  const off = normYaw(view.yaw) % 90;
+  const flat = Math.hypot(view.pitch - PITCH_MIN, Math.min(off, 90 - off));
+  const t = clamp(Math.min(top, flat) / band, 0, 1);
+  return t * t * (3 - 2 * t);
 }
