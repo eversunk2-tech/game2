@@ -48,28 +48,32 @@ function checkResult(result, label) {
   } else assert.ok(TAG_VALUES.has(result.tag), `${label}: ${result.tag}`);
 }
 
-test('단계: 각기둥 차시는 3단계(밑면과 옆면 3 · 각기둥이 될까? 5 · 맞닿는 선분 3), 모두 영역 prism, id가 게임 전체에서 겹치지 않는다. tag는 기획서 4절 그대로', () => {
+test('단계: 각기둥 차시는 4단계(밑면과 옆면 3 · 각기둥이 될까? 5 · 맞닿는 선분 3 · 전개도 완성하기 2가지 — G2) + 도전 주문서(모서리와 꼭짓점 5 — 15-25), 모두 영역 prism, id가 게임 전체에서 겹치지 않는다. tag는 기획서 4절 그대로', () => {
   assert.deepEqual(PRISM_LESSONS.map((l) => [l.id, l.title, l.note]), [['prism', '각기둥의 전개도', '6학년 1학기 · 각기둥과 각뿔']]);
-  assert.ok(PRISM_LESSONS[0].minutes >= 4 && PRISM_LESSONS[0].minutes <= 10);
+  assert.ok(PRISM_LESSONS[0].minutes >= 8 && PRISM_LESSONS[0].minutes <= 12, '10분 안팎(네 단계)');
   assert.deepEqual(PRISM_STAGES.map((s) => [s.id, s.kind, s.count, s.order, s.area, s.lesson]), [
     ['prism-parts', 'parts', 3, '살펴보기 주문', 'prism', 'prism'],
     ['prism-judge', 'pjudge', 5, '검사 주문', 'prism', 'prism'],
     ['prism-edge', 'pedge', 3, '짝 찾기 주문', 'prism', 'prism'],
+    ['prism-free', 'pfree', 2, '설계 주문', 'prism', 'prism'],
+    ['prism-count', 'pcount', 5, '셈 주문', 'prism', 'prism'],
   ]);
-  assert.deepEqual(PRISM_STAGES.map((s) => s.title), ['밑면과 옆면', '각기둥이 될까?', '맞닿는 선분']);
-  assert.ok(PRISM_STAGES.every((s) => !s.challenge && s.goal.length <= 30), '목표 문장은 짧게(태블릿에서 한 줄)');
+  assert.deepEqual(PRISM_STAGES.map((s) => s.title), ['밑면과 옆면', '각기둥이 될까?', '맞닿는 선분', '전개도 완성하기', '모서리와 꼭짓점']);
+  assert.deepEqual(PRISM_STAGES.map((s) => Boolean(s.challenge)), [false, false, false, false, true]);
+  assert.ok(PRISM_STAGES.every((s) => s.challenge || s.goal.length <= 30), '목표 문장은 짧게(태블릿에서 한 줄)');
   const all = [...STAGES, ...BLOCK_STAGES, ...PRISM_STAGES].map((s) => s.id);
   assert.equal(new Set(all).size, all.length);
   const lessons = [...LESSONS, ...BLOCK_LESSONS, ...PRISM_LESSONS].map((l) => l.id);
   assert.equal(new Set(lessons).size, lessons.length);
   // 단계 카드 그림은 바탕 묶음(index.js)이 붙인다
-  assert.deepEqual(STAGE_CARDS.map((s) => typeof s.thumb), ['function', 'function', 'function']);
+  assert.deepEqual(STAGE_CARDS.map((s) => typeof s.thumb), ['function', 'function', 'function', 'function', 'function']);
   assert.deepEqual(new Set(Object.values(PRISM_TAGS)), new Set(SPEC_TAGS));
   assert.ok(PRISM_HOW_TO.length >= 3 && PRISM_HOW_TO.every((line) => line.length > 10));
 });
 
 test('같은 시드면 같은 문항, 다른 시드면 대체로 다른 문항 · 문항 만들기는 빠르다', () => {
-  for (const s of PRISM_STAGES) {
+  // G1의 세 단계(전개도 문항). 전개도 완성하기 · 모서리와 꼭짓점의 문항은 net-workshop-prism-free.test.js · -prism-count.test.js
+  for (const s of PRISM_STAGES.filter((x) => ['parts', 'pjudge', 'pedge'].includes(x.kind))) {
     const summary = (qs) => JSON.stringify(qs.map((q) => [q.itemId, q.net.faces.map((f) => [f.id, f.label, f.role, f.poly])]));
     assert.equal(summary(questionsOf(s.id, 'x')), summary(questionsOf(s.id, 'x')), s.id);
     const many = new Set(SEEDS.slice(0, 40).map((seed) => summary(questionsOf(s.id, seed))));

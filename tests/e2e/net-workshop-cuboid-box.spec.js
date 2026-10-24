@@ -1098,7 +1098,7 @@ test('결정 1: 54칸을 다 채우고 마치면 "직육면체 도감 완성" �
   await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off'));
   await page.getByRole('button', { name: '입장하기' }).click(); // B0c: 주소 없이 열면 인트로부터 — [입장하기]로 처음 화면에
   await page.getByRole('button', { name: '학습 기록' }).click();
-  await expect(page.locator('.badge-item')).toHaveCount(16); // 도장판 16칸: 쌓기나무 도장 셋(spec-grade6 8절 — S3)이 더해졌다
+  await expect(page.locator('.badge-item')).toHaveCount(17); // 도장판 17칸: 쌓기나무 도장 셋(spec-grade6 8절 — S3) · 각기둥 기둥 설계사(G2)가 더해졌다
   await expect(page.locator('.badge-item[data-badge="cuboid-dex-complete"]')).toHaveClass(/is-earned/);
   await expect(page.locator('.badge-item[data-badge="cuboid-dex-complete"]')).toContainText('직육면체의 전개도 54가지를 모두 찾아요');
   expect(errors).toEqual([]);

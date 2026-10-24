@@ -231,7 +231,7 @@ async function answerParts(page, q, { touch = false } = {}) {
 }
 
 // ── 차시와 단계 지도 ─────────────────────────────
-test('?lesson=prism: 세 단계(밑면과 옆면 · 각기둥이 될까? · 맞닿는 선분)가 보이고 첫 단계만 열림. 밑면과 옆면을 마우스로 끝까지 하면 결과와 다음 단계', async ({ page }) => {
+test('?lesson=prism: 네 단계(밑면과 옆면 · 각기둥이 될까? · 맞닿는 선분 · 전개도 완성하기 — G2)와 도전 주문서(모서리와 꼭짓점)가 보이고 첫 단계만 열림. 밑면과 옆면을 마우스로 끝까지 하면 결과와 다음 단계', async ({ page }) => {
   test.setTimeout(150_000);
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?lesson=prism&seed=1&sound=off'));
@@ -245,12 +245,14 @@ test('?lesson=prism: 세 단계(밑면과 옆면 · 각기둥이 될까? · 맞�
   await expect(page.locator('.lesson-chips .chip')).toHaveText([`약 ${PRISM_LESSONS[0].minutes}분`]);
   await expect(page.locator('.stage-card h3, .stage-card .stage-title').first()).toBeVisible();
   const cards = page.locator('.stage-card');
-  await expect(cards).toHaveCount(3);
+  await expect(cards).toHaveCount(5); // 일반 4 + 도전 주문서 1(G2 — 15-25)
   for (const [i, s] of PRISM_STAGES.entries()) await expect(cards.nth(i)).toContainText(s.title);
   await expect(cards.nth(0)).toBeEnabled();
   await expect(cards.nth(1)).toBeDisabled();
   await expect(cards.nth(2)).toBeDisabled();
-  await expect(page.locator('.stage-card .stage-art')).toHaveCount(3);
+  await expect(cards.nth(3)).toBeDisabled();
+  await expect(page.locator('.challenge-card')).toBeDisabled(); // 차시를 마치기 전에는 잠김
+  await expect(page.locator('.stage-card .stage-art')).toHaveCount(4); // 단계 카드 그림은 일반 단계에만(도전 주문서 카드에는 그림이 없다)
   await cards.nth(0).click();
   await expect(page.locator('.order-kind')).toHaveText('살펴보기 주문');
   for (const q of questionsFor('prism-parts')) {
@@ -272,16 +274,16 @@ test('?lesson=prism: 세 단계(밑면과 옆면 · 각기둥이 될까? · 맞�
   expect(errors).toEqual([]);
 });
 
-test('6학년 영역: "각기둥의 전개도" 카드가 열려 있고(준비 중 아님), 누르면 그 영역의 단계 지도 — 영역 탭은 각기둥 · 쌓기나무, 모은 별 0 / 9', async ({ page }) => {
+test('6학년 영역: "각기둥의 전개도" 카드가 열려 있고(준비 중 아님), 누르면 그 영역의 단계 지도 — 영역 탭은 각기둥 · 쌓기나무, 모은 별 0 / 12(네 단계 — G2)', async ({ page }) => {
   const errors = collectErrors(page);
   await page.goto(fileUrl(FILE, '?seed=1&sound=off&grade=6'));
   const card = page.locator('.area-card[data-area="prism"]');
   await expect(card).toBeEnabled();
-  await expect(card).toHaveAccessibleName('각기둥의 전개도, 6학년 1학기 · 각기둥과 각뿔, 차시 1개, 모은 별 0 / 9, 여기부터');
+  await expect(card).toHaveAccessibleName('각기둥의 전개도, 6학년 1학기 · 각기둥과 각뿔, 차시 1개, 모은 별 0 / 12, 여기부터');
   await card.click();
   await expect(page.locator('.area-tab[data-area="prism"]')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('tablist', { name: '영역' }).getByRole('tab')).toHaveText(['각기둥의 전개도', '쌓기나무']);
-  await expect(page.locator('.star-total')).toHaveText('모은 별 0 / 9');
+  await expect(page.locator('.star-total')).toHaveText('모은 별 0 / 12');
   await expect(page.locator('.lesson-no')).toHaveCount(0); // 차시가 하나뿐인 영역은 칩 없음
   await page.goto(fileUrl(FILE, '?seed=1&sound=off&area=prism'));
   await expect(page.locator('.area-tab[data-area="prism"]')).toHaveAttribute('aria-selected', 'true');

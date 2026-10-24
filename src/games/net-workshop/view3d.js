@@ -246,7 +246,7 @@ export function displayNet(net, { focus = [], show = [] } = {}) {
  * @param {(faceId: string) => void} [p.onPick] 입체 상태의 면을 눌러 고르는 단계(각기둥의 밑면 고르기): 무대를 누르면 브라우저의 누르기 판정 대신
  *   직접 계산한 맨 앞 면(fold.js pickFace — 거의 옆으로 선 면은 누를 수 없다)을 알린다. 8px 넘게 끌면 돌리기(누르기가 아니다). 키보드(Enter)는 초점 받은 면
  */
-export function createNetView({ h, interactive = false, onFaceClick = null, onPick = null, sfx = null, still = false, skin = null }) {
+export function createNetView({ h, interactive = false, onFaceClick = null, onPick = null, onPickMiss = null, sfx = null, still = false, skin = null }) {
   const scene = h('div', { class: 'net-scene' });
   const badge = h('p', { class: 'stage-badge', hidden: true });
   const el = h('div', {
@@ -1411,6 +1411,8 @@ export function createNetView({ h, interactive = false, onFaceClick = null, onPi
     event.preventDefault();
     event.stopPropagation();
     if (id != null) onPick(id);
+    // 면 위를 눌렀는데 고를 수 있는 면이 없다(거의 옆으로 선 면 — pickFace): 주면 알린다(review-prism-g1 R5)
+    else if (faceEl && onPickMiss) onPickMiss();
   }
 
   /** 사파리의 두 손가락 벌리기(화면 전체 확대)를 접은 입체 위에서는 막는다 */

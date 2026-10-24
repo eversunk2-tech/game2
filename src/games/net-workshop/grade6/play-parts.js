@@ -18,7 +18,10 @@ export function playParts(stage, ctx, questions) {
   const { h } = ctx;
   // 모든 면이 같은 색 · 글자 없음. 화면 읽기 이름은 DOM 차례의 번호(면의 차례는 문항이 섞어 두었다)
   const skin = { name: (label) => `${LABELS.indexOf(label) + 1}번 면`, mark: () => null, color: () => 'var(--face-7)' };
-  const view = createNetView({ h, interactive: true, onPick: (id) => pick(id), sfx: ctx.sfx, skin });
+  // 거의 옆으로 선 면은 눌러도 골라지지 않는다(설계대로 — spec-grade6 6-1절): 그때는 돌려 보라고 알린다(review-prism-g1 R5)
+  const view = createNetView({ h, interactive: true, onPick: (id) => pick(id), onPickMiss: () => {
+    if (!solved) ctx.feedback.info('그 면은 거의 옆으로 서 있어서 고를 수 없어요. 돌려서 눌러 봐요.');
+  }, sfx: ctx.sfx, skin });
   const bench = createWorkbench({ ctx, view, total: questions.length, lockText: '맞힌 뒤에 펼쳐 볼 수 있어요.' });
   bench.mat.parentElement.classList.add('cuboid-bench', 'prism-bench');
   const count = h('p', { class: 'parts-count', role: 'status' });
