@@ -123,7 +123,7 @@ function segmentsTouch(a1, a2, b1, b2) {
   return Math.min(L, Math.max(t1, t2)) - Math.max(0, Math.min(t1, t2)) > EPS;
 }
 
-/** 놓인 면들의 빈 모서리(다른 면의 변과 조금도 맞닿지 않은 변): [{ face, edge, p, q }] — 붙일 자리 */
+/** 놓인 면들의 빈 모서리(다른 면의 변과 조금도 맞닿지 않은 변): [{ face, edge, p, q }] — 자석이 붙는 곳 · 길이 글을 다는 곳 */
 export function freeEdges(placed) {
   const out = [];
   for (const f of placed) {
@@ -723,7 +723,7 @@ const LABEL_STEP = 3;
 /**
  * 판의 글 자리(px): 면마다 빈 모서리의 길이 글(변의 가운데에서 안쪽으로, 변을 따라 돌림)과 면 이름이 서로 겹치지 않고 면 안에 들게.
  * 좁은 화면 · 작은 면(사다리꼴 밑면 · 육각기둥의 밑면)에서: 길이 글은 "2 cm" → "2"(수만)로, 그래도 안 되면 조금 더 안쪽으로, 그래도 안 되면 그 글을 뺀다
- * (붙일 자리가 있는 변 → 긴 변 차례로 놓는다). 면 이름은 가운데에서 가장 가까운 빈 곳에 — 주는 차례(자물쇠와 함께 → 작게 → 이름만 …)로, 안 되면 뺀다.
+ * (open 표시가 있는 변 → 긴 변 차례로 놓는다). 면 이름은 가운데에서 가장 가까운 빈 곳에 — 주는 차례("떨어짐"과 함께 → 작게 → 이름만 …)로, 안 되면 뺀다.
  * faces: [{ id, poly(px), lens: [{ key, p, q, open, texts: [{ text, w, h }] (긴 글 → 짧은 글) }], names: [{ variant, w, h }] }]
  * → { lens: Map(key → { x, y, deg, text } | null), names: Map(id → { x, y, variant } | null) }
  */
@@ -734,7 +734,7 @@ export function placeBoardLabels(faces, { pad = 1, step = LABEL_STEP } = {}) {
     const [cx, cy] = centroid(f.poly);
     const kept = [];
     const edgeLen = (e) => Math.hypot(e.q[0] - e.p[0], e.q[1] - e.p[1]);
-    // 붙일 자리가 있는 변(open)부터, 그 안에서는 긴 변부터
+    // open 표시가 있는 변부터, 그 안에서는 긴 변부터
     for (const e of [...f.lens].sort((a, b) => Number(Boolean(b.open)) - Number(Boolean(a.open)) || edgeLen(b) - edgeLen(a))) {
       const len = edgeLen(e) || 1;
       const mid = [(e.p[0] + e.q[0]) / 2, (e.p[1] + e.q[1]) / 2];
@@ -800,7 +800,7 @@ export function cardName(card) {
   return `${card.label} 면 카드, 밑면, ${base}`;
 }
 
-/** 붙일 변의 길이 (화면 읽기 · 카드 글) */
+/** 다각형의 변 하나의 길이 (화면 읽기 · 판의 길이 글) */
 export const edgeLengthOf = (poly, k) => tidy(Math.hypot(poly[(k + 1) % poly.length][0] - poly[k][0], poly[(k + 1) % poly.length][1] - poly[k][1]));
 
 export { signedArea, hasFinalSound };
