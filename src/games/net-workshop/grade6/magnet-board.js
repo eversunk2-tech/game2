@@ -515,7 +515,6 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
   function onMove(event) {
     if (!enabled || turning) return;
     if (press && event.pointerId === press.pointer && !press.dragged && Math.hypot(event.clientX - press.x, event.clientY - press.y) >= 8) press.dragged = true;
-    if (event.pointerType === 'mouse' && event.button === 2 && (event.buttons & 2)) rightPress(event);
     if (dragging() && event.pointerId === press.pointer) {
       lastPoint = [event.clientX, event.clientY];
       showDragPreview(event.clientX, event.clientY);
@@ -565,14 +564,12 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     turnWhileDragging();
   }
   window.addEventListener('keydown', onKeyTurn, true);
-  let rightAt = -Infinity;
   let menuUntil = 0;
+  /** 끄는 중에 누른 오른쪽 버튼: 한 번 누름에 한 번(마우스 이벤트만 센다 — 30°씩이라 빠르게 여러 번 눌러도 하나도 빠뜨리지 않게) */
   function rightPress(event) {
     if (!dragging()) return;
     event.preventDefault?.();
-    menuUntil = performance.now() + 1500;
-    if (event.timeStamp - rightAt < 120) return;
-    rightAt = event.timeStamp;
+    menuUntil = performance.now() + 1500; // 오른쪽 버튼을 뗄 때 뜨는 메뉴도 막는다
     turnWhileDragging();
   }
   const onMouseDown = (event) => {
@@ -649,80 +646,156 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
       }
     }
   }
+  // 잡고 돌리기(마우스 · 터치): 직육면체 자유 배치(free-board.js)와 같은 짜임 — 창에서 움직임을 따라가고, 누른 동안의 touchmove는 막아(화면이 쓸리거나
+  // 관성 스크롤이 돌지 않게) 뗀 뒤 첫 누르기가 먹히게. 누르기만 하면 뒤따르는 click이 30° 돌린다
+  let swallowHandleClick = false;
   function onHandleDown(event) {
     const handle = event.currentTarget;
     if (!enabled || (event.pointerType === 'mouse' && event.button !== 0)) return;
     const target = handleTarget();
     if (!target || target.where !== handle.dataset.where) return;
-    event.stopPropagation();
-    const el = target.where === 'board' ? tileEls.get(target.id) : cardEls.get(target.id).querySelector('.pf-card-art');
-    const b = el.getBoundingClientRect();
-    const [cx, cy] = target.where === 'board'
-      ? (() => {
-          const c = centroid(placed.get(target.id));
-          const r = frame.getBoundingClientRect();
-          return [r.left + c[0] * view.unit, r.top + c[1] * view.unit];
-        })()
-      : [b.left + b.width / 2, b.top + b.height / 2];
-    turning = { ...target, pointer: event.pointerId, x0: event.clientX, y0: event.clientY, cx, cy, a0: Math.atan2(event.clientY - cy, event.clientX - cx), active: false, deg: 0, handle };
-    handle.setPointerCapture?.(event.pointerId);
+    swallowHandleClick = false;
+    event.stopPropagation(); // 끌기 엔진 · 판이 이 누르기를 면 고르기 · 끌기로 받지 않게
+    let el;
+    let cx;
+    let cy;
+    if (target.where === 'board') {
+      el = tileEls.get(target.id);
+      const c = centroid(placed.get(target.id));
+      const r = frame.getBoundingClientRect();
+      [cx, cy] = [r.left + c[0] * view.unit, r.top + c[1] * view.unit];
+      const t = el.getBoundingClientRect();
+      el.style.transformOrigin = `${(cx - t.left).toFixed(2)}px ${(cy - t.top).toFixed(2)}px`;
+    } else {
+      el = cardEls.get(target.id).querySelector('.pf-card-art');
+      const b = el.getBoundingClientRect();
+      [cx, cy] = [b.left + b.width / 2, b.top + b.height / 2];
+    }
+    turning = {
+      ...target, pointer: event.pointerId, x0: event.clientX, y0: event.clientY, cx, cy, a0: Math.atan2(event.clientY - cy, event.clientX - cx),
+      active: false, deg: 0, el, handle, hx: handle.offsetLeft + HANDLE / 2, hy: handle.offsetTop + HANDLE / 2,
+    };
+    try {
+      handle.setPointerCapture(event.pointerId);
+    } catch {
+      // 포인터를 잡지 못해도 창의 움직임으로 따라간다
+    }
+    window.addEventListener('pointermove', onHandleMove);
+    window.addEventListener('pointerup', onHandleUp);
+    window.addEventListener('pointercancel', onHandleCancel);
+    window.addEventListener('touchmove', onHandleTouch, { passive: false });
+  }
+  function onHandleTouch(event) {
+    if (turning && event.cancelable) event.preventDefault();
   }
   function onHandleMove(event) {
     if (!turning || event.pointerId !== turning.pointer) return;
-    if (!turning.active && Math.hypot(event.clientX - turning.x0, event.clientY - turning.y0) < TURN_START) return;
-    turning.active = true;
+    if (!turning.active) {
+      if (Math.hypot(event.clientX - turning.x0, event.clientY - turning.y0) < TURN_START) return;
+      turning.active = true;
+      root.classList.add('is-turning-face');
+      if (turning.where === 'board') boardEl.classList.add('is-turning'); // 도는 면의 테두리 · 판의 글은 잠깐 숨긴다(놓으면 다시)
+    }
+    event.preventDefault();
     let deg = ((Math.atan2(event.clientY - turning.cy, event.clientX - turning.cx) - turning.a0) * 180) / Math.PI;
     deg = ((deg % 360) + 540) % 360 - 180;
     turning.deg = deg;
+    turning.el.style.rotate = `${deg.toFixed(2)}deg`;
     if (turning.where === 'board') {
-      // 손을 따라 도는 모양(점선) — 놓으면 가까운 30°로 맞춰지는데 그 각에 놓을 수 없으면 벽돌색
+      // 놓으면 가까운 30°로 맞춰진다 — 그 모습(붙을 모서리가 있으면 붙은 모습)을 점선으로, 놓을 수 없으면 벽돌색
       const k = Math.round(deg / TURN_STEP);
-      const ok = k % 12 === 0 || Boolean(settlePoly(cardById.get(turning.id), turnPoly(placed.get(turning.id), k * TURN_STEP), others(turning.id), size));
-      showPreview(turnPoly(placed.get(turning.id), deg), ok);
-    } else {
-      const art = cardEls.get(turning.id).querySelector('.pf-card-art');
-      if (art) art.style.transform = `rotate(${deg}deg)`;
+      const now = placed.get(turning.id);
+      const result = k % 12 === 0 ? { poly: now } : settlePoly(cardById.get(turning.id), turnPoly(now, k * TURN_STEP), others(turning.id), size);
+      showPreview(result ? result.poly : turnPoly(now, k * TURN_STEP), Boolean(result));
     }
-    // 손잡이가 손을 따라간다
-    const r = turning.handle.parentElement.getBoundingClientRect();
-    turning.handle.style.left = `${event.clientX - r.left - HANDLE / 2}px`;
-    turning.handle.style.top = `${event.clientY - r.top - HANDLE / 2}px`;
+    // 손잡이도 면의 가운데를 축으로 따라 돈다
+    const box = turning.handle.offsetParent?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const [hx, hy] = [box.left + turning.hx - turning.cx, box.top + turning.hy - turning.cy];
+    const rad = (deg * Math.PI) / 180;
+    const [rx, ry] = [hx * Math.cos(rad) - hy * Math.sin(rad), hx * Math.sin(rad) + hy * Math.cos(rad)];
+    turning.handle.style.left = `${turning.cx + rx - box.left - HANDLE / 2}px`;
+    turning.handle.style.top = `${turning.cy + ry - box.top - HANDLE / 2}px`;
+  }
+  function endTurning() {
+    window.removeEventListener('pointermove', onHandleMove);
+    window.removeEventListener('pointerup', onHandleUp);
+    window.removeEventListener('pointercancel', onHandleCancel);
+    window.removeEventListener('touchmove', onHandleTouch);
+    root.classList.remove('is-turning-face');
+    boardEl.classList.remove('is-turning');
+    const t = turning;
+    turning = null;
+    if (t) {
+      t.el.style.rotate = '';
+      t.el.style.transformOrigin = '';
+    }
+    hidePreview();
+    return t;
   }
   function onHandleUp(event) {
     if (!turning || event.pointerId !== turning.pointer) return;
-    const t = turning;
-    turning = null;
-    hidePreview();
-    const k = t.active ? Math.round(t.deg / TURN_STEP) : 1;
-    if (t.where === 'board') {
-      if (k % 12 !== 0) rotateFace(t.id, k, { exact: t.active });
-      else render();
-    } else {
-      const art = cardEls.get(t.id).querySelector('.pf-card-art');
-      if (art) art.style.transform = '';
-      if (k % 12 !== 0) turnCard(t.id, k);
-      else renderCards();
+    const t = endTurning();
+    if (!t.active) {
+      placeHandles();
+      return; // 누르기만 했다: 뒤따르는 click이 30° 돌린다
     }
+    swallowHandleClick = true; // 돌린 뒤 따라오는 click은 한 번 막는다(새로 누르면 풀린다)
+    setTimeout(() => {
+      swallowHandleClick = false;
+    }, 0);
+    const k = Math.round(t.deg / TURN_STEP);
+    if (t.where === 'board') {
+      if (k % 12 !== 0) rotateFace(t.id, k, { exact: true });
+      else render();
+    } else if (k % 12 !== 0) turnCard(t.id, k);
+    else renderCards();
     placeHandles();
   }
-  function onHandleKey(event) {
-    const handle = event.currentTarget;
-    const target = handleTarget();
-    if (!target || target.where !== handle.dataset.where) return;
-    const k = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' || event.key === 'Enter' || event.key === ' ' ? 1 : 0;
-    if (!k) return;
+  function onHandleCancel(event) {
+    if (!turning || event.pointerId !== turning.pointer) return;
+    endTurning();
+    render();
+  }
+  function onHandleClick(event) {
+    event.stopPropagation(); // 판 · 카드 칸(놓을 곳)이 이 누르기를 받지 않게
     event.preventDefault();
-    event.stopPropagation();
-    if (target.where === 'board') rotateFace(target.id, k);
-    else turnCard(target.id, k);
+    if (swallowHandleClick) {
+      swallowHandleClick = false;
+      return;
+    }
+    const target = handleTarget();
+    if (!target || target.where !== event.currentTarget.dataset.where) return;
+    if (target.where === 'board') rotateFace(target.id, 1);
+    else turnCard(target.id, 1);
+  }
+  function onHandleKey(event) {
+    const target = handleTarget();
+    if (!target || target.where !== event.currentTarget.dataset.where) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      event.stopPropagation();
+      const k = event.key === 'ArrowLeft' ? -1 : 1;
+      if (target.where === 'board') rotateFace(target.id, k);
+      else turnCard(target.id, k);
+    } else if (event.key === 'Escape') {
+      // 고르기를 풀고 초점을 그 면(판) · 카드로 돌려보낸다
+      event.preventDefault();
+      event.stopPropagation();
+      dnd.clearSelection();
+      if (target.where === 'tray') {
+        render();
+        cardEls.get(target.id).focus({ preventScroll: true });
+      } else {
+        focusId = target.id;
+        render();
+        boardEl.focus({ preventScroll: true });
+      }
+    }
   }
   for (const handle of [boardHandle, trayHandle]) {
     handle.addEventListener('pointerdown', onHandleDown);
-    handle.addEventListener('pointermove', onHandleMove);
-    handle.addEventListener('pointerup', onHandleUp);
-    handle.addEventListener('pointercancel', onHandleUp);
     handle.addEventListener('keydown', onHandleKey);
-    handle.addEventListener('click', (event) => event.stopPropagation()); // 손잡이 누르기는 pointerup이 맡는다(키보드는 keydown)
+    handle.addEventListener('click', onHandleClick);
   }
 
   // ── 키보드 ───────────────────────────
@@ -943,6 +1016,7 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     /** 검사용: 지금 놓인 면의 모양(cm) */
     placedPolys: () => new Map([...placed].map(([k, v]) => [k, v.map((p) => [...p])])),
     destroy() {
+      if (turning) endTurning();
       resizer?.disconnect();
       clearTimeout(afterTimer);
       dnd.destroy();

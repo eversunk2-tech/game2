@@ -103,6 +103,54 @@ export function fitOnBoard(play, faces, { rootSolid = 'b0', pick = null } = {}) 
 }
 
 /**
+ * 카드를 목표 자리(poly — 놓인 면 placed의 모서리에 맞닿은 자리)에 붙이려면: 카드를 몇 번(30°) 돌려 어디(카드 가운데, cm)에 끌어 놓나.
+ * 카드의 맞닿을 변의 가운데가 목표의 그 변의 가운데에 오는 곳(자석이 0 cm 옮긴다) — 안 되면 목표의 가운데. 화면과 같은 settlePoly로 놓아 보아
+ * 목표 자리에 붙는 것만 → { turn, at, poly } | null
+ */
+export function dropFor(play, card, poly, placed) {
+  const size = play.board;
+  const deg = faceAngle(card, poly);
+  if (deg == null) return null;
+  const turn = Math.round(deg / 30) % 12;
+  const others = placed.map((p) => ({ id: p.id, poly: p.poly }));
+  const c = centroid(poly);
+  const exact = card.poly.map((p) => {
+    const [x, y] = turnPt(p, deg);
+    return [x + c[0], y + c[1]];
+  });
+  const touch = touchEdge(exact, placed);
+  const tries = [];
+  if (touch) {
+    const n = card.poly.length;
+    const [mx, my] = turnPt(mid(card.poly[touch.j], card.poly[(touch.j + 1) % n]), turn * 30);
+    const target = mid(exact[touch.j], exact[(touch.j + 1) % n]);
+    tries.push([target[0] - mx, target[1] - my]);
+  }
+  tries.push(c);
+  for (const at of tries) {
+    const result = L.settlePoly(card, L.posePoly(card, turn * 30, at), others, size);
+    if (result && samePlace(result.poly, poly)) return { turn, at, poly: result.poly };
+  }
+  return null;
+}
+
+/** 그 면(card · 지금 모양 poly)을 옮겨 놓으면 어느 면에도 붙지 않고 떨어지는 빈 곳(가운데, cm — 판의 오른쪽 아래부터 0.5 cm 걸음으로 찾음) | null */
+export function looseSpot(play, card, poly, others) {
+  const size = play.board;
+  const c = centroid(poly);
+  for (let y = size.h - 1; y >= 1; y -= 0.5) {
+    for (let x = size.w - 1; x >= 1; x -= 0.5) {
+      const moved = poly.map(([px, py]) => [px - c[0] + x, py - c[1] + y]);
+      if (!L.canPlace(moved, others, size)) continue;
+      if (L.magnetCandidates(card, moved, others, { size }).length > 0) continue;
+      if (L.faceGroups([...others, { id: card.id, poly: moved }]).length < 2) continue;
+      return [x, y];
+    }
+  }
+  return null;
+}
+
+/**
  * 판 위의 목표 모양(fitOnBoard의 faces — 첫 면부터)을 놓는 차례: 첫 면 → 놓인 면에 맞닿은 면을 차례로(목표의 차례 가운데 먼저 맞닿는 것).
  * 카드는 화면처럼 묶음의 맨 앞 카드. 끄는 자리는 카드의 맞닿을 변의 가운데가 목표의 그 변의 가운데에 오는 곳(자석이 0 cm 옮긴다).
  * 화면과 같은 함수로 놓아 보아 목표와 같은 자리에 놓이는지 확인한다(아니면 오류).
@@ -128,6 +176,9 @@ export function planBoard(play, fit) {
   const pose0 = L.posePoly(rootCard, fit.turn * 30, at0);
   if (!samePlace(pose0, rootFace.poly) || !L.canPlace(pose0, [], size)) throw new Error('첫 면을 놓지 못해요');
   placed.push({ id: rootCard.id, role: rootCard.role, label: rootCard.label, poly: pose0 });
+  // 키보드로 놓으면 자석 자리의 모양 그대로 놓인다 — 끌어 놓은 모양과 꼭짓점이 같아도 차례가 다를 수 있어(직사각형을 반대쪽 변으로 붙인 것 등)
+  // 다음 자석 자리의 차례가 달라진다. 키보드 차례는 키보드로 놓은 모양들로 따로 센다
+  const keyed = [{ id: rootCard.id, poly: pose0 }];
   steps.push({ group: rootCard.group, card: rootCard.id, turn: fit.turn, at: at0, poly: pose0, spot: -1, spots: 0, root: true,
     kx: Math.round((at0[0] - size.w / 2) / 0.5), ky: Math.round((at0[1] - size.h / 2) / 0.5) });
   while (want.length > 0) {
@@ -135,38 +186,46 @@ export function planBoard(play, fit) {
     if (!f) throw new Error('맞닿은 면이 없어요(떨어진 모양)');
     want.splice(want.indexOf(f), 1);
     const card = take(f);
-    const deg = faceAngle(card, f.poly);
-    const turn = Math.round(deg / 30) % 12;
-    const others = placed.map((p) => ({ id: p.id, poly: p.poly }));
-    // 맞닿을 변: 목표 모양에서 놓인 면과 맞닿은 변 j → 카드의 변 번호(목표를 카드 차례로 다시 적은 것에서)
-    const c = centroid(f.poly);
-    const exact = card.poly.map((p) => {
-      const [x, y] = turnPt(p, deg);
-      return [x + c[0], y + c[1]];
-    });
-    const { j } = touchEdge(exact, placed);
-    const n = card.poly.length;
-    const [mx, my] = turnPt(mid(card.poly[j], card.poly[(j + 1) % n]), turn * 30);
-    const target = mid(exact[j], exact[(j + 1) % n]);
-    let at = [target[0] - mx, target[1] - my];
-    let result = L.settlePoly(card, L.posePoly(card, turn * 30, at), others, size);
-    if (!result || !samePlace(result.poly, f.poly)) {
-      at = c;
-      result = L.settlePoly(card, L.posePoly(card, turn * 30, at), others, size);
-    }
-    if (!result || !samePlace(result.poly, f.poly)) throw new Error(`${card.label} 면이 목표 자리에 놓이지 않아요`);
-    const spots = L.magnetSpots(card, others, size);
-    const spot = spots.findIndex((s) => samePlace(s.poly, f.poly));
-    placed.push({ id: card.id, role: card.role, label: card.label, poly: result.poly });
-    steps.push({ group: card.group, card: card.id, turn, at, poly: result.poly, spot, spots: spots.length, root: false });
+    const drop = dropFor(play, card, f.poly, placed);
+    if (!drop) throw new Error(`${card.label} 면이 목표 자리에 놓이지 않아요`);
+    const spots = L.magnetSpots(card, keyed, size);
+    const spot = spots.findIndex((x) => samePlace(x.poly, f.poly));
+    keyed.push({ id: card.id, poly: spot >= 0 ? spots[spot].poly : drop.poly });
+    placed.push({ id: card.id, role: card.role, label: card.label, poly: drop.poly });
+    steps.push({ group: card.group, card: card.id, turn: drop.turn, at: drop.at, poly: drop.poly, spot, spots: spots.length, root: false });
   }
   return { steps, placed };
 }
 
-/** 목록의 전개도 하나를 판에 놓는 차례(들어가는 방향이 없으면 null) */
+/** 카드 묶음마다 돌림이 0에서 시작할 때 차례대로 놓으며 돌리는 횟수(30°씩 — 화면에서 [돌리기]를 누르는 수) */
+export function turnCost(steps) {
+  const now = new Map();
+  let cost = 0;
+  for (const s of steps) {
+    cost += (s.turn - (now.get(s.group) ?? 0) + 12) % 12;
+    now.set(s.group, s.turn);
+  }
+  return cost;
+}
+
+/**
+ * 목록의 전개도 하나를 판에 놓는 차례(들어가는 방향이 없으면 null). pick: 들어가는 방향 가운데 몇 번째(없으면 여유가 가장 큰 것),
+ * 'fewest'면 카드를 가장 적게 돌리는 방향(화면 검사를 빠르게)
+ */
 export function planCatalog(play, index, { rootSolid = 'b0', pick = null } = {}) {
   const list = catalogNets(play.solidId);
   const entry = list[index % list.length];
+  if (pick === 'fewest') {
+    let best = null;
+    for (let k = 0; k < 12; k += 1) {
+      const fit = fitOnBoard(play, entry.faces, { rootSolid, pick: k });
+      if (!fit) return null;
+      const plan = planBoard(play, fit);
+      const cost = turnCost(plan.steps);
+      if (!best || cost < best.cost) best = { cost, plan };
+    }
+    return { key: entry.key, ...best.plan };
+  }
   const fit = fitOnBoard(play, entry.faces, { rootSolid, pick });
   return fit && { key: entry.key, ...planBoard(play, fit) };
 }
