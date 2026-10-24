@@ -45,7 +45,21 @@ async function openStage(page, id, extra = '', seed = '1') {
 }
 
 // ── 전개도 완성하기: 같은 시드로 판을 만들고, 목표 모양을 놓는 차례를 화면과 같은 놓기 함수로 계산한다 ─────────────
-const freePlay = (seed, page) => L.makeFreePlay(FREE, createRng(`${seed}:prism-free`), { portrait: page.viewportSize().width <= 560 });
+/** 같은 시드의 판(각기둥 · 1 cm를 정하는 크기) — 화면을 열기 전에 시드를 고를 때 */
+const seedPlay = (seed, page) => L.makeFreePlay(FREE, createRng(`${seed}:prism-free`), { portrait: page.viewportSize().width <= 560 });
+/** 화면이 정한 판의 모양(15-32 — 판은 매트 전체): 1 cm(px) · 판의 크기(cm) · 만들 각기둥 창에 가리지 않는 곳(cm) · 옮긴 거리(px) */
+async function boardGeo(page) {
+  return page.locator('.pf-mboard').evaluate((el) => ({
+    unit: Number(el.dataset.unit), board: el.dataset.board.split(',').map(Number), free: el.dataset.free.split(',').map(Number), pan: Number(el.dataset.pan ?? 0),
+  }));
+}
+/** 같은 시드의 판 + 화면이 정한 판 크기(board)와 목표 모양을 둘 곳(area — 창에 가리지 않는 곳). 단계를 연 뒤에 */
+async function freePlay(seed, page) {
+  const play = seedPlay(seed, page);
+  const g = await boardGeo(page);
+  return { ...play, fit: play.board, board: { w: g.board[0], h: g.board[1] }, area: { x: g.free[0], y: g.free[1], w: g.free[2], h: g.free[3] } };
+}
+const shiftPlaced = (placed, [dx, dy]) => placed.map((f) => ({ ...f, poly: f.poly.map(([x, y]) => [x + dx, y + dy]) }));
 const cardOf = (page, group) => page.locator(`.pf-cards .pf-card[data-group="${group}"]`);
 const tiles = (page) => page.locator('.pf-mboard .pf-tile');
 /**
@@ -53,9 +67,9 @@ const tiles = (page) => page.locator('.pf-mboard .pf-tile');
  */
 const netCache = new Map();
 function netPlan(play, k) {
-  const key = `${play.solidId}:${play.board.w}x${play.board.h}`;
+  const key = `${play.solidId}:${play.board.w}x${play.board.h}:${JSON.stringify(play.area)}`;
   if (!netCache.has(key)) {
-    const list = Array.from({ length: 24 }, (_, i) => planCatalog(play, i, { pick: 'fewest' })).filter(Boolean);
+    const list = Array.from({ length: 24 }, (_, i) => planCatalog(play, i, { pick: 'fewest', area: play.area })).filter(Boolean);
     netCache.set(key, list.map((plan) => ({ plan, cost: turnCost(plan.steps) })).sort((a, b) => a.cost - b.cost).map((x) => x.plan));
   }
   return netCache.get(key)[k];
@@ -64,7 +78,8 @@ function netPlan(play, k) {
 async function boardBox(page, play) {
   await page.locator('.pf-mboard').scrollIntoViewIfNeeded();
   const r = await page.locator('.pf-mboard-frame').boundingBox();
-  return { x: r.x, y: r.y, unit: r.width / play.board.w };
+  void play;
+  return { x: r.x, y: r.y, unit: (await boardGeo(page)).unit };
 }
 const toScreen = (box, [x, y]) => [box.x + x * box.unit, box.y + y * box.unit];
 /** 판에 놓인 면들의 모양(cm) — 화면의 조각(svg 다각형)을 읽어서 */
@@ -185,7 +200,7 @@ const pressBtn = (page, selector, how) => (how === 'touch' || how === 'tap' ? pa
 function twistedPlan(play, want, { tries = 40 } = {}) {
   const cards = L.freeCards(L.freeSolid(play.solidId));
   for (let i = 0; i < tries; i += 1) {
-    const plan = planCatalog(play, i * 3);
+    const plan = planCatalog(play, i * 3, { area: play.area });
     if (!plan) continue;
     const pre = plan.placed.slice(0, -1);
     const last = cards.find((c) => c.id === plan.placed.at(-1).id);
@@ -245,34 +260,43 @@ async function expectPanelFits(page, label = '') {
   expect(m, label).toEqual({ over: 0, small: [], cut: [] });
 }
 /**
- * 매트 위: 놓는 판은 매트 안이고 만들 각기둥 창 · 안내 띠 · 조작 띠와 겹치지 않는다. 놓인 면(다각형의 실제 꼭짓점)은 판 안이다.
- * 돌리기 손잡이(보일 때)는 48px 이상 · 매트 안이고 창 · 띠와 겹치지 않는다. 판의 글끼리 겹치지 않고, 조작 띠의 "놓은 면 n / m"이 잘리지 않는다
- * → { faces, handle } (센 것)
+ * 매트 위(15-32 — 판은 매트 전체): 판(잘린 놓는 곳)은 매트 안이고 안내 띠 · 조작 띠와 겹치지 않는다(만들 각기둥 창은 판 위에 떠 있다 — 가린 곳은 옮겨 본다).
+ * 놓인 면(다각형의 실제 꼭짓점)은 판 안이다. 판 옮겨 보기 버튼 · 돌리기 손잡이(보일 때)는 48px 이상 · 매트 안이고 창 · 띠와 겹치지 않는다(손잡이는 옮기기 버튼과도).
+ * 판의 글끼리 겹치지 않고, 조작 띠의 "놓은 면 n / m"이 잘리지 않는다 → { faces, handle, pan } (센 것)
  */
 async function expectMatClear(page, label = '') {
   const m = await page.evaluate(() => {
     const rect = (el) => el.getBoundingClientRect();
     const vis = (el) => el && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden' && !el.closest('[hidden]');
     const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 0.5 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 0.5;
+    const inside = (r, box) => r.left >= box.left - 0.5 && r.right <= box.right + 0.5 && r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5;
     const mat = rect(document.querySelector('.mat'));
+    const clip = rect(document.querySelector('.pf-mboard-clip'));
     const board = rect(document.querySelector('.pf-mboard'));
-    const blocks = [...document.querySelectorAll('.pf-pic.is-mat, .mat .board-legend, .mat .edit-tools .btn, .mat .edit-tools .mat-status')].filter(vis).map((el) => ({ name: el.className.split(' ')[0], r: rect(el) }));
+    const strips = [...document.querySelectorAll('.mat .board-legend, .mat .edit-tools .btn, .mat .edit-tools .mat-status')].filter(vis).map((el) => ({ name: el.className.split(' ')[0], r: rect(el) }));
+    const pic = [...document.querySelectorAll('.pf-pic.is-mat')].filter(vis).map((el) => ({ name: 'pf-pic', r: rect(el) }));
     const out = [];
-    if (board.left < mat.left - 0.5 || board.right > mat.right + 0.5 || board.top < mat.top - 0.5 || board.bottom > mat.bottom + 0.5) out.push('판이 매트 밖');
-    for (const b of blocks) if (hit(board, b.r)) out.push(`판 × ${b.name}`);
+    if (!inside(clip, mat)) out.push('판이 매트 밖');
+    for (const b of strips) if (hit(clip, b.r)) out.push(`판 × ${b.name}`);
     const faces = [...document.querySelectorAll('.pf-tile')].map((el) => {
       const r = rect(el);
       return { key: el.dataset.face, pts: el.querySelector('polygon').getAttribute('points').split(' ').map((p) => p.split(',').map(Number)).map(([x, y]) => [x + r.left, y + r.top]) };
     });
     for (const f of faces) if (f.pts.some(([x, y]) => x < board.left - 0.5 || x > board.right + 0.5 || y < board.top - 0.5 || y > board.bottom + 0.5)) out.push(`면 판 밖 ${f.key}`);
+    const pans = [...document.querySelectorAll('.pf-pan')].filter(vis);
+    for (const b of pans) {
+      const r = rect(b);
+      if (r.width < 47.5 || r.height < 47.5) out.push('작은 옮기기 버튼');
+      if (!inside(r, clip)) out.push('옮기기 버튼 판 밖');
+      for (const o of [...strips, ...pic]) if (hit(r, o.r)) out.push(`옮기기 버튼 × ${o.name}`);
+    }
     const handles = [...document.querySelectorAll('.pf-turn-handle')].filter(vis);
     for (const h of handles) {
       const r = rect(h);
       if (r.width < 47.5 || r.height < 47.5) out.push('작은 손잡이');
-      if (r.left < mat.left - 0.5 || r.right > mat.right + 0.5 || r.top < mat.top - 0.5 || r.bottom > mat.bottom + 0.5) {
-        if (h.closest('.mat')) out.push('손잡이 매트 밖');
-      }
-      if (h.closest('.mat')) for (const b of blocks) if (hit(r, b.r)) out.push(`손잡이 × ${b.name}`);
+      if (!h.closest('.mat')) continue;
+      if (!inside(r, mat)) out.push('손잡이 매트 밖');
+      for (const o of [...strips, ...pic, ...pans.map((b) => ({ name: 'pf-pan', r: rect(b) }))]) if (hit(r, o.r)) out.push(`손잡이 × ${o.name}`);
     }
     const status = document.querySelector('.mat .edit-tools .mat-status');
     if (vis(status) && status.scrollWidth > status.clientWidth + 1) out.push(`상태 글 잘림 ${status.textContent}`);
@@ -293,7 +317,7 @@ async function expectMatClear(page, label = '') {
     for (let i = 0; i < boxes.length; i += 1) {
       for (let j = i + 1; j < boxes.length; j += 1) if (!apart(boxes[i], boxes[j])) out.push(`글끼리 ${boxes[i].text} × ${boxes[j].text}`);
     }
-    return { out, faces: faces.length, handle: handles.length };
+    return { out, faces: faces.length, handle: handles.length, pan: pans.length };
   });
   expect(m.out, label).toEqual([]);
   return m;
@@ -323,7 +347,7 @@ test('전개도 완성하기(마우스 끌기 · 손가락): 빈 판(미리 놓�
   const touch = touchOf(testInfo);
   const how = touch ? 'touch' : 'mouse';
   await openStage(page, 'prism-free');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   await expect(page.locator('.order-kind')).toHaveText('설계 주문');
   await expect(tiles(page)).toHaveCount(0); // 빈 판(15-30)
   await expect(page.locator('.pf-step, .pf-slot, .pf-lock')).toHaveCount(0);
@@ -373,7 +397,7 @@ test('전개도 완성하기: 같은 판에서 같은 모양(다른 자리 · �
   test.setTimeout(150_000);
   const errors = collectErrors(page);
   await openStage(page, 'prism-free');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   const plan = netPlan(play, 0);
   await buildPlan(page, play, plan, ['click']);
   await foldNow(page);
@@ -383,7 +407,7 @@ test('전개도 완성하기: 같은 판에서 같은 모양(다른 자리 · �
   await page.locator('.free-new').click();
   const list = L.freeCards(L.freeSolid(play.solidId));
   const faces = plan.placed.map((f) => ({ solid: list.find((c) => c.id === f.id).solid, poly: f.poly }));
-  const fits = [3, 6, 9].map((pick) => fitOnBoard(play, faces, { pick })).filter((f) => f && f.turn !== plan.steps[0].turn);
+  const fits = [3, 6, 9].map((pick) => fitOnBoard(play, faces, { pick, area: play.area })).filter((f) => f && f.turn !== plan.steps[0].turn);
   const again = planBoard(play, fits[0]);
   await buildPlan(page, play, again, ['drag']);
   await foldNow(page);
@@ -406,8 +430,7 @@ test('전개도 완성하기 점수 상한(15-29): 이 기기에서 10가지를 
   const errors = collectErrors(page);
   for (const [have, xp, note] of [[10, 1, /새 발견 \+1.*10가지를 넘으면 새 전개도마다 1점/], [30, 0, /새 전개도.*30가지를 넘은 전개도는 점수 없이/]]) {
     await page.goto(fileUrl(FILE, '?seed=1&sound=off&intro=0'));
-    const play = freePlay('1', page);
-    const other = play.solidId === 'hex-b' ? 'hex-a' : 'hex-b';
+    const other = seedPlay('1', page).solidId === 'hex-b' ? 'hex-a' : 'hex-b';
     // 다른 각기둥의 전개도를 have가지 찾아 둔 기기
     await page.evaluate(([k, id]) => {
       const items = {};
@@ -415,6 +438,7 @@ test('전개도 완성하기 점수 상한(15-29): 이 기기에서 10가지를 
       localStorage.setItem('edu:net-workshop:collections', JSON.stringify({ 'prism-nets': items }));
     }, [have, other]);
     await openStage(page, 'prism-free');
+    const play = await freePlay('1', page);
     await expect(page.locator('.found-count')).toHaveText(`각기둥 전개도 ${have}가지`);
     const before = await storedXpOf(page);
     await buildPlan(page, play, netPlan(play, 0), ['click']);
@@ -432,7 +456,7 @@ test('전개도 완성하기: 안 되는 모양을 접으면 "왜 안 될까요?
   const errors = collectErrors(page);
   const touch = touchOf(testInfo);
   await openStage(page, 'prism-free', '', '3');
-  const play = freePlay('3', page);
+  const play = await freePlay('3', page);
   // 목록의 전개도에서 마지막 면을 같은 길이의 다른 모서리에 놓은 판(접으면 안 된다)
   const wrong = twistedPlan(play, (spot, faces, pre, last) => !isUnequal(spot, pre, last)
     && !L.judgeFreeNet(L.freeSolid(play.solidId), faces, L.rootCardId(L.freeCards(L.freeSolid(play.solidId)))).valid);
@@ -470,15 +494,14 @@ test('전개도 완성하기 길이가 다르게 붙인 판(15-31 덧붙임): �
   const touch = touchOf(testInfo);
   let found = null;
   let seed = 0;
-  for (seed = 1; seed <= 12 && !found; seed += 1) {
-    const play = freePlay(String(seed), page);
-    found = twistedPlan(play, (spot, faces, pre, last) => isUnequal(spot, pre, last));
-    if (found) found.play = play;
-  }
+  const unequal = (spot, faces, pre, last) => isUnequal(spot, pre, last);
+  for (seed = 1; seed <= 12 && !found; seed += 1) found = twistedPlan(seedPlay(String(seed), page), unequal); // 시드 고르기(1 cm를 정하는 크기의 판으로)
   seed -= 1;
   expect(found, '길이가 다르게 붙는 판').not.toBeNull();
-  const { play } = found;
   await openStage(page, 'prism-free', '', String(seed));
+  const play = await freePlay(String(seed), page);
+  found = twistedPlan(play, unequal); // 화면의 판(매트 전체)에서 다시
+  expect(found, '화면의 판에서 길이가 다르게 붙는 판').not.toBeNull();
   await buildPlan(page, play, found, [touch ? 'tap' : 'drag'], { upTo: found.steps.length - 1 });
   // 같은 길이로 붙인 앞 면의 알림과 길이가 다르게 붙인 마지막 면의 알림은 같은 꼴
   const shape = (text) => text.replace(/[가-힣] 면/g, '○ 면').split('.')[0]; // 첫 문장(다 놓으면 "이제 접어 볼 수 있어요."가 뒤에 붙는다)
@@ -508,19 +531,21 @@ test('전개도 완성하기: 까닭이 둘 다 참인 판에서 "길이"를 고
   const errors = collectErrors(page);
   let found = null;
   let seed = 0;
+  const both = (solidId) => (spot, faces) => {
+    const r = L.createFreeSession({ solidId }).fold(faces, L.rootCardId(L.freeCards(L.freeSolid(solidId))));
+    const truths = L.freeReasons(r.problems ?? []);
+    return !r.valid && truths.includes('overlap') && truths.includes('length') && r.problems.some((p) => p.type === 'edge-length');
+  };
   for (seed = 1; seed <= 20 && !found; seed += 1) {
-    const play = freePlay(String(seed), page);
-    const root = L.rootCardId(L.freeCards(L.freeSolid(play.solidId)));
-    found = twistedPlan(play, (spot, faces) => {
-      const r = L.createFreeSession({ solidId: play.solidId }).fold(faces, root);
-      const truths = L.freeReasons(r.problems ?? []);
-      return !r.valid && truths.includes('overlap') && truths.includes('length') && r.problems.some((p) => p.type === 'edge-length');
-    });
-    if (found) found.play = play;
+    const sp = seedPlay(String(seed), page);
+    found = twistedPlan(sp, both(sp.solidId));
   }
   seed -= 1;
   expect(found, '까닭이 둘인 판').not.toBeNull();
   await openStage(page, 'prism-free', '', String(seed));
+  found.play = await freePlay(String(seed), page);
+  found = { ...twistedPlan(found.play, both(found.play.solidId)), play: found.play };
+  expect(found.steps, '화면의 판에서 까닭이 둘인 판').toBeTruthy();
   await buildPlan(page, found.play, found, ['click']);
   await foldNow(page);
   await page.locator('.reason-chip[data-reason="length"]').click();
@@ -537,7 +562,7 @@ test('전개도 완성하기 키보드만(크롬북): Tab으로 카드 → R로 
   test.setTimeout(150_000);
   const errors = collectErrors(page);
   await openStage(page, 'prism-free', '', '2');
-  const play = freePlay('2', page);
+  const play = await freePlay('2', page);
   const plan = netPlan(play, 0);
   const board = page.locator('.pf-mboard');
   /** Tab만으로 그 요소에 초점(앞으로 · 많아야 40번) */
@@ -624,7 +649,7 @@ test('전개도 완성하기 손가락(태블릿): 카드를 판으로 끌면 �
   test.setTimeout(120_000);
   const errors = collectErrors(page);
   await openStage(page, 'prism-free');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   const plan = netPlan(play, 0);
   await page.evaluate(() => {
     window.clicked = [];
@@ -704,7 +729,7 @@ test('전개도 완성하기 손짓(마우스): 놓인 면 끌어 옮기기 · �
   test.setTimeout(150_000);
   const errors = collectErrors(page);
   await openStage(page, 'prism-free', '', '3');
-  const play = freePlay('3', page);
+  const play = await freePlay('3', page);
   const plan = netPlan(play, 0);
   const cards = L.freeCards(L.freeSolid(play.solidId));
   await page.evaluate(() => {
@@ -736,7 +761,7 @@ test('전개도 완성하기 손짓(마우스): 놓인 면 끌어 옮기기 · �
   const c1 = toScreen(box, centroid(s1.poly));
   // 놓인 면을 빈 곳으로 끌어 옮기기(가까운 모서리가 없으면 놓은 그대로) → 다시 제자리 모서리 가까이 끌면 붙는다
   const card1 = cards.find((c) => c.id === s1.card);
-  const far = looseSpot(play, card1, s1.poly, [{ id: plan.placed[0].id, poly: plan.placed[0].poly }]);
+  const far = looseSpot(play, card1, s1.poly, [{ id: plan.placed[0].id, poly: plan.placed[0].poly }], play.area);
   expect(far, '떨어진 빈 곳').not.toBeNull();
   await dragFromTo(c1, toScreen(box, far));
   const movedPoly = await polyOf(s1.card);
@@ -803,7 +828,7 @@ test('전개도 완성하기 손짓(마우스): 놓인 면 끌어 옮기기 · �
   await expect(page.locator('.free-fold')).toBeEnabled();
   const last = plan.steps.at(-1);
   const lastCard = cards.find((c) => c.id === last.card);
-  const loose = looseSpot(play, lastCard, last.poly, plan.placed.slice(0, -1));
+  const loose = looseSpot(play, lastCard, last.poly, plan.placed.slice(0, -1), play.area);
   expect(loose, '떨어진 빈 곳').not.toBeNull();
   await dragFromTo(toScreen(box, centroid(last.poly)), toScreen(box, loose));
   await expect(page.locator('.free-fold')).toBeDisabled();
@@ -828,7 +853,7 @@ test('전개도 완성하기 빈 판 누르기(사용자 결정 — 직육면체
   const touch = touchOf(testInfo);
   const tapAt = async (pt) => (touch ? page.touchscreen.tap(...pt) : page.mouse.click(...pt));
   await openStage(page, 'prism-free', '', '1');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   const cards = L.freeCards(L.freeSolid(play.solidId));
   const groups = [...new Set(cards.map((c) => c.group))];
   const front = () => cards.find((c) => c.group === groups.find((g) => cards.some((x) => x.group === g && !placedIds.includes(x.id))) && !placedIds.includes(c.id));
@@ -893,9 +918,9 @@ test('전개도 완성하기 같은 길이가 어긋나게 맞닿은 판(review-
   const errors = collectErrors(page);
   const touch = touchOf(testInfo);
   await openStage(page, 'prism-free', '', '1');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   // 이 시드의 판에 학생처럼 놓은 판 하나(검사 도우미의 무작위 판 — 어긋나게 맞닿은 경첩이 먼저 나와 예전 규칙이면 "4 cm와 4 cm"였던 판)
-  const b = randomBoard(play, createRng('find-1-2862'));
+  const b = { placed: shiftPlaced(randomBoard(seedPlay('1', page), createRng('find2-1-3570')).placed, [play.area.x, play.area.y]) }; // 창에 가리지 않는 곳으로
   const r = L.judgeFreeNet(L.freeSolid(play.solidId), b.placed, L.rootCardId(L.freeCards(L.freeSolid(play.solidId))));
   expect(r.problems.some((p) => p.type === 'edge-length' && p.hinge && Math.abs(p.lengths[0] - p.lengths[1]) < 1e-6), '어긋나게 맞닿은 경첩').toBe(true);
   await buildPlan(page, play, planFromPlaced(play, b.placed), [touch ? 'tap' : 'click']);
@@ -912,6 +937,184 @@ test('전개도 완성하기 같은 길이가 어긋나게 맞닿은 판(review-
   expect(errors).toEqual([]);
 });
 
+/** 판 옮겨 보기의 움직임이 끝날 때까지(움직이는 동안 판에 data-panning) */
+const panSettled = (page) => page.waitForFunction(() => !document.querySelector('.pf-mboard').dataset.panning);
+/** 판 옮겨 보기 버튼을 그쪽 끝까지 누른다(꺼질 때까지 — 많아야 8번) */
+async function panAll(page, side, how = 'click') {
+  const btn = page.locator(`.pf-pan.${side === 'next' ? 'is-next' : 'is-prev'}`);
+  for (let i = 0; i < 8 && (await btn.isEnabled()); i += 1) {
+    if (how === 'tap') await btn.tap();
+    else await btn.click();
+  }
+  await expect(btn).toBeDisabled();
+  await panSettled(page);
+  if (side === 'prev') expect((await boardGeo(page)).pan).toBe(0);
+}
+/** 화면 점이 판(놓인 면 · 빈 판) 위인가 — 만들 각기둥 창 · 매트 밖이 아니고 */
+const onBoardAt = (page, [x, y]) => page.evaluate(([px, py]) => Boolean(document.elementFromPoint(px, py)?.closest('.pf-mboard')), [x, y]);
+
+test('전개도 완성하기 판 = 초록 판 전체(15-32): 흰 점선 테두리 없이 매트 어디에나 놓이고, 만들 각기둥 창에 가린 곳은 [◀][▶] · Shift+방향키로 옮겨 본다 — 모든 자리를 합치면 판 전체가 보이고, 창 아래에도 옮겨서 놓을 수 있다. 옮긴 채 끌기 · 키보드로 들기가 맞고, 접었다 펴기 · 새로 만들기 · 화면 크기가 바뀌면 제자리 · 범위 안', async ({ page }, testInfo) => {
+  test.skip(touchOf(testInfo), '마우스 · 키보드는 크롬북에서');
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  await openStage(page, 'prism-free', '', '3');
+  const play = await freePlay('3', page);
+  const cards = L.freeCards(L.freeSolid(play.solidId));
+  // 판(잘린 놓는 곳)은 매트의 안내 띠 아래 ~ 조작 띠 위를 거의 다 채운다(흰 점선 테두리 없음)
+  const r = await page.evaluate(() => {
+    const box = (sel) => document.querySelector(sel).getBoundingClientRect().toJSON();
+    return { mat: box('.mat'), clip: box('.pf-mboard-clip'), pic: box('.pf-pic'), frameBorder: getComputedStyle(document.querySelector('.pf-mboard-frame'), '::before').content };
+  });
+  expect(r.clip.width).toBeGreaterThanOrEqual(r.mat.width - 48); // 매트의 안쪽 여백만 빼고
+  expect(r.frameBorder === 'none' || r.frameBorder === 'normal' || r.frameBorder === '').toBe(true);
+  expect(r.pic.left).toBeLessThan(r.clip.right); // 창이 판 위에 떠 있다
+  const geo0 = await boardGeo(page);
+  expect(geo0.unit).toBeGreaterThan(0);
+  await expect(page.locator('.pf-pan.is-prev')).toBeDisabled(); // 제자리에서는 ◀가 꺼져 있다
+  await expect(page.locator('.pf-pan.is-next')).toBeEnabled();
+  // 창에 가린 곳(판 좌표)의 점들: 제자리에서는 창 아래(판이 아님)
+  const home = await boardBox(page, play);
+  const covered = [];
+  for (let i = 1; i <= 4; i += 1) {
+    for (let j = 1; j <= 4; j += 1) {
+      const x = Math.max(r.pic.left, r.clip.left) + ((Math.min(r.pic.right, r.clip.right) - Math.max(r.pic.left, r.clip.left)) * i) / 5;
+      const y = Math.max(r.pic.top, r.clip.top) + ((Math.min(r.pic.bottom, r.clip.bottom) - Math.max(r.pic.top, r.clip.top)) * j) / 5;
+      covered.push([(x - home.x) / home.unit, (y - home.y) / home.unit]);
+    }
+  }
+  for (const pt of covered) expect(await onBoardAt(page, toScreen(home, pt)), '제자리: 창 아래').toBe(false);
+  // [▶] 끝까지: 창에 가린 곳이 모두 보인다(판의 다른 자리와 합치면 판 전체)
+  await page.locator('.pf-pan.is-next').click();
+  await expect(liveText(page)).toContainText('판 오른쪽을 보도록 옮겼어요');
+  await panAll(page, 'next');
+  const far = await boardBox(page, play);
+  expect(far.x).toBeLessThan(home.x - (Math.min(r.pic.right, r.clip.right) - Math.max(r.pic.left, r.clip.left)));
+  for (const pt of covered) expect(await onBoardAt(page, toScreen(far, pt)), '옮긴 뒤: 보인다').toBe(true);
+  // 옮긴 채 창에 가렸던 곳의 빈 판을 누르면 맨 앞 카드가 거기(cm 좌표 그대로) — 제자리로 돌아가면 창 아래, 다시 옮기면 보인다
+  const target = covered[5];
+  const front = cards[0];
+  const want = L.settlePoly(front, L.posePoly(front, 0, target), [], play.board);
+  await page.mouse.click(...toScreen(far, target));
+  await expect(tiles(page)).toHaveCount(1);
+  await expectAt(page, play, { card: front.id, poly: want.poly });
+  await panAll(page, 'prev');
+  expect(await onBoardAt(page, toScreen(await boardBox(page, play), target)), '제자리: 놓은 면은 창 아래').toBe(false);
+  // Shift+방향키(판에 초점): 오른쪽 보기 → 다시 보인다, 왼쪽 보기 → 제자리
+  await page.locator('.pf-mboard').focus();
+  for (let i = 0; i < 4; i += 1) await page.keyboard.press('Shift+ArrowRight');
+  await panSettled(page);
+  expect(await onBoardAt(page, toScreen(await boardBox(page, play), target))).toBe(true);
+  await expect(liveText(page)).toContainText('판 오른쪽을 보도록 옮겼어요');
+  // 옮긴 채 놓인 면을 끌어 옮기기: 끈 자리(cm)대로
+  const now = await boardBox(page, play);
+  const clipLeft = (await page.locator('.pf-mboard-clip').boundingBox()).x;
+  const dest = [(clipLeft - now.x) / now.unit + 3, play.area.y + play.area.h - 3]; // 옮긴 채 보이는 곳(판의 왼쪽 일부는 매트 밖으로 나가 있다)
+  expect(await onBoardAt(page, toScreen(now, dest))).toBe(true);
+  await page.mouse.move(...toScreen(now, centroid(want.poly)));
+  await page.mouse.down();
+  await page.mouse.move(...toScreen(now, centroid(want.poly)).map((v) => v + 12), { steps: 3 });
+  await page.mouse.move(...toScreen(now, dest), { steps: 8 });
+  await page.mouse.up();
+  const moved = (await boardPolys(page, play)).find((f) => f.id === front.id);
+  expect(Math.hypot(centroid(moved.poly)[0] - dest[0], centroid(moved.poly)[1] - dest[1])).toBeLessThan(0.1);
+  for (let i = 0; i < 4; i += 1) await page.keyboard.press('Shift+ArrowLeft');
+  await panSettled(page);
+  expect((await boardGeo(page)).pan).toBe(0);
+  // 제자리에서 면을 만들 각기둥 창 위로 끌어 놓으면: 창 아래로 사라지지 않고 제자리로 돌아온다(창 아래에는 옮겨 본 뒤에 놓는다)
+  const homeBox = await boardBox(page, play);
+  const c0 = toScreen(homeBox, centroid(moved.poly));
+  await page.mouse.move(...c0);
+  await page.mouse.down();
+  await page.mouse.move(c0[0] + 12, c0[1] + 12, { steps: 3 });
+  await page.mouse.move((r.pic.left + r.pic.right) / 2, (r.pic.top + r.pic.bottom) / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator('.dnd-ghost')).toHaveCount(0);
+  expect(samePlace((await boardPolys(page, play)).find((f) => f.id === front.id).poly, moved.poly, 0.06), '창 위에 놓으면 제자리').toBe(true);
+  // 옮긴 채 키보드로 들기: 판에서 Enter → 맨 앞 카드가 첫 자석 자리에 들리고 Enter로 그 자리(옮긴 것과 상관없이 같은 cm)
+  await panAll(page, 'next');
+  await page.locator('.pf-mboard').focus();
+  await page.keyboard.press('Enter');
+  await expect(liveText(page)).toContainText('들었어요');
+  await page.keyboard.press('Enter');
+  await expect(tiles(page)).toHaveCount(2);
+  const second = (await boardPolys(page, play)).find((f) => f.id !== front.id);
+  const firstSpot = L.magnetSpots(cards[1], [{ id: front.id, poly: moved.poly }], play.board)[0];
+  expect(samePlace(second.poly, firstSpot.poly, 0.06)).toBe(true);
+  // 빈 판에서 키보드로 든 첫 면의 처음 자리는 창에 가리지 않는 곳의 가운데(옮겨도 같은 cm)
+  await page.locator('.tool-clear').click();
+  await page.locator('.pf-mboard').focus();
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(tiles(page)).toHaveCount(1);
+  const center = [play.area.x + play.area.w / 2, play.area.y + play.area.h / 2];
+  expect(samePlace((await boardPolys(page, play))[0].poly, L.posePoly(cards[0], 0, center), 0.06)).toBe(true);
+  // 새로 만들기 · 접었다 펴기: 제자리
+  await page.locator('.tool-clear').click();
+  await panAll(page, 'prev');
+  await buildPlan(page, play, netPlan(play, 0), ['click']);
+  await panAll(page, 'next');
+  await foldNow(page);
+  await page.locator('.free-fix').click();
+  await expect.poll(async () => (await boardGeo(page)).pan).toBe(0);
+  await expect(page.locator('.pf-pan.is-prev')).toBeDisabled();
+  await panAll(page, 'next');
+  await foldNow(page).catch(() => {});
+  await page.locator('.free-new').click();
+  await expect.poll(async () => (await boardGeo(page)).pan).toBe(0);
+  // 옮긴 채 화면 크기가 바뀌면: 옮긴 거리는 새 범위 안, 놓인 면은 판 안, 버튼 · 판은 겹침 없음
+  await buildPlan(page, play, netPlan(play, 0), ['click']);
+  await panAll(page, 'next');
+  await page.setViewportSize(SIZES.narrow);
+  await settled(page);
+  await expect.poll(async () => {
+    const g = await boardGeo(page);
+    return g.pan <= 0 && g.pan >= -(await page.locator('.pf-pic').evaluate((el) => el.getBoundingClientRect().width)) - 12;
+  }).toBe(true);
+  await expectMatClear(page, '옮긴 채 960');
+  await panAll(page, 'prev');
+  await expectMatClear(page, '960 제자리');
+  expect(errors).toEqual([]);
+});
+
+test('전개도 완성하기 판 옮겨 보기(손가락 — 15-32): 빈 판에서 두 손가락으로 함께 끌면 판이 손을 따라 옆으로(카드가 놓이거나 골라지지 않음), [◀][▶] 톡도. 가로 태블릿(1180×820)도. 휴대폰은 창이 판 밖이라 옮기기 버튼이 없다', async ({ page }, testInfo) => {
+  test.skip(!touchOf(testInfo), '손가락은 태블릿에서');
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  for (const size of [SIZES.tablet, { width: 1180, height: 820 }]) {
+    await page.setViewportSize(size);
+    await openStage(page, 'prism-free', '', '3');
+    const play = await freePlay('3', page);
+    await buildPlan(page, play, netPlan(play, 0), ['tap'], { upTo: 2 });
+    await expect(page.locator('.pf-pan.is-next')).toBeVisible();
+    // 두 손가락: 판의 빈 곳(창에 가리지 않는 곳의 왼쪽 위 귀퉁이 쪽)에서 함께 왼쪽으로 150px
+    const box = await boardBox(page, play);
+    const a = toScreen(box, [play.area.x + 0.6, play.area.y + 0.6]);
+    const b = toScreen(box, [play.area.x + 0.6, play.area.y + 2.4]);
+    expect(await onBoardAt(page, a)).toBe(true);
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points });
+    await touch('touchStart', [{ x: a[0], y: a[1], id: 1 }]);
+    await touch('touchStart', [{ x: a[0], y: a[1], id: 1 }, { x: b[0], y: b[1], id: 2 }]);
+    for (let i = 1; i <= 10; i += 1) await touch('touchMove', [{ x: a[0] - 15 * i, y: a[1], id: 1 }, { x: b[0] - 15 * i, y: b[1], id: 2 }]);
+    await touch('touchEnd', [{ x: b[0] - 150, y: b[1], id: 2 }]);
+    await touch('touchEnd', []);
+    await cdp.detach();
+    const g = await boardGeo(page);
+    expect(g.pan, `${size.width} 두 손가락`).toBeLessThan(-100);
+    await expect(tiles(page)).toHaveCount(2); // 놓이지 않았다
+    await expect(page.locator('.pf-cards .pf-card[aria-pressed="true"]')).toHaveCount(0);
+    await panAll(page, 'prev', 'tap');
+    await page.locator('.pf-pan.is-next').tap();
+    await expect.poll(async () => (await boardGeo(page)).pan).toBeLessThan(0);
+  }
+  await page.setViewportSize(SIZES.phone);
+  await openStage(page, 'prism-free', '', '3');
+  await expect(page.locator('.pf-pan')).toHaveCount(2);
+  await expect(page.locator('.pf-pan.is-next')).toBeHidden();
+  await expect(page.locator('.pf-pan.is-prev')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 test('전개도 완성하기 정답 노출 0: 끄는 동안 맞는 자리 · 틀린 자리 · 길이가 다른 자리에서 놓일 모양(점선)이 같은 모습이고, 놓으면 면 · 선 · 알림이 같은 꼴이다. 접기 전 판 · 무대에 결과(이름표 · 겹침 · 비어요)가 없다 (시드 6개)', async ({ page }, testInfo) => {
   test.skip(touchOf(testInfo), '마우스로 크롬북에서 (손가락은 같은 화면 — 모양 검사는 한 번)');
   test.setTimeout(180_000);
@@ -919,7 +1122,7 @@ test('전개도 완성하기 정답 노출 0: 끄는 동안 맞는 자리 · 틀
   let kinds = { right: 0, wrong: 0, unequal: 0 };
   for (const seed of ['1', '2', '3', '4', '5', '6']) {
     await openStage(page, 'prism-free', '', seed);
-    const play = freePlay(seed, page);
+    const play = await freePlay(seed, page);
     const plan = netPlan(play, 0);
     await buildPlan(page, play, plan, ['click'], { upTo: 2 });
     const cards = L.freeCards(L.freeSolid(play.solidId));
@@ -927,7 +1130,8 @@ test('전개도 완성하기 정답 노출 0: 끄는 동안 맞는 자리 · 틀
     const card = cards.find((c) => c.id === next.card);
     const pre = plan.placed.slice(0, 2);
     const spots = L.magnetSpots(card, pre, play.board);
-    const pick = (test2) => spots.find((s) => test2(s) && dropFor(play, card, s.poly, pre));
+    const inArea = (poly) => poly.every(([x, y]) => x >= play.area.x && y >= play.area.y && x <= play.area.x + play.area.w && y <= play.area.y + play.area.h);
+    const pick = (test2) => spots.find((s) => test2(s) && inArea(s.poly) && dropFor(play, card, s.poly, pre));
     const lenOk = (s) => !isUnequal(s, pre, card);
     const right = pick((s) => samePlace(s.poly, plan.placed[2].poly));
     const wrong = pick((s) => lenOk(s) && !samePlace(s.poly, plan.placed[2].poly));
@@ -985,7 +1189,7 @@ test('전개도 완성하기: 판에서 무대로 이어 접을 때 펼친 모�
   test.setTimeout(90_000);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await openStage(page, 'prism-free');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   await buildPlan(page, play, netPlan(play, 0), [touchOf(testInfo) ? 'tap' : 'click']);
   const before = await page.evaluate(() => [...document.querySelectorAll('.pf-tile')].map((el) => {
     const r = el.getBoundingClientRect();
@@ -1026,7 +1230,7 @@ for (const sizeName of Object.keys(SIZES)) test(`전개도 완성하기 배치($
     for (const seed of ['1', '2', '8']) { // 사다리꼴기둥 · 이등변삼각기둥 · 정육각기둥(판이 가장 큰 hex-b)
       await openStage(page, 'prism-free', '', seed);
       const label = `${size.width}×${size.height} 시드 ${seed}`;
-      const play = freePlay(seed, page);
+      const play = await freePlay(seed, page);
       await noScroll(page, `${label} 처음`);
       await expectPanelFits(page, `${label} 처음`);
       expect((await expectMatClear(page, `${label} 처음`)).faces).toBe(0);
@@ -1050,7 +1254,15 @@ for (const sizeName of Object.keys(SIZES)) test(`전개도 완성하기 배치($
       await placeStep(page, play, plan.steps.at(-1), how);
       await noScroll(page, `${label} 다 놓음`);
       await expectPanelFits(page, `${label} 다 놓음`);
-      await expectMatClear(page, `${label} 다 놓음`);
+      const placedScene = await expectMatClear(page, `${label} 다 놓음`);
+      // 판 옮겨 보기: 창이 매트 위에 있는 화면에서만 버튼 둘(휴대폰은 없음) — 끝까지 옮긴 모습도 겹침 · 스크롤 0
+      expect(placedScene.pan, `${label} 옮기기 버튼`).toBe(page.viewportSize().width <= 560 ? 0 : 2);
+      if (placedScene.pan) {
+        await panAll(page, 'next', touch ? 'tap' : 'click');
+        await noScroll(page, `${label} 옮김`);
+        await expectMatClear(page, `${label} 옮김`);
+        await panAll(page, 'prev', touch ? 'tap' : 'click');
+      }
       await foldNow(page, touch ? 'touch' : 'mouse');
       await expectToastClear(page, `${label} 접음`);
       await noScroll(page, `${label} 접음`);
@@ -1075,7 +1287,7 @@ for (const sizeName of Object.keys(SIZES)) test(`전개도 완성하기 배치($
     }
     // 안 되는 모양: 까닭 고르기 · 고른 뒤, 그리고 떨어진 면
     await openStage(page, 'prism-free', '', '3');
-    const play = freePlay('3', page);
+    const play = await freePlay('3', page);
     const wrong = twistedPlan(play, (spot, faces) => !L.judgeFreeNet(L.freeSolid(play.solidId), faces, L.rootCardId(L.freeCards(L.freeSolid(play.solidId)))).valid);
     await buildPlan(page, play, wrong, [how]);
     await expectMatClear(page, `${size.width} 안 되는 판`);
@@ -1088,7 +1300,7 @@ for (const sizeName of Object.keys(SIZES)) test(`전개도 완성하기 배치($
     await press(page.locator('.free-fix'));
     // 떨어진 면: 마지막 면을 판의 빈 곳으로(누르기 — 면 고르고 판 누르기)
     const last = wrong.steps.at(-1);
-    const loose = looseSpot(play, wrong.last, last.poly, wrong.placed.slice(0, -1));
+    const loose = looseSpot(play, wrong.last, last.poly, wrong.placed.slice(0, -1), play.area);
     let box = await boardBox(page, play);
     const [lx, ly] = toScreen(box, centroid(last.poly));
     if (touch) await page.touchscreen.tap(lx, ly);
@@ -1112,7 +1324,7 @@ test('전개도 완성하기: 움직임 줄이기에서는 접기가 바로 끝 
   const errors = collectErrors(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await openStage(page, 'prism-free');
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   await buildPlan(page, play, netPlan(play, 0), [touchOf(testInfo) ? 'tap' : 'click']);
   await pressBtn(page, '.free-fold', touchOf(testInfo) ? 'tap' : 'click');
   await expect(page.locator('.free-host .fold-stage')).toHaveAttribute('data-fold', 'done');
@@ -1281,7 +1493,7 @@ test('각기둥 차시: 네 단계를 마치면 도전 주문서 "모서리와 �
   await expect(page.locator('.challenge-card')).toBeDisabled();
   await page.locator('.stage-card').nth(3).click();
   await expect(page.locator('.pf-mboard')).toBeVisible();
-  const play = freePlay('1', page);
+  const play = await freePlay('1', page);
   for (const k of [0, 1]) {
     await buildPlan(page, play, netPlan(play, k), [how]);
     await foldNow(page, how === 'tap' ? 'touch' : 'mouse');

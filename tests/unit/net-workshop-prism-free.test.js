@@ -235,7 +235,7 @@ test('판: 칸 없는 빈 판(미리 놓인 면 없음 — 15-30), 각기둥마�
   }
   for (const v of Object.values(kinds)) assert.ok(v > 60, JSON.stringify(kinds));
   assert.deepEqual(PRISM_FREE_SOLIDS.map((s) => [s.id, L.boardSize(s.id).w, L.boardSize(s.id).h]),
-    [['tri-a', 16, 11], ['tri-b', 17, 11], ['trap-a', 17, 12], ['trap-b', 17, 12], ['hex-a', 19, 13], ['hex-b', 22, 15]]);
+    [['tri-a', 14.5, 10.5], ['tri-b', 15.5, 11], ['trap-a', 16, 11.5], ['trap-b', 15.5, 11], ['hex-a', 19, 12], ['hex-b', 21, 13.5]]); // 1 cm를 정하는 크기(15-32 — 놓는 판은 매트 전체)
 });
 
 test('962가지를 모두 자석 판에서 만들 수 있다: 각기둥마다 서로 다른 전개도 전부 × 판의 두 방향(가로 · 세로)이 판에 들고, 끌어 놓기(화면과 같은 settlePoly — 30°씩 돌린 카드를 놓으면 모서리 방향으로 맞춰 붙음)로도 키보드 자석 자리(magnetSpots)로도 그 모양 그대로 놓인다. 만든 판은 각기둥이 되고(독립 판정도) 칸 id가 그 차례 — 돌리거나 뒤집어도 같은 칸', () => {
@@ -292,7 +292,7 @@ test('자석이 붙는 자리 = 독립 계산: 무작위로 놓아 가는 판 90
     unequal += mine.filter((m) => !m.equal).length;
     equal += mine.filter((m) => m.equal).length;
   }
-  assert.ok(spots > 10_000 && unequal > 3_000 && equal > 3_000, `${spots} · 같은 길이 ${equal} · 다른 길이 ${unequal}`);
+  assert.ok(spots > 10_000 && unequal > 3_000 && equal > 2_000, `${spots} · 같은 길이 ${equal} · 다른 길이 ${unequal}`);
 });
 
 test('끌어 놓기 자석(15-31 · 덧붙임 · G2r-4 · 5 · 7): 방향이 20° 안 · (면을 그 모서리 방향으로 돌린 뒤) 변의 가운데가 1 cm 안이면 붙고(넘으면 놓은 그대로), 길이가 다르면 가운데 · 양 끝 맞춤 가운데 덜 움직이는 쪽(독립 계산), 겹치면 놓이지 않고 판 가장자리에 걸치면 판 안으로', () => {

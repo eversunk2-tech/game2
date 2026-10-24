@@ -72,12 +72,14 @@ export function catalogNets(solidId) {
  * 없어 돌린 그대로 놓인다), 첫 면의 가운데가 판 가운데에서 0.5 cm 칸 위(키보드로 옮기는 걸음)에 오게, 모든 면이 판 안에. 들어가는 방향 가운데
  * pick번째(없으면 여유가 가장 큰 것) → { faces, rootSolid, turn(첫 면의 30° 횟수), margin } | null
  */
-export function fitOnBoard(play, faces, { rootSolid = 'b0', pick = null } = {}) {
+export function fitOnBoard(play, faces, { rootSolid = 'b0', pick = null, area = null } = {}) {
   const cards = L.freeCards(L.freeSolid(play.solidId));
   const root = faces.find((f) => f.solid === rootSolid);
   const card = cards.find((c) => c.solid === rootSolid);
   const deg0 = faceAngle(card, root.poly);
-  const size = play.board;
+  // area: 판 안에서 목표 모양을 둘 곳(cm — 화면에서는 만들 각기둥 창에 가리지 않는 곳). 그 가운데가 키보드로 든 첫 면의 처음 자리
+  const box = area ?? { x: 0, y: 0, w: play.board.w, h: play.board.h };
+  const size = { w: box.w, h: box.h };
   const fits = [];
   for (let m = 0; m < 12; m += 1) {
     const phi = m * 30 - deg0;
@@ -91,11 +93,11 @@ export function fitOnBoard(play, faces, { rootSolid = 'b0', pick = null } = {}) 
     const snap = (v, c) => c + Math.round((v - c) / 0.5) * 0.5;
     dx += snap(rc[0] + dx, size.w / 2) - (rc[0] + dx);
     dy += snap(rc[1] + dy, size.h / 2) - (rc[1] + dy);
-    moved = moved.map((f) => ({ solid: f.solid, poly: f.poly.map(([x, y]) => [x + dx, y + dy]) }));
+    moved = moved.map((f) => ({ solid: f.solid, poly: f.poly.map(([x, y]) => [x + dx + box.x, y + dy + box.y]) }));
     const all = moved.flatMap((f) => f.poly);
-    const margin = Math.min(...all.map(([x, y]) => Math.min(x, y, size.w - x, size.h - y)));
-    if (margin < 1e-6) continue;
-    fits.push({ faces: moved, rootSolid, turn: m, margin });
+    const margin = Math.min(...all.map(([x, y]) => Math.min(x - box.x, y - box.y, box.x + size.w - x, box.y + size.h - y)));
+    if (margin < 1e-6 || !all.every((pt) => pt[0] >= 0 && pt[1] >= 0 && pt[0] <= play.board.w && pt[1] <= play.board.h)) continue;
+    fits.push({ faces: moved, rootSolid, turn: m, margin, area: box });
   }
   if (fits.length === 0) return null;
   if (pick != null) return fits[pick % fits.length];
@@ -135,11 +137,12 @@ export function dropFor(play, card, poly, placed) {
 }
 
 /** 그 면(card · 지금 모양 poly)을 옮겨 놓으면 어느 면에도 붙지 않고 떨어지는 빈 곳(가운데, cm — 판의 오른쪽 아래부터 0.5 cm 걸음으로 찾음) | null */
-export function looseSpot(play, card, poly, others) {
+export function looseSpot(play, card, poly, others, area = null) {
   const size = play.board;
+  const box = area ?? { x: 0, y: 0, w: size.w, h: size.h };
   const c = centroid(poly);
-  for (let y = size.h - 1; y >= 1; y -= 0.5) {
-    for (let x = size.w - 1; x >= 1; x -= 0.5) {
+  for (let y = box.y + box.h - 1; y >= box.y + 1; y -= 0.5) {
+    for (let x = box.x + box.w - 1; x >= box.x + 1; x -= 0.5) {
       const moved = poly.map(([px, py]) => [px - c[0] + x, py - c[1] + y]);
       if (!L.canPlace(moved, others, size)) continue;
       if (L.magnetCandidates(card, moved, others, { size }).length > 0) continue;
@@ -180,7 +183,7 @@ export function planBoard(play, fit) {
   // 다음 자석 자리의 차례가 달라진다. 키보드 차례는 키보드로 놓은 모양들로 따로 센다
   const keyed = [{ id: rootCard.id, poly: pose0 }];
   steps.push({ group: rootCard.group, card: rootCard.id, turn: fit.turn, at: at0, poly: pose0, spot: -1, spots: 0, root: true,
-    kx: Math.round((at0[0] - size.w / 2) / 0.5), ky: Math.round((at0[1] - size.h / 2) / 0.5) });
+    kx: Math.round((at0[0] - (fit.area ? fit.area.x + fit.area.w / 2 : size.w / 2)) / 0.5), ky: Math.round((at0[1] - (fit.area ? fit.area.y + fit.area.h / 2 : size.h / 2)) / 0.5) });
   while (want.length > 0) {
     const f = want.find((g) => touchEdge(g.poly, placed));
     if (!f) throw new Error('맞닿은 면이 없어요(떨어진 모양)');
@@ -221,13 +224,13 @@ export function turnCost(steps) {
  * 목록의 전개도 하나를 판에 놓는 차례(들어가는 방향이 없으면 null). pick: 들어가는 방향 가운데 몇 번째(없으면 여유가 가장 큰 것),
  * 'fewest'면 카드를 가장 적게 돌리는 방향(화면 검사를 빠르게)
  */
-export function planCatalog(play, index, { rootSolid = 'b0', pick = null } = {}) {
+export function planCatalog(play, index, { rootSolid = 'b0', pick = null, area = null } = {}) {
   const list = catalogNets(play.solidId);
   const entry = list[index % list.length];
   if (pick === 'fewest') {
     let best = null;
     for (let k = 0; k < 12; k += 1) {
-      const fit = fitOnBoard(play, entry.faces, { rootSolid, pick: k });
+      const fit = fitOnBoard(play, entry.faces, { rootSolid, pick: k, area });
       if (!fit) return null;
       const plan = planBoard(play, fit);
       const cost = turnCost(plan.steps);
@@ -235,7 +238,7 @@ export function planCatalog(play, index, { rootSolid = 'b0', pick = null } = {})
     }
     return { key: entry.key, ...best.plan };
   }
-  const fit = fitOnBoard(play, entry.faces, { rootSolid, pick });
+  const fit = fitOnBoard(play, entry.faces, { rootSolid, pick, area });
   return fit && { key: entry.key, ...planBoard(play, fit) };
 }
 

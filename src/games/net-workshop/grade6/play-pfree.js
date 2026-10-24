@@ -217,8 +217,8 @@ export function playPrismFree(stage, ctx, play) {
   ctx.feedback.anchor?.(mat, { lift: MAT_TOOLS_LIFT, narrow: 'below' });
 
   /**
-   * 판으로 쓸 곳(host 기준 px): 안내 띠 아래, 조작 띠 위, 만들 각기둥 창(매트 오른쪽 위)을 피해 — 창의 왼쪽(높이 그대로)과 아래(폭 그대로) 가운데
-   * 판(play.board cm)이 크게 들어가는 쪽
+   * 판으로 쓸 곳(host 기준 px — 15-32 "초록 판을 다 활용"): 안내 띠 아래, 조작 띠 위의 매트 전체. 1 cm는 만들 각기둥 창(매트 오른쪽 위)을 피한
+   * 가장 큰 직사각형(free — 창의 왼쪽(높이 그대로)과 아래(폭 그대로) 가운데 play.board cm가 크게 들어가는 쪽)으로 정한다. cover = 판을 가리는 창(옆으로 옮겨 본다)
    */
   function boardArea() {
     const hr = host.getBoundingClientRect();
@@ -226,16 +226,17 @@ export function playPrismFree(stage, ctx, play) {
     const toolsTop = editTools.getBoundingClientRect().top - hr.top;
     const bottom = Math.max(top + 40, (Number.isFinite(toolsTop) && toolsTop > top ? toolsTop : hr.height) - 6);
     const whole = { left: 4, top, width: Math.max(40, hr.width - 8), height: bottom - top };
-    if (phone || picture.el.hidden || !picture.el.isConnected) return whole;
+    if (phone || picture.el.hidden || !picture.el.isConnected) return { ...whole, free: whole, cover: null };
     const pr = picture.el.getBoundingClientRect();
-    const left = { ...whole, width: Math.max(40, pr.left - hr.left - 10) };
-    const belowTop = Math.max(top, pr.bottom - hr.top + 6);
+    const cover = { left: pr.left - hr.left, top: pr.top - hr.top, width: pr.width, height: pr.height };
+    const left = { ...whole, width: Math.max(40, cover.left - 10 - whole.left) };
+    const belowTop = Math.max(top, cover.top + cover.height + 6);
     const below = { ...whole, top: belowTop, height: Math.max(40, bottom - belowTop) };
     const unit = (a) => Math.min(a.width / play.board.w, a.height / play.board.h);
-    return unit(left) >= unit(below) ? left : below;
+    return { ...whole, free: unit(left) >= unit(below) ? left : below, cover };
   }
 
-  const board = createMagnetBoard({ ctx, root: bench, host, cards, size: play.board, area: boardArea, onChange: (message) => update(message), onRefuse: (text) => refuse(text) });
+  const board = createMagnetBoard({ ctx, root: bench, host, cards, fit: play.board, area: boardArea, onChange: (message) => update(message), onRefuse: (text) => refuse(text) });
   traySlot.append(board.trayEl);
 
   // ── 놓는 판 상태 ─────────────────────
@@ -331,6 +332,7 @@ export function playPrismFree(stage, ctx, play) {
     picture.start();
     board.setEnabled(true);
     if (!keep) board.clearAll();
+    board.resetPan(); // 새로 만들기 · 접었다 펴기: 판 옮겨 보기는 제자리
     board.refit();
     renderShelf();
     update();
