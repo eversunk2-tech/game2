@@ -90,7 +90,7 @@ const KINDS = ['edges', 'edges+n', 'vertices', 'vertices+n'];
 const SHARE = { edges: 4 / 9, 'edges+n': 2 / 9, vertices: 2 / 9, 'vertices+n': 1 / 9 }; // 셈 문항 셋 = 모서리 둘 · 꼭짓점 하나, n이 보이는 문항은 셋에 하나
 const worst = (rates) => Object.entries(rates).filter(([k]) => !(k in LEARN)).sort((x, y) => y[1] - x[1])[0];
 
-test('보기 묶음 표(CHOICE_TABLE — 정확히, 뽑기 없이): 보기만 보고 고르는 규칙 전부(이름 붙인 규칙 18가지 + 보이는 특징 8가지의 하나 · 둘 묶음 — Review 도구의 목록 + 주어진 수 n)가 꼴(모서리 · 꼭짓점 × n 보임)마다 모두 0.36 아래, 판 전체 자리 하나 0.35 아래. n의 배수 차례(배울 내용)는 판 전체 0.6 아래. 표의 값은 모두 보기 후보이고 꼭 넣을 보기를 지킨다 (G2c-1)', () => {
+test('보기 묶음 표(CHOICE_TABLE — 정확히, 뽑기 없이): 판정 기준 목록(재검토 3 R3-5 + N 규칙 — 자리 · 간격 · 가까운 두 수 · 평균 · 짝홀 · 특징 하나 · 둘 묶음, 주어진 수 n 포함)이 꼴(모서리 · 꼭짓점 × n 보임)마다 모두 0.36 아래, 판 전체 자리 하나 0.35 아래, 꼴 규칙 K2~K5 0.36 아래. n의 배수 차례(배울 내용)는 판 전체 0.6 아래, 3의 배수 · 두 배인 수는 넉넉한 상한. 표의 값은 모두 보기 후보이고 꼭 넣을 보기를 지킨다 (G2c-1 · G2d-1)', () => {
   const all = {};
   for (const kind of KINDS) {
     const what = kind.startsWith('edges') ? 'edges' : 'vertices';
@@ -120,6 +120,15 @@ test('보기 묶음 표(CHOICE_TABLE — 정확히, 뽑기 없이): 보기만 �
   const mix = (k) => KINDS.reduce((a, kind) => a + SHARE[kind] * all[kind][k], 0);
   for (const k of ['pos=p1', 'pos=p2', 'pos=p3', 'pos=p4']) assert.ok(mix(k) < 0.35, `${k} ${mix(k)}`);
   assert.ok(Math.max(mix('n보다 큰 첫째 배수'), mix('n보다 큰 둘째 배수')) < 0.6, `n의 배수 차례 ${mix('n보다 큰 첫째 배수')} · ${mix('n보다 큰 둘째 배수')}`);
+  // 꼴 규칙(정확히): K2 꼴마다 가장 자주 맞는 자리 하나 · K3 모서리 · 꼭짓점마다 한 자리 · K4 모서리면 셋째, 꼭짓점이면 첫째 · K5 꼭짓점이고 n이 없으면 가장 작은 수
+  const posOf = (kind, i) => all[kind][`pos=p${i + 1}`];
+  const k2 = KINDS.reduce((a, kind) => a + SHARE[kind] * Math.max(...[0, 1, 2, 3].map((i) => posOf(kind, i))), 0);
+  const k3 = ['edges', 'vertices'].reduce((a, w) => a + Math.max(...[0, 1, 2, 3].map((i) => KINDS.filter((k) => k.startsWith(w)).reduce((t, k) => t + SHARE[k] * posOf(k, i), 0))), 0);
+  const k4 = KINDS.reduce((a, kind) => a + SHARE[kind] * posOf(kind, kind.startsWith('edges') ? 2 : 0), 0);
+  const k5 = SHARE.vertices * posOf('vertices', 0) + (1 - SHARE.vertices) * 0.25;
+  for (const [name, x] of [['K2 꼴마다 한 자리', k2], ['K3 모서리 · 꼭짓점마다 한 자리', k3], ['K4 모서리 셋째 · 꼭짓점 첫째', k4], ['K5 꼭짓점 · n 없으면 가장 작은 수', k5]]) assert.ok(x < 0.36, `${name} ${x}`);
+  // 배울 내용(정답이 늘 n × 3 · n × 2라 생김 — 기준 밖, 넉넉한 상한으로 크게 달라지지 않는지만): 이 표에서 꼴마다 가장 큰 값 3의 배수 55.9% · 다른 보기의 두 배 71.8%(꼭짓점과 n — 보이는 n의 두 배가 정답) · n보다 큰 배수 가운데 65.3%
+  for (const kind of KINDS) for (const k of ['N9 3의 배수 가운데', 'N11 다른 보기의 두 배인 수', 'L3 n보다 큰 n의 배수 가운데']) assert.ok(all[kind][k] < 0.8, `${kind} · ${k} ${all[kind][k]}`);
 });
 
 test('자리 · 값 · 꼴만 보고 고르기(시드 20,000판 — 문제 만들기가 표대로 뽑는다): 꼴마다 규칙 전부 0.37 아래(뽑기의 흔들림 — 정확한 값은 앞 검사), 꼴마다 한 자리 · "모서리 셋째 · 꼭짓점 첫째" · 지워 가며 0.36 아래, 규칙 문항의 정답 자리도 고르다 (G2-1 · G2b-1 · G2c-1)', () => {
