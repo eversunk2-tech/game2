@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`2578b66`**(G2 각기둥 4단계·도전 — CI 통과, 두 사이트 확인, 2026-10-24) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **G2r Review(처음부터 다시)**(2026-10-24) — Build `track/cuboid` `8ff77a1`(자석 판 + 사용자 결정 차시 시간 약 11분, 단위 423·e2e 602·0) → 같은 Review가 `d2738ee..8ff77a1` 검토(`review-brief-g2r.md` 덧붙임 1·2, 결과 `review-prism-g2r.md`) |
+| 지금 도는 것 | **G2rb 고치기**(2026-10-24) — G2r Review "수정 필요(반드시 2: G2r-1 같은 길이가 어긋난 곳을 '길이가 달라요'로 · G2r-2 빈 판 누르기 — 사용자 '직육면체처럼 놓이게')" + 고치면 좋음 G2r-3~5 → 같은 Build(`build-fix-brief-g2rb.md`) → 같은 Review 재검토(`review-fix-brief-g2rb.md`) |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — 없음 (G2 끝, 2026-10-24 올림)
