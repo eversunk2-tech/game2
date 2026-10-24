@@ -8,6 +8,7 @@ import { createRng } from '../../src/shared/core/random.js';
 import { prismSolid, BASES } from '../../src/games/net-workshop/solids.js';
 import * as C from '../../src/games/net-workshop/grade6/prism-count-logic.js';
 import { PRISM_COUNT_TAGS, PRISM_STAGES } from '../../src/games/net-workshop/grade6/prism-stages.js';
+import { LEARN, ruleHits } from './net-workshop-prism-count-rules.js';
 
 const STAGE = PRISM_STAGES.find((s) => s.id === 'prism-count');
 const make = (seed) => C.makeCountQuestions(STAGE, createRng(`${seed}:prism-count`));
@@ -68,41 +69,63 @@ test('문항(시드 400판): 같은 시드면 같은 문항. 셈 3(변의 수가
   }
 });
 
-test('자리 · 값 · 꼴만 보고 고르기(시드 20,000판 — 독립 계산): 판 전체로도, 문항의 꼴(모서리 · 꼭짓점 × 흔한 실수 n이 보이는지 — 모두 화면에 보임)마다도 정답 자리 하나 · 가장 작은 것 빼기 · 가장 큰 것 빼기 · 가운데 둘 · n과 같은 수 빼기 · 가장 큰 n의 배수 · 가장 큰 간격 바로 아래 · 바로 위 · 간격 옆 빼기가 모두 0.36 아래(자리 하나는 판 전체 0.35 아래). 꼴마다 한 자리 · "모서리면 셋째, 꼭짓점이면 첫째" · 지워 가며도 0.36 아래 (G2-1 · G2-4 · R7 · G2b-1)', () => {
-  // 보기만 보고(각기둥은 안 보고) 고르는 규칙 — 맞힐 확률(아무렇게나 고르는 규칙은 고르는 보기 수로 나눔). v: 작은 수부터의 보기, ai: 정답 자리, n: 주어진 수
-  const uni = (idx, ai) => (idx.length > 0 ? idx.filter((i) => i === ai).length / idx.length : 0.25);
-  const ALL = [0, 1, 2, 3];
-  const gapAt = (v) => {
-    let best = 0;
-    for (let i = 1; i < 3; i += 1) if (v[i + 1] - v[i] > v[best + 1] - v[best]) best = i;
-    return best;
-  };
-  const multiples = (v, n) => ALL.filter((i) => v[i] % n === 0);
-  const RULES = {
-    '자리 1': (v, ai) => Number(ai === 0),
-    '자리 2': (v, ai) => Number(ai === 1),
-    '자리 3': (v, ai) => Number(ai === 2),
-    '자리 4': (v, ai) => Number(ai === 3),
-    '가장 작은 것 빼고': (v, ai) => uni([1, 2, 3], ai),
-    '가장 큰 것 빼고': (v, ai) => uni([0, 1, 2], ai),
-    '가운데 둘': (v, ai) => uni([1, 2], ai),
-    'n과 같은 수 빼고': (v, ai, n) => uni(ALL.filter((i) => v[i] !== n), ai),
-    'n이 있으면 가장 큰 것': (v, ai, n) => (v.includes(n) ? Number(ai === 3) : 0.25),
-    '가장 큰 n의 배수': (v, ai, n) => Number(multiples(v, n).at(-1) === ai),
-    '가장 큰 간격 바로 아래': (v, ai) => Number(gapAt(v) === ai),
-    '가장 큰 간격 바로 위': (v, ai) => Number(gapAt(v) + 1 === ai),
-    '가장 큰 간격 옆 둘 빼고': (v, ai) => uni(ALL.filter((i) => i !== gapAt(v) && i !== gapAt(v) + 1), ai),
-  };
-  // "n보다 큰 n의 배수 가운데 첫째 · 둘째": 정답이 늘 2n(꼭짓점) · 3n(모서리)이고 n과 3n 사이의 배수는 2n뿐이라 둘 가운데 큰 쪽은 50% 아래로 갈 수 없다 —
-  // 배울 내용(변의 수 × 2 · × 3)으로 보고 0.36 기준에서 빼고 "큰 쪽 0.6 아래"로 따로 잰다(review-prism-g2 재검토)
-  const MULT = {
-    'n보다 큰 첫째 배수': (v, ai, n) => Number(multiples(v, n).filter((i) => v[i] > n)[0] === ai),
-    'n보다 큰 둘째 배수': (v, ai, n) => Number(multiples(v, n).filter((i) => v[i] > n)[1] === ai),
-  };
-  const kinds = ['모서리', '모서리 · n', '꼭짓점', '꼭짓점 · n'];
-  const blank = () => ({ count: 0, pos: [0, 0, 0, 0], ...Object.fromEntries([...Object.keys(RULES), ...Object.keys(MULT)].map((k) => [k, 0])) });
-  const all = blank();
-  const byKind = Object.fromEntries(kinds.map((k) => [k, blank()]));
+// 보기만 보고 고르는 규칙의 맞힐 확률: 한 꼴의 문항 묶음(값 v · 정답 자리 ai · n · 확률 p) → { 규칙: 확률 } (특징 묶음 규칙은 그 값의 보기가 없는 문항에서 0.25)
+function ruleRates(items) {
+  const sum = {};
+  const seen = {};
+  let mass = 0;
+  for (const { v, ai, n, p } of items) {
+    mass += p;
+    for (const [k, x] of Object.entries(ruleHits(v, ai, n))) {
+      sum[k] = (sum[k] ?? 0) + p * x;
+      seen[k] = (seen[k] ?? 0) + p;
+    }
+    for (const [k, f] of Object.entries(LEARN)) sum[k] = (sum[k] ?? 0) + p * f(v, ai, n);
+  }
+  const out = {};
+  for (const [k, x] of Object.entries(sum)) out[k] = (x + (k in LEARN ? 0 : 0.25 * (mass - seen[k]))) / mass;
+  return out;
+}
+const KINDS = ['edges', 'edges+n', 'vertices', 'vertices+n'];
+const SHARE = { edges: 4 / 9, 'edges+n': 2 / 9, vertices: 2 / 9, 'vertices+n': 1 / 9 }; // 셈 문항 셋 = 모서리 둘 · 꼭짓점 하나, n이 보이는 문항은 셋에 하나
+const worst = (rates) => Object.entries(rates).filter(([k]) => !(k in LEARN)).sort((x, y) => y[1] - x[1])[0];
+
+test('보기 묶음 표(CHOICE_TABLE — 정확히, 뽑기 없이): 보기만 보고 고르는 규칙 전부(이름 붙인 규칙 18가지 + 보이는 특징 8가지의 하나 · 둘 묶음 — Review 도구의 목록 + 주어진 수 n)가 꼴(모서리 · 꼭짓점 × n 보임)마다 모두 0.36 아래, 판 전체 자리 하나 0.35 아래. n의 배수 차례(배울 내용)는 판 전체 0.6 아래. 표의 값은 모두 보기 후보이고 꼭 넣을 보기를 지킨다 (G2c-1)', () => {
+  const all = {};
+  for (const kind of KINDS) {
+    const what = kind.startsWith('edges') ? 'edges' : 'vertices';
+    const must = kind.endsWith('+n');
+    const items = [];
+    for (const n of [3, 4, 5, 6]) {
+      const rows = C.CHOICE_TABLE[kind][n];
+      const total = rows.reduce((a, r) => a + r[3], 0);
+      const answer = what === 'edges' ? 3 * n : 2 * n;
+      const pool = C.countPool(what, n).map((c) => c.value);
+      for (const row of rows) {
+        const picks = row.slice(0, 3);
+        assert.equal(new Set([answer, ...picks]).size, 4, `${kind} ${n} ${row}`);
+        assert.ok(picks.every((x) => pool.includes(x) && x !== answer && x > 0));
+        assert.equal(picks.includes(n), must, `${kind} ${n}: n은 n이 보이는 문항에만`);
+        if (what === 'edges' && !must) assert.ok(picks.includes(2 * n), `${kind} ${n}: 2n`);
+        const v = [answer, ...picks].sort((x, y) => x - y);
+        items.push({ v, ai: v.indexOf(answer), n, p: row[3] / total / 4 }); // 꼴 안에서 n은 넷이 고르게
+      }
+    }
+    const rates = ruleRates(items);
+    all[kind] = rates;
+    const [k, x] = worst(rates);
+    assert.ok(x < 0.36, `${kind}: 가장 센 규칙 ${k} ${x.toFixed(3)}`);
+  }
+  // 판 전체: 꼴의 몫으로 섞은 값
+  const mix = (k) => KINDS.reduce((a, kind) => a + SHARE[kind] * all[kind][k], 0);
+  for (const k of ['pos=p1', 'pos=p2', 'pos=p3', 'pos=p4']) assert.ok(mix(k) < 0.35, `${k} ${mix(k)}`);
+  assert.ok(Math.max(mix('n보다 큰 첫째 배수'), mix('n보다 큰 둘째 배수')) < 0.6, `n의 배수 차례 ${mix('n보다 큰 첫째 배수')} · ${mix('n보다 큰 둘째 배수')}`);
+});
+
+test('자리 · 값 · 꼴만 보고 고르기(시드 20,000판 — 문제 만들기가 표대로 뽑는다): 꼴마다 규칙 전부 0.37 아래(뽑기의 흔들림 — 정확한 값은 앞 검사), 꼴마다 한 자리 · "모서리 셋째 · 꼭짓점 첫째" · 지워 가며 0.36 아래, 규칙 문항의 정답 자리도 고르다 (G2-1 · G2b-1 · G2c-1)', () => {
+  const byKind = Object.fromEntries(KINDS.map((k) => [k, []]));
+  const pos = Object.fromEntries(KINDS.map((k) => [k, [0, 0, 0, 0]]));
+  let count = 0;
   let elim = 0;
   let edges3vert1 = 0;
   const rulePos = [0, 0, 0, 0];
@@ -113,36 +136,27 @@ test('자리 · 값 · 꼴만 보고 고르기(시드 20,000판 — 독립 계�
     for (const q of qs.slice(0, 3)) {
       const v = q.choices.map((c) => c.value);
       const ai = v.indexOf(q.answer);
-      const kind = `${q.what === 'edges' ? '모서리' : '꼭짓점'}${v.includes(q.n) ? ' · n' : ''}`;
-      for (const box of [all, byKind[kind]]) {
-        box.count += 1;
-        box.pos[ai] += 1;
-        for (const [k, f] of Object.entries({ ...RULES, ...MULT })) box[k] += f(v, ai, q.n);
-      }
+      const kind = `${q.what}${v.includes(q.n) ? '+n' : ''}`;
+      byKind[kind].push({ v, ai, n: q.n, p: 1 });
+      pos[kind][ai] += 1;
+      count += 1;
       const left = [1, 2, 3].filter((i) => !prev.includes(i));
-      elim += uni(left.length > 0 ? left : [1, 2, 3], ai);
+      const pickFrom = left.length > 0 ? left : [1, 2, 3];
+      elim += pickFrom.includes(ai) ? 1 / pickFrom.length : 0;
       edges3vert1 += Number(ai === (q.what === 'edges' ? 2 : 0));
       prev.push(ai); // 답하면 화면이 정답을 보여 준다
     }
     for (const q of qs.slice(3)) rulePos[q.choices.findIndex((c) => c.id === q.answer)] += 1;
   }
-  const rate = (box, k) => box[k] / box.count;
-  const text = (box) => JSON.stringify(Object.fromEntries(Object.keys(RULES).map((k) => [k, rate(box, k).toFixed(3)])));
-  // 판 전체
-  for (const k of ['자리 1', '자리 2', '자리 3', '자리 4']) assert.ok(rate(all, k) < 0.35, `${k} ${text(all)}`);
-  for (const k of Object.keys(RULES)) assert.ok(rate(all, k) < 0.36, `${k} ${text(all)}`);
-  assert.ok(elim / all.count < 0.36, `지워 가며 ${elim / all.count}`);
-  // 꼴마다: 같은 규칙이 꼴 하나에서도 0.36 아래
-  for (const kind of kinds) {
-    assert.ok(byKind[kind].count > 6000, `${kind} 문항 수 ${byKind[kind].count}`);
-    for (const k of Object.keys(RULES)) assert.ok(rate(byKind[kind], k) < 0.36, `${kind} · ${k} ${text(byKind[kind])}`);
+  for (const kind of KINDS) {
+    assert.ok(byKind[kind].length > 6000, `${kind} 문항 수 ${byKind[kind].length}`);
+    const [k, x] = worst(ruleRates(byKind[kind]));
+    assert.ok(x < 0.37, `${kind}: 가장 센 규칙 ${k} ${x.toFixed(3)}`);
   }
-  // 꼴을 보고 고르기: 꼴마다 가장 자주 맞는 자리 하나 · "모서리면 셋째, 꼭짓점이면 첫째"
-  const bestPerKind = kinds.reduce((sum, kind) => sum + Math.max(...byKind[kind].pos), 0) / all.count;
+  const bestPerKind = KINDS.reduce((a, kind) => a + Math.max(...pos[kind]), 0) / count;
   assert.ok(bestPerKind < 0.36, `꼴마다 한 자리 ${bestPerKind}`);
-  assert.ok(edges3vert1 / all.count < 0.36, `모서리 셋째 · 꼭짓점 첫째 ${edges3vert1 / all.count}`);
-  // n의 배수 차례(배울 내용 — 따로): 큰 쪽 0.6 아래
-  assert.ok(Math.max(rate(all, 'n보다 큰 첫째 배수'), rate(all, 'n보다 큰 둘째 배수')) < 0.6, `${rate(all, 'n보다 큰 첫째 배수')} · ${rate(all, 'n보다 큰 둘째 배수')}`);
+  assert.ok(edges3vert1 / count < 0.36, `모서리 셋째 · 꼭짓점 첫째 ${edges3vert1 / count}`);
+  assert.ok(elim / count < 0.36, `지워 가며 ${elim / count}`);
   for (const p of rulePos) assert.ok(p / (2 * SEEDS) > 0.2 && p / (2 * SEEDS) < 0.3, `규칙 자리 ${rulePos}`);
 });
 
