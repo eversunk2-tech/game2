@@ -40,13 +40,13 @@ const THUMBS = {
     poly('22,22 38,22 30,8', face(1)), poly('38,44 54,44 46,58', face(1)),
     svgEl('path', { d: 'M6 22v22M54 22v22', style: 'fill:none;stroke:var(--primary);stroke-width:4.5' }),
   ],
-  /** 전개도 완성하기: 놓인 옆면 둘 + 밑면 하나, 빈 모서리에 붙일 자리(+) */
+  /** 전개도 완성하기: 판에 놓은 옆면 둘 + 밑면 하나, 끌어 오는 면 카드(조금 돌아간 채 — 모서리 가까이 놓으면 붙는다) */
   pfree: () => [
     poly('8,24 24,24 24,46 8,46', face(2)), poly('24,24 40,24 40,46 24,46', face(3)),
     poly('8,24 24,24 16,10', face(1)),
     svgEl('path', { d: 'M24 24v22', style: 'fill:none;stroke:var(--ink);stroke-width:1.6;stroke-dasharray:3 2.5' }),
-    svgEl('circle', { cx: 55, cy: 35, r: 9, style: 'fill:var(--paper);stroke:var(--ink);stroke-width:2;stroke-dasharray:4 3' }),
-    svgEl('path', { d: 'M55 30v10M50 35h10', style: 'fill:none;stroke:var(--ink);stroke-width:2.5;stroke-linecap:round' }),
+    poly('46,22 60,25 56,47 42,44', face(4)),
+    svgEl('path', { d: 'M41 24v20', style: 'fill:none;stroke:var(--ink);stroke-width:1.6;stroke-dasharray:3 2.5' }),
   ],
   /** 모서리와 꼭짓점: 선 삼각기둥의 옆으로 선 모서리 셋을 굵게 + 꼭짓점 점 */
   pcount: () => [

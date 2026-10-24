@@ -1,10 +1,12 @@
 /**
- * 전개도 완성하기 (prism-free, 설계 주문 — 각기둥 차시 4단계). 규칙은 prism-free-logic.js, 놓는 판은 edge-board.js.
- * 배치(사용자 결정 15-26 — 시안 B "판 위에 크게"): 만들 각기둥(돌려 볼 수 있는 입체 + 길이 이름표)을 매트 오른쪽 위 창에 크게, 판은 그 왼쪽(또는 아래),
+ * 전개도 완성하기 (prism-free, 설계 주문 — 각기둥 차시 4단계). 규칙은 prism-free-logic.js, 놓는 판은 magnet-board.js(자석 판).
+ * 조작(사용자 요청 15-30 · 결정 15-31 "B 자석처럼 붙기" + 덧붙임): 직육면체 "내 맘대로 직육면체 전개도"처럼 빈 판에 면 카드를 끌어 놓고 · 옮기고 · 빼고 ·
+ *   돌려(30°씩) 처음부터 직접 배치한다. 모서리 가까이 놓으면 길이가 같든 다르든 자석처럼 붙는다. 미리 놓인 면 · 주문 ①②는 없다.
+ * 배치(15-26 — 시안 B "판 위에 크게"): 만들 각기둥(돌려 볼 수 있는 입체 + 길이 이름표)을 매트 오른쪽 위 창에 크게, 판은 그 왼쪽(또는 아래),
  *   주문서에는 면 카드 · [접어 보기] · 찾은 전개도. 휴대폰은 매트가 좁아 그 창을 주문서 맨 위에 둔다(시안 A처럼).
- * 흐름: 주문 ① 밑면 + 옆면이 놓인 전개도를 완성 → [접어 보기](예상 없이 — 15-2) → 주문 ② 다른 모양으로(밑면 하나만 놓임) → 2가지면 [결과 보기]
- *   (보통 버튼 — 16-15), 한 가지 더 찾으면 별 3개. 안 되면 "왜 안 될까요?"(넘어가기 가능) → 고른 뒤 까닭 문장과 무대 표시 → [펴서 고치기] · [처음부터].
- * 점수는 이 기기에서 처음 만든 전개도만(scored: 'once') — 모음(보이지 않는 모음)에 넣고, 처음 10가지까지 만들기 성공 +2 · 등록 +5, 그 뒤는 등록 +1.
+ * 흐름: 면을 모두 놓으면 [접어 보기](예상 없이 — 15-2) → 맞음 / 안 됨("왜 안 될까요?" — 넘어가기 가능, 고른 까닭 먼저) / 전에 찾은 것 →
+ *   [펴서 고치기] · [새로 만들기], 2가지부터 [결과 보기](3가지면 주 버튼 — 별 3개). 직육면체 자유 배치와 같은 버튼.
+ * 점수(15-29): 이 기기에서 처음 만든 전개도만(scored: 'once') — 모음에 넣고 처음 10가지까지 만들기 성공 +2 · 등록 +5, 11~30번째 등록 +1, 그 뒤 0.
  * 접은 무대는 판과 같은 자리 · 같은 1 cm 크기에서 시작한다(어긋남 0px). 접는 동안 만들 각기둥 창은 숨긴다(오른쪽 위 보기 조작판 자리).
  */
 import { XP } from '../../../shared/core/rewards.js';
@@ -12,14 +14,12 @@ import { icon } from '../../../shared/ui/icons.js';
 import { createReasonPick } from '../play-judge.js';
 import { TILT } from '../orbit.js';
 import { MAT_TOOLS_LIFT, createFoldTools, createNetView } from '../view3d.js';
-import { createEdgeBoard, faceFill } from './edge-board.js';
+import { createMagnetBoard, faceFill } from './magnet-board.js';
 import {
   FREE_LATER_NOTE,
   FREE_OVER_NOTE,
   FREE_REPLAY_NOTE,
   createFreeSession,
-  fitBoard,
-  boxOf,
   foldReadiness,
   freeCards,
   freeFeedback,
@@ -29,12 +29,11 @@ import {
   freeStars,
   freeStats,
   freeSummary,
-  givenFaces,
   isLaterFree,
   isOverFree,
   judgeFreeReason,
-  orderText,
   primaryFreeProblem,
+  realLengthGap,
   solidText,
 } from './prism-free-logic.js';
 import { groundPose, PRISM_JUDGE_REASONS } from './prism-logic.js';
@@ -170,7 +169,6 @@ export function playPrismFree(stage, ctx, play) {
   const foundNets = []; // 이번 판에 찾은 전개도 { faces, isNew }
   const earned = { answer: 0, nets: 0 };
   const playXp = () => ctx.reward.peek?.().xp ?? 0;
-  let order = 1;
   let mode = 'edit';
   let reached = false;
 
@@ -178,20 +176,18 @@ export function playPrismFree(stage, ctx, play) {
   const view = createNetView({ h, sfx: ctx.sfx });
   const tools = createFoldTools({ ctx, view });
   const host = h('div', { class: 'free-host' });
-  const legend = h('p', { class: 'board-legend' }, icon('hand'), phone ? '카드 고르기 → + 누르기' : '카드를 고른 다음 붙일 자리(+)를 눌러요 · 카드를 모서리로 끌어도 돼요');
-  const stepHead = h('b');
-  const stepText = h('span');
-  const stepPill = h('p', { class: 'board-legend pf-step', role: 'status' }, stepHead, stepText);
-  // 안내 띠 둘은 위아래로 쌓는다: 좁은 화면에서 첫 띠가 두 줄이 되어도 주문 띠가 그 아래로 내려간다(겹치지 않게)
-  const legends = h('div', { class: 'pf-legends' }, legend, stepPill);
+  const legend = h('p', { class: 'board-legend' }, icon('hand'), phone ? '판 누르기: 놓기 · 모서리에 붙음 · 두 번 누르기: 돌리기' : '끌거나 판을 눌러 놓기 · 모서리 가까이 놓으면 붙어요 · 면 두 번 누르기: 돌리기');
+  // 안내 띠: 만들 각기둥 창 왼쪽 폭 안에서 줄바꿈(좁은 화면에서 두 줄이 되어도 판은 그 아래부터)
+  const legends = h('div', { class: 'pf-legends' }, legend);
   const stamp = h('div', { class: 'stamp found-stamp', hidden: true, 'aria-hidden': 'true' });
   const tool = (cls, iconName, text, onclick) => h('button', { type: 'button', class: `btn ${cls}`, 'aria-label': text, title: text, onclick }, icon(iconName), h('span', null, text));
-  const resetBtn = tool('tool-clear', 'trash', '처음으로', () => board.reset());
+  // 직육면체 자유 배치와 같은 조작 띠: [모두 빼기] [되돌리기] [돌리기] · 놓은 면 n / m
+  const clearBtn = tool('tool-clear', 'trash', '모두 빼기', () => board.clearAll());
   const undoBtn = tool('tool-undo', 'undo', '되돌리기', () => board.undo());
-  const turnBtn = tool('tool-turn', 'rotr', '붙일 변 바꾸기', () => board.rotate());
+  const turnBtn = tool('tool-turn', 'rotr', '돌리기', () => board.rotate());
   const statusCount = h('b');
-  const status = h('p', { class: 'mat-status', 'aria-hidden': 'true' }, icon('grid'), h('span', null, '붙인 면'), statusCount);
-  const editTools = h('div', { class: 'mat-tools edit-tools' }, resetBtn, undoBtn, turnBtn, status);
+  const status = h('p', { class: 'mat-status', 'aria-hidden': 'true' }, icon('grid'), h('span', null, '놓은 면'), statusCount);
+  const editTools = h('div', { class: 'mat-tools edit-tools' }, clearBtn, undoBtn, turnBtn, status);
   const picture = createOrderPicture({ h, fs, inPanel: phone });
   const mat = h('div', { class: 'mat free-mat pf-mat' }, legends, host, phone ? null : picture.el, stamp, editTools, tools.el, tools.pad);
   host.append(view.el);
@@ -220,50 +216,62 @@ export function playPrismFree(stage, ctx, play) {
   ctx.el.append(bench);
   ctx.feedback.anchor?.(mat, { lift: MAT_TOOLS_LIFT, narrow: 'below' });
 
-  /** 판으로 쓸 곳(host 기준 px): 안내 띠 아래, 만들 각기둥 창(매트 오른쪽 위)을 피해 — 창의 왼쪽(높이 그대로)과 아래(폭 그대로) 가운데 1 cm가 큰 쪽 */
+  /**
+   * 판으로 쓸 곳(host 기준 px): 안내 띠 아래, 조작 띠 위, 만들 각기둥 창(매트 오른쪽 위)을 피해 — 창의 왼쪽(높이 그대로)과 아래(폭 그대로) 가운데
+   * 판(play.board cm)이 크게 들어가는 쪽
+   */
   function boardArea() {
     const hr = host.getBoundingClientRect();
-    const top = Math.max(0, stepPill.getBoundingClientRect().bottom - hr.top + 4);
-    const whole = { left: 0, top, width: hr.width, height: Math.max(40, hr.height - top) };
+    const top = Math.max(0, legends.getBoundingClientRect().bottom - hr.top + 6);
+    const toolsTop = editTools.getBoundingClientRect().top - hr.top;
+    const bottom = Math.max(top + 40, (Number.isFinite(toolsTop) && toolsTop > top ? toolsTop : hr.height) - 6);
+    const whole = { left: 4, top, width: Math.max(40, hr.width - 8), height: bottom - top };
     if (phone || picture.el.hidden || !picture.el.isConnected) return whole;
     const pr = picture.el.getBoundingClientRect();
-    const left = { left: 0, top, width: Math.max(40, pr.left - hr.left - 6), height: whole.height };
+    const left = { ...whole, width: Math.max(40, pr.left - hr.left - 10) };
     const belowTop = Math.max(top, pr.bottom - hr.top + 6);
-    const below = { left: 0, top: belowTop, width: hr.width, height: Math.max(40, hr.height - belowTop) };
-    const plan = boxOf(play.plan.map((f) => f.poly));
-    return fitBoard(plan, left).unit >= fitBoard(plan, below).unit ? left : below;
+    const below = { ...whole, top: belowTop, height: Math.max(40, bottom - belowTop) };
+    const unit = (a) => Math.min(a.width / play.board.w, a.height / play.board.h);
+    return unit(left) >= unit(below) ? left : below;
   }
 
-  const board = createEdgeBoard({ ctx, root: bench, host, cards, area: boardArea, onChange: (message) => update(message), onRefuse: (text) => refuse(text) });
+  const board = createMagnetBoard({ ctx, root: bench, host, cards, size: play.board, area: boardArea, onChange: (message) => update(message), onRefuse: (text) => refuse(text) });
   traySlot.append(board.trayEl);
 
   // ── 놓는 판 상태 ─────────────────────
-  let lastReady = false;
+  let lastReason = 'count';
   function update(message = null) {
     if (mode !== 'edit') return;
     const c = board.count();
-    const r = foldReadiness(c.placed, c.total);
-    if (message || (r.ready && !lastReady)) ctx.feedback.announce(`${message ?? ''}${r.ready && !lastReady ? ' 이제 접어 볼 수 있어요.' : ''}`.trim());
-    lastReady = r.ready;
+    const r = foldReadiness(board.faces(), c.total);
+    // 직육면체 자유 배치와 같게: 다 놓았는데 떨어진 면이 있으면 접지 않고 알린다(떨어진 면은 판에 점선 · "떨어짐")
+    let extra = '';
+    if (r.reason !== lastReason) {
+      if (r.ready) extra = ' 이제 접어 볼 수 있어요.';
+      else if (r.reason === 'apart') extra = ' 떨어진 면이 있어요. 한 장으로 이어 놓아야 접을 수 있어요.';
+    }
+    lastReason = r.reason;
+    if (message || extra) ctx.feedback.announce(`${message ?? ''}${extra}`.trim());
+    board.markDetached(r.detached);
     foldBtn.disabled = !r.ready;
     foldNote.textContent = r.text;
-    foldNote.classList.remove('is-wrong');
+    foldNote.classList.toggle('is-wrong', r.reason === 'apart');
     foldNote.removeAttribute('role');
-    statusCount.textContent = `${c.attached} / ${c.toAttach}`;
+    statusCount.textContent = `${c.placed} / ${c.total}`;
     undoBtn.disabled = !board.canUndo();
-    resetBtn.disabled = !board.canUndo();
+    clearBtn.disabled = c.placed === 0;
     turnBtn.disabled = !board.canRotate();
     const left = c.total - c.placed;
-    leftTip.textContent = left > 0 ? `남은 카드 ${left}장` : '모두 붙였어요';
+    leftTip.textContent = left > 0 ? `남은 카드 ${left}장` : '모두 놓았어요';
   }
-  /** 붙지 않는 자리(펼친 그림에서 놓인 면과 겹침): 접어 보기 아래 안내 줄에 벽돌색으로 — 다음에 붙이면 지운다 */
+  /** 놓이지 않는 자리(펼친 그림에서 놓인 면과 겹침 · 판 밖): 접어 보기 아래 안내 줄에 벽돌색으로 — 다음에 놓으면 지운다 */
   function refuse(text) {
     foldNote.textContent = text;
     foldNote.classList.add('is-wrong');
     foldNote.setAttribute('role', 'alert');
     ctx.feedback.announce(text);
   }
-  // 카드를 고르고 놓을 때마다 [붙일 변 바꾸기]의 켜짐을 맞춘다(끌어다 놓기가 고르기를 정한 뒤에)
+  // 카드 · 면을 고르고 놓을 때마다 [돌리기]의 켜짐을 맞춘다(끌어다 놓기가 고르기를 정한 뒤에)
   const syncTurn = () => setTimeout(() => {
     if (mode === 'edit') turnBtn.disabled = !board.canRotate();
   }, 0);
@@ -272,7 +280,7 @@ export function playPrismFree(stage, ctx, play) {
 
   function setProgress() {
     const found = session.found();
-    orderSheet.setCounter(order <= 2 ? `주문 ${order} / 2` : `주문 ${order}`);
+    orderSheet.setCounter(`찾은 전개도 ${found}가지`);
     ctx.setProgress?.(Math.min(found, PRISM_FREE_FULL), PRISM_FREE_FULL, { label: '찾은 전개도', done: found, check: true });
   }
 
@@ -301,17 +309,6 @@ export function playPrismFree(stage, ctx, play) {
     if (over()) shelf.hidden = true;
   }
 
-  // ── 주문 ─────────────────────────────
-  function startOrder(k) {
-    order = k;
-    const t = orderText(k);
-    stepHead.textContent = t.head;
-    stepText.textContent = ` ${t.text}`;
-    board.setOrder(givenFaces(play, k), play.plan.map((f) => f.poly));
-    setProgress();
-    ctx.feedback.announce(`${t.head}. ${t.text}`);
-  }
-
   // ── 모드 ─────────────────────────────
   function enterEdit({ keep = true } = {}) {
     orderSheet.el.classList.remove('is-picking');
@@ -333,7 +330,7 @@ export function playPrismFree(stage, ctx, play) {
     picture.el.hidden = false;
     picture.start();
     board.setEnabled(true);
-    if (!keep) board.reset();
+    if (!keep) board.clearAll();
     board.refit();
     renderShelf();
     update();
@@ -356,13 +353,14 @@ export function playPrismFree(stage, ctx, play) {
     resultSection.hidden = false;
   }
 
-  /** 까닭 표시: 길이가 다른 두 선분에 같은 무늬 띠와 길이 이름표 (까닭을 고른 뒤에만) */
+  /** 까닭 표시: 길이가 다른 두 선분에 같은 무늬 띠와 길이 이름표 — 같은 길이가 어긋나게 맞닿은 곳은 같은 무늬만(G2r-1). 까닭을 고른 뒤에만 */
   function showMarks(step, chosen = null) {
     view.reveal();
     if (step.valid) return;
     const problem = primaryFreeProblem(step.problems, chosen);
     const mismatch = problem?.type === 'edge-length' ? problem : null;
-    view.setEdgeMarks((mismatch?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone: 'a', text: cm(mismatch.lengths[i]) })));
+    const withText = mismatch && realLengthGap(mismatch);
+    view.setEdgeMarks((mismatch?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone: 'a', ...(withText ? { text: cm(mismatch.lengths[i]) } : {}) })));
   }
 
   // ── 접어 보기 ─────────────────────────
@@ -391,7 +389,7 @@ export function playPrismFree(stage, ctx, play) {
     if (!globalThis.matchMedia?.('(min-width: 901px)').matches) mat.scrollIntoView?.({ block: 'nearest' });
     const problem = step.valid ? null : primaryFreeProblem(step.problems);
     view.setNet(step.net, { layout, show: problem?.type === 'edge-length' ? problem.faces : [] });
-    const feedback = freeFeedback(step, { order });
+    const feedback = freeFeedback(step);
     if (feedback.marks) showMarks(step);
     tools.reset();
     tools.lock(false);
@@ -420,7 +418,7 @@ export function playPrismFree(stage, ctx, play) {
           orderSheet.el.classList.remove('is-picking');
           // 고른 까닭이 참이면 그 까닭의 문장 · 표시를 먼저(review-prism-g2 G2-5)
           showMarks(step, chosen);
-          showNote(freeFeedback(step, { picked: true, order, chosen }));
+          showNote(freeFeedback(step, { picked: true, chosen }));
           fitShelf();
           buttonsSlot.querySelector('button')?.focus({ preventScroll: true });
         },
@@ -473,38 +471,26 @@ export function playPrismFree(stage, ctx, play) {
     enterEdit({ keep });
     board.focusCards();
   };
-  const nextOrder = () => {
-    ctx.sfx.play('click');
-    startOrder(order + 1);
-    enterEdit({ keep: true });
-    board.focusCards();
-  };
 
+  /** 접은 뒤 버튼(직육면체 자유 배치와 같다): [펴서 고치기] · [새로 만들기], 2가지부터 [결과 보기](3가지면 주 버튼) */
   function showButtons({ justReached, step }) {
-    const progressed = step.valid && step.kind !== 'repeat';
     const found = session.found();
     const full = found >= PRISM_FREE_FULL;
-    if (!progressed) {
-      const fix = actionButton('btn-primary free-fix', 'unfold', '펴서 고치기', backToBoard(true));
-      const fresh = actionButton('free-new', 'trash', '처음부터', backToBoard(false));
+    const fix = actionButton('btn-primary free-fix', 'unfold', '펴서 고치기', backToBoard(true));
+    const fresh = actionButton('free-new', 'trash', '새로 만들기', backToBoard(false));
+    if (!reached) {
       buttonsSlot.replaceChildren(h('div', { class: 'btn-pair' }, fix, fresh));
       fix.focus({ preventScroll: true });
       return;
     }
-    const more = actionButton('btn-primary free-next', 'play', order === 1 ? '다른 모양으로 한 번 더' : '한 가지 더 찾기', nextOrder, { after: true });
-    if (!reached) {
-      buttonsSlot.replaceChildren(more);
-      more.focus({ preventScroll: true });
-      return;
-    }
-    // 끝낼 수 있다: 2가지면 [결과 보기]는 보통 버튼 · "한 가지 더"가 주 버튼(16-15), 3가지부터 [결과 보기]가 주 버튼
     const result = actionButton('free-finish', 'play', '결과 보기', () => finish(), { after: true });
-    const done = justReached || full ? h('p', { class: 'goal-done' }, icon('check'),
+    const progressed = step.valid && step.kind !== 'repeat';
+    const done = (justReached || (full && progressed)) ? h('p', { class: 'goal-done' }, icon('check'),
       full ? `서로 다른 전개도 ${found}가지를 찾았어요! 별 3개예요.` : `전개도 ${found}가지를 찾았어요! 한 가지 더 찾으면 별 3개예요.`) : null;
-    if (full) more.classList.remove('btn-primary');
+    if (full) fix.classList.remove('btn-primary');
     result.classList.toggle('btn-primary', full);
-    buttonsSlot.replaceChildren(...[done, h('div', { class: 'btn-pair' }, full ? [result, more] : [more, result])].filter(Boolean));
-    (full ? result : more).focus({ preventScroll: true });
+    buttonsSlot.replaceChildren(...[done, h('div', { class: 'btn-trio' }, full ? [result, fix, fresh] : [fix, fresh, result])].filter(Boolean));
+    (full ? result : fix).focus({ preventScroll: true });
   }
 
   function finish() {
@@ -528,7 +514,7 @@ export function playPrismFree(stage, ctx, play) {
   }
   document.addEventListener('keydown', onKey);
 
-  startOrder(1);
+  setProgress();
   enterEdit({ keep: true });
 
   return () => {
