@@ -1,16 +1,18 @@
 /**
- * 전개도 완성하기 (prism-free, 설계 주문)의 규칙 (순수 함수 — 단계에 들어갈 때 받는 묶음). 화면은 grade6/play-pfree.js · edge-board.js.
- * 기획서: docs/games/net-workshop/spec-grade6.md 2-2절(prism-free 줄과 "전개도 그리기를 화면에서") · 4절 · 5절 · 6-4절 · 8절 · 15-2 · 15-25 · 15-26,
- * spec.md 16-2(모서리에 붙이기) · 16-8 · 16-9 · 16-12 · 16-14 · 16-15.
+ * 전개도 완성하기 (prism-free, 설계 주문)의 규칙 (순수 함수 — 단계에 들어갈 때 받는 묶음). 화면은 grade6/play-pfree.js · magnet-board.js.
+ * 기획서: docs/games/net-workshop/spec-grade6.md 2-2절 · 4절 · 5절 · 6-4절 · 8절 · 15-2 · 15-25 · 15-26 · 15-29 · **15-30 · 15-31**(직육면체처럼 자유 배치 ·
+ * 자석처럼 붙기), spec.md 16-8 · 16-9 · 16-12 · 16-14 · 16-15 · 16-16(돌리기 손잡이).
  *
  * 한 판: 시드가 각기둥 하나(삼각기둥 — 밑면이 정삼각형이 아닌 이등변삼각형 · 사각기둥 — 밑면이 직사각형이 아닌 등변사다리꼴 · 육각기둥)를 고른다.
- *   주문 ①: 밑면 하나 + 옆면 1~2장이 놓인 전개도에 남은 면 카드를 모서리에 붙여 완성 → [접어 보기]
- *   주문 ②: 다른 모양으로 한 번 더(밑면 하나만 놓여 있음) · 그 뒤로도 한 가지씩 더(별 3개까지 — 더 찾아도 된다)
- * 면 카드는 그 각기둥의 면 한 벌(모자라거나 남지 않는다). 카드는 돌리기만 하고 뒤집지 않는다 — 밑면을 좌우가 같은 모양(이등변삼각형 · 등변사다리꼴 ·
- *   정육각형)으로 골라 뒤집지 않아도 모든 전개도를 만들 수 있다(세 변이 다른 삼각형이면 두 밑면이 서로 뒤집힌 모양이라 뒤집기가 꼭 있어야 한다).
- * 붙이기: 카드의 "붙일 변"(돌리기로 고름)을 빈 모서리에 바깥쪽으로, 두 변의 가운데를 맞춰 붙인다(길이가 달라도 붙는다 — 접으면 "5 cm ≠ 3 cm").
- *   놓인 면과 펼친 그림에서 겹치는 자리에는 붙지 않는다(종이 위에 종이를 겹쳐 놓을 수 없다).
- * 판정: 놓인 대로 접는다(fold.js checkNet). 경첩마다 접는 각도는 입체에서 온다 — 처음부터 놓인 밑면을 입체의 아래 밑면으로 두고,
+ *   빈 판에 그 각기둥의 면 카드 한 벌(밑면 둘 · 옆면 n장)을 끌어 놓고 · 옮기고 · 빼고 · 돌려 전개도를 만든다 → [접어 보기] → 서로 다른 전개도 3가지까지.
+ * 면 카드는 돌리기만 하고 뒤집지 않는다 — 밑면을 좌우가 같은 모양(이등변삼각형 · 등변사다리꼴 · 정육각형)으로 골라 뒤집지 않아도 모든 전개도를
+ *   만들 수 있다(세 변이 다른 삼각형이면 두 밑면이 서로 뒤집힌 모양이라 뒤집기가 꼭 있어야 한다).
+ * 자석(15-31 · 덧붙임): 면을 놓은 자리 가까이(면이 MAGNET_REACH cm 안만 움직이고, 방향이 MAGNET_ANGLE° 안) 놓인 면의 빈 모서리가 있으면 그 모서리에
+ *   맞닿게 붙는다 — 길이가 달라도 붙는다(가운데 · 양 끝 가운데 덜 움직이는 맞춤). 맞는 자리인지 · 길이가 맞는지와 상관없이 붙어
+ *   접어 보고 안다(길이가 다르면 접은 모습에서 맞닿는 선분이 어긋난다 — 정답을 알려 주지 않는다).
+ *   가까운 모서리가 없으면 놓은 자리에 그대로(다 놓았는데 떨어진 면이 있으면 직육면체 자유 배치처럼 접지 않는다 — foldReadiness). 놓인 면과 펼친 그림에서 겹치거나 판 밖이면 놓이지 않는다.
+ *   돌리기는 30°씩(TURN_STEP) — 어느 모서리 방향이든 15° 안으로 돌릴 수 있고, 붙을 때 그 방향으로 맞춘다.
+ * 판정: 놓인 대로 접는다(fold.js checkNet). 경첩마다 접는 각도는 입체에서 온다 — 아래 밑면 카드(입체의 b0)를 뿌리로 두고,
  *   경첩을 따라 이웃 면에게 "입체에서 그 모서리 건너편 면"을 차례로 준다(labelNet). 카드가 그 자리의 면과 종류가 달라도(밑면 자리에 옆면 등)
  *   그 자리로 접는다 — 접은 모습에서 겹침 · 빈 곳 · 길이가 다른 선분으로 보인다.
  * 같은 모양: 접어서 각기둥이 되는 전개도는 입체의 신장 트리 하나다. 입체의 대칭(밑면을 돌리기·뒤집기, 위아래 바꾸기)으로 묶은 가장 작은 트리 번호
@@ -20,7 +22,7 @@
 import { hasFinalSound, josa } from '../../../shared/core/korean.js';
 import { LABELS, checkNet, findHinges, solidEdges, spanningTree, spanningTrees } from '../fold.js';
 import { bounds, centroid, convexIntersectionArea, cross, dot, interiorAngle, normalize, signedArea, sub } from '../geometry.js';
-import { BASE_NAMES, PRISM_NAMES, flatOk, isoTrapezoid, polyNetKey, prismNet, prismSolid, regularPolygon, stripTree, triangleBySides } from '../solids.js';
+import { BASE_NAMES, PRISM_NAMES, flatOk, isoTrapezoid, polyNetKey, prismNet, prismSolid, regularPolygon, triangleBySides } from '../solids.js';
 import { PRISM_FREE_COLLECTION, PRISM_FREE_FULL, PRISM_FREE_FULL_SCORE, PRISM_FREE_GOAL, PRISM_FREE_LATER_UNTIL, PRISM_FREE_LATER_XP, PRISM_FREE_SOLIDS, PRISM_TAGS as TAGS, prismFreeItemId } from './prism-stages.js';
 import { FREE_NET_CODES } from './prism-free-data.js';
 
@@ -90,48 +92,21 @@ export function freeCards(fs) {
   });
 }
 
-/** 다각형 p가 q를 돌리거나 옮겨(뒤집지 않고) 겹치는가 — 붙일 변을 바꿔도 같은 모양이 되는 변을 거른다 */
-function sameTurn(p, q) {
-  const n = p.length;
-  if (n !== q.length) return false;
-  const shape = (poly) => poly.map((_, i) => [Math.hypot(poly[(i + 1) % n][0] - poly[i][0], poly[(i + 1) % n][1] - poly[i][1]), interiorAngle(poly, i)]);
-  const a = shape(p);
-  const b = shape(q);
-  return a.every((x, i) => Math.abs(x[0] - b[i][0]) < EPS && Math.abs(x[1] - b[i][1]) < EPS);
-}
-
-/**
- * 붙일 변으로 고를 수 있는 변들: 그 변으로 붙였을 때 놓이는 모양이 서로 다른 것만(직사각형은 세로 변 · 가로 변 둘, 정육각형은 하나,
- * 이등변삼각형은 밑변 · 두 빗변 — 두 빗변은 서로 뒤집힌 모습으로 놓인다). 처음 고른 변: 옆면은 세로 변(높이), 밑면은 0번 변
- */
-export function attachEdges(card) {
-  const n = card.poly.length;
-  const out = [];
-  const rotated = (k) => card.poly.map((_, i) => card.poly[(i + k) % n]);
-  for (let k = 0; k < n; k += 1) if (!out.some((j) => sameTurn(rotated(j), rotated(k)))) out.push(k);
-  if (card.role === 'side') {
-    // 옆면 카드의 꼭짓점: [아래 왼쪽, 아래 오른쪽, 위 오른쪽, 위 왼쪽] — 1번 변이 세로(높이) 변. 세로 변을 먼저
-    return out.includes(1) ? [1, ...out.filter((k) => k !== 1)] : out;
-  }
-  return out;
-}
-
 // ── 놓기 ─────────────────────────────────
 /**
- * 카드를 놓인 면의 변에 붙인 자리(cm): 카드의 edge번 변이 놓인 면의 그 변(p → q)과 반대 방향으로, 두 변의 가운데가 맞게(길이가 다르면 가운데 맞춤).
- * 놓인 면과 같은 돌림 방향이라 바깥쪽(놓인 면의 반대편)에 붙는다
+ * 카드를 놓인 면의 변에 붙인 자리(cm): 카드의 edge번 변이 놓인 면의 그 변(p → q)과 반대 방향으로 맞닿게(놓인 면과 같은 돌림 방향이라 바깥쪽에 붙는다).
+ * 길이가 다르면 어디에 맞추나(align): 'mid' 두 변의 가운데 · 'p' 카드 변의 끝을 p에 · 'q' 카드 변의 처음을 q에(길이가 같으면 셋이 같다)
  */
-export function attachPoly(cardPoly, edge, [p, q]) {
+export function attachPoly(cardPoly, edge, [p, q], align = 'mid') {
   const n = cardPoly.length;
   const c0 = cardPoly[edge];
   const c1 = cardPoly[(edge + 1) % n];
   const turn = Math.atan2(p[1] - q[1], p[0] - q[0]) - Math.atan2(c1[1] - c0[1], c1[0] - c0[0]);
   const [c, s] = [Math.cos(turn), Math.sin(turn)];
-  const mc = [(c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2];
-  const mt = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+  const [from, to] = align === 'p' ? [c1, p] : align === 'q' ? [c0, q] : [[(c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2], [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]];
   return cardPoly.map(([x, y]) => {
-    const [dx, dy] = [x - mc[0], y - mc[1]];
-    return [tidy(mt[0] + dx * c - dy * s), tidy(mt[1] + dx * s + dy * c)];
+    const [dx, dy] = [x - from[0], y - from[1]];
+    return [tidy(to[0] + dx * c - dy * s), tidy(to[1] + dx * s + dy * c)];
   });
 }
 
@@ -161,79 +136,129 @@ export function freeEdges(placed) {
   return out;
 }
 
-/**
- * 붙일 수 있는 빈 모서리: 빈 모서리 가운데, 남은 카드(left) 가운데 어느 하나라도 어느 붙일 변으로든 펼친 그림에서 놓인 면과 겹치지 않게 붙는 것.
- * 다른 면 사이의 좁은 틈을 향한 변처럼 어떤 카드도 붙지 않는 변에는 붙일 자리를 두지 않는다 — 남은 카드 모두를 보고 정하므로
- * 고른 카드와 무관하고, 접어서 각기둥이 되는지와도 무관한 펼친 그림의 사정이다(어느 자리가 맞는지 알려 주지 않는다)
- */
-export function openEdges(placed, left) {
-  const kinds = [];
-  for (const c of left) if (!kinds.some((k) => k.group === c.group)) kinds.push(c);
-  return freeEdges(placed).filter((e) => kinds.some((card) => attachEdges(card).some((k) => !overlapsPlaced(attachPoly(card.poly, k, [e.p, e.q]), placed))));
-}
-
 /** 새 면이 놓인 면과 펼친 그림에서 겹치나 (넓이가 겹침 — 변이나 꼭짓점만 닿는 것은 괜찮다) */
 export function overlapsPlaced(poly, placed) {
   return placed.some((g) => convexIntersectionArea(poly, g.poly) > 1e-6);
 }
 
-// ── 주문 만들기 (시드 ctx.rng로 재현) ───────────────────
-/** 펼친 그림을 각도 turn만큼 돌린다(면의 차례·id는 그대로) */
-function turnFaces(faces, turn) {
-  const [c, s] = [Math.cos(turn), Math.sin(turn)];
-  return faces.map((f) => ({ ...f, poly: f.poly.map(([x, y]) => [tidy(x * c - y * s), tidy(x * s + y * c)]) }));
+// ── 한 판 (시드 ctx.rng로 재현) ───────────────────
+/**
+ * 판의 크기(cm, 가로 × 세로): 그 각기둥의 서로 다른 전개도가 모두 들어가는 크기(15° 단위로 돌려 본 가장 작은 둘레 상자의 긴 쪽 · 짧은 쪽의 최댓값을
+ * 올림 + 1 cm — 검사가 전개도 목록으로 다시 잰다). 휴대폰처럼 판이 세로로 긴 화면이면 세로를 길게
+ */
+const BOARD_CM = Object.freeze({ 'tri-a': [16, 11], 'tri-b': [17, 11], 'trap-a': [17, 12], 'trap-b': [17, 12], 'hex-a': [19, 13], 'hex-b': [22, 15] });
+export function boardSize(solidId, { portrait = false } = {}) {
+  const [w, h] = BOARD_CM[solidId];
+  return portrait ? { w: h, h: w } : { w, h };
 }
 
-/**
- * 띠 꼴 전개도(옆면 한 줄 + 위아래 밑면)를 주문의 바탕 그림(plan)으로: 띠가 가로(portrait면 세로)로 놓이게 돌린다.
- * 첫 주문에 놓아 둘 면은 이 그림의 아래 밑면 + 그 밑면이 붙은 옆면(+ 그 옆의 옆면 하나)
- */
-function planNet(fs, rng) {
-  for (let guard = 0; guard < 200; guard += 1) {
-    const n = fs.n;
-    const j = rng.int(0, n - 1);
-    const tree = stripTree(fs.solid, { cut: rng.int(0, n - 1), top: rng.int(0, n - 1), bottom: j });
-    const net = prismNet(fs.solid, tree);
-    if (!flatOk(net)) continue;
-    // 아래 밑면이 붙은 옆면의 밑변(0 → 1)이 가로가 되게
-    const side = net.faces.find((f) => f.solid === `s${j}`);
-    const angle = -Math.atan2(side.poly[1][1] - side.poly[0][1], side.poly[1][0] - side.poly[0][0]) + (rng.int(0, 1) === 0 ? 0 : Math.PI);
-    return { faces: turnFaces(net.faces, angle), bottomSide: `s${j}` };
-  }
-  throw new Error('전개도 완성하기의 바탕 그림을 만들지 못했어요.');
-}
-
-/**
- * 한 판의 주문: { solidId, plan: [{ solid, poly }](다 놓은 띠 꼴 — 판의 크기를 정하는 데), given1: [입체의 면 id](주문 ①에 놓인 면), givenBase }.
- * portrait: 판이 세로로 긴 화면(휴대폰)이면 바탕 그림을 90° 돌린다 — 띠가 판의 긴 쪽으로 놓이게(시드가 같으면 문항은 같다)
- */
+/** 한 판: { stageId, solidId, board: { w, h }(cm) } — 시드가 각기둥을 고른다(셋 가운데 한 종류, 그 종류의 두 크기 가운데 하나) */
 export function makeFreePlay(stage, rng, { portrait = false } = {}) {
   const kind = rng.pick(FREE_KINDS);
   const solidId = rng.pick(Object.keys(SHAPES).filter((id) => SHAPES[id].kind === kind));
-  const fs = freeSolid(solidId);
-  const plan = planNet(fs, rng);
-  const n = fs.n;
-  const j = Number(plan.bottomSide.slice(1));
-  const extra = rng.int(0, 1) === 1 ? `s${(j + (rng.int(0, 1) === 0 ? 1 : n - 1)) % n}` : null;
-  // 덧붙일 옆면은 띠에서 실제로 그 옆에 붙어 있을 때만(띠를 자른 자리면 붙어 있지 않다)
-  const hinges = findHinges({ faces: plan.faces });
-  const byId = new Map(plan.faces.map((f) => [f.solid, f.id]));
-  const linked = extra && hinges.some((hg) => [hg.a, hg.b].includes(byId.get(extra)) && [hg.a, hg.b].includes(byId.get(plan.bottomSide)));
-  const given1 = ['b0', plan.bottomSide, ...(linked ? [extra] : [])];
-  let faces = plan.faces.map((f) => ({ solid: f.solid, poly: f.poly }));
-  if (portrait) faces = turnFaces(faces, Math.PI / 2).map((f) => ({ solid: f.solid, poly: f.poly }));
-  return { stageId: stage.id, solidId, plan: faces, given1, givenBase: 'b0' };
+  return { stageId: stage.id, solidId, board: boardSize(solidId, { portrait }) };
 }
 
-/** 주문 k(1부터)에 처음부터 놓여 있는 면 [{ id, solid, role, label, poly, given: true }] — 주문 ①은 밑면 + 옆면, 그 뒤는 밑면 하나 */
-export function givenFaces(play, k) {
-  const fs = freeSolid(play.solidId);
-  const cards = freeCards(fs);
-  const ids = k === 1 ? play.given1 : [play.givenBase];
-  return ids.map((solidId) => {
-    const card = cards.find((c) => c.solid === solidId);
-    return { id: card.id, solid: solidId, role: card.role, label: card.label, poly: play.plan.find((f) => f.solid === solidId).poly, given: true };
-  });
+/** 뿌리(접을 때 바닥에 두는 면): 입체의 아래 밑면(b0)의 카드 */
+export const rootCardId = (cards) => cards.find((c) => c.solid === 'b0').id;
+
+// ── 자석 판 (spec-grade6 15-31) ─────────────────
+/** 돌리기 한 번(°) · 붙을 때 맞춰 주는 방향 차이(°) · 붙는 거리(cm — 두 변의 가운데끼리) */
+export const TURN_STEP = 30;
+export const MAGNET_ANGLE = TURN_STEP / 2;
+export const MAGNET_REACH = 1;
+const toRad = (d) => (d * Math.PI) / 180;
+const normDeg = (d) => {
+  let x = d % 360;
+  if (x <= -180) x += 360;
+  if (x > 180) x -= 360;
+  return x;
+};
+const edgeDeg = (a, b) => (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI;
+const midOf = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+
+/** 모양을 about을 가운데로 deg°(화면에서 시계 방향 — y가 아래) 돌린다 */
+export function turnPoly(poly, deg, about = centroid(poly)) {
+  const [c, s] = [Math.cos(toRad(deg)), Math.sin(toRad(deg))];
+  return poly.map(([x, y]) => [tidy(about[0] + (x - about[0]) * c - (y - about[1]) * s), tidy(about[1] + (x - about[0]) * s + (y - about[1]) * c)]);
+}
+/** 카드를 deg° 돌려 가운데를 at(cm)에 둔 모양 — 카드 모양의 가운데가 (0, 0) */
+export function posePoly(card, deg, at) {
+  return turnPoly(card.poly, deg, [0, 0]).map(([x, y]) => [tidy(x + at[0]), tidy(y + at[1])]);
+}
+/** 판(size cm) 안인가 */
+export function insideBoard(poly, size) {
+  return poly.every(([x, y]) => x >= -EPS && y >= -EPS && x <= size.w + EPS && y <= size.h + EPS);
+}
+/** 그 모양을 놓을 수 있나: 판 안이고 놓인 면(others)과 펼친 그림에서 겹치지 않는다 */
+export function canPlace(poly, others, size) {
+  return insideBoard(poly, size) && !overlapsPlaced(poly, others);
+}
+
+/** 두 변의 길이가 같으면 가운데에만, 다르면 가운데 · 양 끝에 맞춘 세 자리 */
+const alignsFor = (la, lb) => (Math.abs(la - lb) <= EPS ? ['mid'] : ['mid', 'p', 'q']);
+
+/**
+ * 자석: 카드(card)를 poly 모양(카드를 돌려 옮긴 것 — 꼭짓점 차례는 카드와 같다)으로 놓을 때 붙을 수 있는 자리들(가까운 차례).
+ * 이 면의 변 k와 놓인 면(others)의 빈 모서리 t마다(길이가 달라도 — 사용자 결정 15-31 덧붙임), 붙이면 돌아가는 각이 maxAngle° 안인 것.
+ * 길이가 다르면 가운데 · 양 끝 가운데 놓은 자리에서 가장 덜 움직이는 맞춤(끌어 놓은 자리 그대로 모서리에 닿게). 면이 reach cm 넘게 움직이면 뺀다.
+ * 붙인 모양이 놓인 면과 겹치거나 판 밖이면 뺀다. 맞는 자리인지 · 길이가 맞는지는 보지 않는다(정답을 알려 주지 않는다).
+ * → [{ poly(붙은 모양), face, edge(놓인 면의 변), cardEdge, align, dist, turn }]
+ */
+export function magnetCandidates(card, poly, others, { size, reach = MAGNET_REACH, maxAngle = MAGNET_ANGLE } = {}) {
+  const out = [];
+  const n = poly.length;
+  for (const t of freeEdges(others)) {
+    const lt = Math.hypot(t.q[0] - t.p[0], t.q[1] - t.p[1]);
+    const want = edgeDeg(t.q, t.p); // 붙는 변은 놓인 면의 변과 반대 방향
+    for (let k = 0; k < n; k += 1) {
+      const a = poly[k];
+      const b = poly[(k + 1) % n];
+      const turn = normDeg(want - edgeDeg(a, b));
+      if (Math.abs(turn) > maxAngle + 1e-9) continue;
+      const ma = midOf(a, b);
+      for (const align of alignsFor(Math.hypot(b[0] - a[0], b[1] - a[1]), lt)) {
+        const snapped = attachPoly(card.poly, k, [t.p, t.q], align);
+        const ms = midOf(snapped[k], snapped[(k + 1) % n]);
+        const dist = Math.hypot(ma[0] - ms[0], ma[1] - ms[1]);
+        if (dist > reach + 1e-9) continue;
+        if (size ? !canPlace(snapped, others, size) : overlapsPlaced(snapped, others)) continue;
+        out.push({ poly: snapped, face: t.face, edge: t.edge, cardEdge: k, align, dist, turn });
+      }
+    }
+  }
+  return out.sort((x, y) => x.dist + Math.abs(x.turn) / 90 - (y.dist + Math.abs(y.turn) / 90));
+}
+/** 놓는 자리 정하기: 가까운 모서리에 붙거나(snap), 그 자리 그대로(free), 놓을 수 없음(null) → { poly, snap } | null */
+export function settlePoly(card, poly, others, size) {
+  const best = magnetCandidates(card, poly, others, { size })[0];
+  if (best) return { poly: best.poly, snap: best };
+  return canPlace(poly, others, size) ? { poly, snap: null } : null;
+}
+
+/** 꼭짓점 모음으로 본 같은 자리(꼭짓점 차례와 상관없이) */
+const placeKey = (poly) => poly.map(([x, y]) => `${Math.round(x * 1000)},${Math.round(y * 1000)}`).sort().join(' ');
+/**
+ * 키보드로 고르는 자석 자리: 놓인 면(others)의 빈 모서리마다 카드의 변을 붙인 자리 전부(놓인 면 차례 · 변 차례 · 카드의 변 차례 —
+ * 길이가 다르면 가운데 · 양 끝 맞춤). 겹치거나 판 밖인 자리, 같은 자리(돌려도 모양이 같은 카드)는 뺀다 → [{ poly, face, edge, cardEdge, align }]
+ */
+export function magnetSpots(card, others, size) {
+  const out = [];
+  const seen = new Set();
+  const n = card.poly.length;
+  for (const t of freeEdges(others)) {
+    const lt = Math.hypot(t.q[0] - t.p[0], t.q[1] - t.p[1]);
+    for (let k = 0; k < n; k += 1) {
+      for (const align of alignsFor(edgeLengthOf(card.poly, k), lt)) {
+        const poly = attachPoly(card.poly, k, [t.p, t.q], align);
+        const key = placeKey(poly);
+        if (seen.has(key) || !canPlace(poly, others, size)) continue;
+        seen.add(key);
+        out.push({ poly, face: t.face, edge: t.edge, cardEdge: k, align });
+      }
+    }
+  }
+  return out;
 }
 
 // ── 놓은 대로 접기: 면마다 입체의 어느 면 자리로 가는지 ─────────────────
@@ -620,64 +645,43 @@ export function freeHighlights(sum, { earned, total }) {
   ];
 }
 
-/** 놓는 판 아래 안내 (접기 전) — 까닭 낱말을 쓰지 않는다 */
-export function foldReadiness(placedCount, total) {
-  if (placedCount < total) return { ready: false, text: `면을 모두 붙이면 접어 볼 수 있어요. (${placedCount} / ${total})` };
-  return { ready: true, text: '놓은 그대로 접혀요. 접어서 확인해 봐요.' };
-}
-
-/** 주문 글: 매트의 주문 띠 · 화면 읽기 */
-export function orderText(k) {
-  if (k === 1) return { head: '주문 ①', text: '놓여 있는 면에 이어 붙여 전개도를 완성해요.' };
-  if (k === 2) return { head: '주문 ②', text: '다른 모양으로 한 번 더! 밑면 하나만 놓여 있어요.' };
-  return { head: `주문 ${'③④⑤⑥⑦⑧⑨'[Math.min(k - 3, 6)]}`, text: '또 다른 모양으로! 밑면 하나만 놓여 있어요.' };
-}
-
-// ── 판의 크기와 붙일 자리 (화면 px — 순수 계산이라 검사가 크기마다 직접 잰다) ─────────────
-/** 붙일 자리 단추의 지름(px)과 단추 사이 · 단추와 면 사이 최소 거리 */
-export const SLOT_SIZE = 48;
-export const SLOT_GAP = 2;
-/** 1 cm의 화면 크기 상한(px) — 작은 전개도가 지나치게 크게 그려지지 않게 */
-export const UNIT_CAP = 46;
-/** 면 둘레에 붙일 자리가 들어갈 여백(px): 면에서 단추 가운데까지 최대 거리 + 반지름 */
-export const SLOT_REACH = 60;
-
-/** cm 상자를 판(area px)에 여백을 두고 맞춘 1 cm 크기와 (0, 0) cm의 자리 */
-export function fitBoard(box, area, { cap = UNIT_CAP, margin = SLOT_REACH } = {}) {
-  const w = Math.max(box.maxX - box.minX, 1e-3);
-  const h = Math.max(box.maxY - box.minY, 1e-3);
-  const unit = Math.max(4, Math.min(cap, (area.width - 2 * margin) / w, (area.height - 2 * margin) / h));
-  const origin = [area.left + (area.width - w * unit) / 2 - box.minX * unit, area.top + (area.height - h * unit) / 2 - box.minY * unit];
-  return { unit, origin };
-}
-
-export const boxOf = (polys) => {
-  const { min, max } = bounds(polys.flat());
-  return { minX: min[0], minY: min[1], maxX: max[0], maxY: max[1] };
-};
-
-/** 지금 보기(view)에서 상자가 여백까지 판 안에 드나 */
-export function boardHolds(view, box, area, margin = SLOT_REACH) {
-  const x0 = view.origin[0] + box.minX * view.unit;
-  const x1 = view.origin[0] + box.maxX * view.unit;
-  const y0 = view.origin[1] + box.minY * view.unit;
-  const y1 = view.origin[1] + box.maxY * view.unit;
-  return x0 - margin >= area.left - 0.5 && x1 + margin <= area.left + area.width + 0.5 && y0 - margin >= area.top - 0.5 && y1 + margin <= area.top + area.height + 0.5;
-}
-
-/**
- * 판의 보기: 주문을 시작할 때는 바탕 그림(다 놓은 띠 꼴)이 들어가는 크기로, 놓은 면이 판 밖으로 나가려 하면 그때만 작게 · 가운데로 다시 맞춘다
- * (주문 동안 1 cm의 크기는 커지지 않는다 — 붙일 때마다 그림이 튀지 않게)
- */
-export function nextBoardView(prev, placedPolys, area, plan) {
-  const box = boxOf(placedPolys);
-  if (!prev) {
-    const start = fitBoard(boxOf(plan), area);
-    // 바탕 그림에 맞춘 자리에서 놓인 면이 판 밖이면(돌린 그림) 놓인 면 쪽으로
-    return boardHolds(start, box, area) ? start : fitBoard(box, area, { cap: start.unit });
+/** 놓인 면들을 맞닿은 곳(길이가 달라 일부만 맞닿아도)으로 이어진 덩어리로 → [[id, …], …] (큰 덩어리부터, 같으면 먼저 놓인 면이 든 것부터) */
+export function faceGroups(faces) {
+  const links = new Map(faces.map((f) => [f.id, []]));
+  for (const hg of findHinges({ faces })) {
+    links.get(hg.a).push(hg.b);
+    links.get(hg.b).push(hg.a);
   }
-  if (boardHolds(prev, box, area)) return prev;
-  return fitBoard(box, area, { cap: prev.unit });
+  const seen = new Set();
+  const groups = [];
+  faces.forEach((f, order) => {
+    if (seen.has(f.id)) return;
+    const group = [];
+    const queue = [f.id];
+    seen.add(f.id);
+    while (queue.length > 0) {
+      const id = queue.shift();
+      group.push(id);
+      for (const next of links.get(id)) {
+        if (seen.has(next)) continue;
+        seen.add(next);
+        queue.push(next);
+      }
+    }
+    groups.push({ group, order });
+  });
+  return groups.sort((x, y) => y.group.length - x.group.length || x.order - y.order).map((g) => g.group);
+}
+
+/** 놓는 판 아래 안내 (접기 전) — 까닭 낱말을 쓰지 않는다. 직육면체 자유 배치처럼 떨어진 면이 있으면 접지 않는다(CUBOID_FOLD_NOTES와 같은 말) */
+export const FREE_FOLD_APART = '떨어진 면이 있어요. 전개도는 한 장으로 이어져 있어야 접을 수 있어요.';
+/** faces: 놓인 면 [{ id, poly }], total: 카드 수 → { ready, reason: 'count' | 'apart' | null, detached: 떨어진 면 id(가장 큰 덩어리 밖), text } */
+export function foldReadiness(faces, total) {
+  const placedCount = faces.length;
+  if (placedCount < total) return { ready: false, reason: 'count', detached: [], text: `면 ${total}장을 모두 놓으면 접어 볼 수 있어요. (${placedCount} / ${total})` };
+  const groups = faceGroups(faces);
+  if (groups.length > 1) return { ready: false, reason: 'apart', detached: groups.slice(1).flat(), text: FREE_FOLD_APART };
+  return { ready: true, reason: null, detached: [], text: '놓은 그대로 접혀요. 접어서 확인해 봐요.' };
 }
 
 /** 점과 선분 사이 거리 */
@@ -694,95 +698,6 @@ function insidePoly(pt, poly) {
     if ((yi > pt[1]) !== (yj > pt[1]) && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) c = !c;
   }
   return c;
-}
-
-/**
- * 붙일 자리 단추의 자리(px): 빈 모서리마다 하나. 변의 바깥쪽 — 변 위의 점(가운데부터 양 끝 쪽으로)에서 바깥 방향(곧게, 비스듬히 25° · 50°)으로
- * 조금씩 멀리 놓아 보며, 다른 단추와 SLOT_SIZE + SLOT_GAP · 면과 반지름 + SLOT_GAP 넘게 떨어지고 판 안인 자리 가운데 가까운 곳.
- * 자리를 고르기 어려운 변(맞는 자리가 적은 변 — 좁은 틈을 향한 변 · 짧은 변)부터 정한다. 변에서 멀리 놓인 단추는 화면이 변까지 점선으로 잇는다.
- * 맞는 자리가 하나도 없으면 가장 덜 겹치는 자리(overlap: true — 검사가 0인지 본다).
- * facesPx: [{ id, poly(px) }], edges: [{ key, p, q(px), face }], area: 판(px) → [{ key, x, y, ax, ay(변 위의 이은 점), overlap }]
- */
-const SLOT_TS = [0.5, 0.36, 0.64, 0.22, 0.78, 0.1, 0.9];
-const SLOT_TURNS = [0, 25, -25, 50, -50].map((d) => (d * Math.PI) / 180);
-const SLOT_PUSHES = [30, 36, 44, 54, 66, 80, 96, 114, 134];
-export function placeSlots(facesPx, edges, area) {
-  const r = SLOT_SIZE / 2;
-  const faceGap = (pt) => {
-    let best = Infinity;
-    for (const f of facesPx) {
-      if (insidePoly(pt, f.poly)) return -1;
-      for (let i = 0; i < f.poly.length; i += 1) best = Math.min(best, segDist(pt, f.poly[i], f.poly[(i + 1) % f.poly.length]));
-    }
-    return best;
-  };
-  const inArea = (pt) => pt[0] - r >= area.left - 0.5 && pt[0] + r <= area.left + area.width + 0.5 && pt[1] - r >= area.top - 0.5 && pt[1] + r <= area.top + area.height + 0.5;
-  // 변마다 면 · 판만 보고 맞는 자리 후보(가까운 차례)
-  const lists = edges.map((e) => {
-    const len = Math.hypot(e.q[0] - e.p[0], e.q[1] - e.p[1]) || 1;
-    const face = facesPx.find((f) => f.id === e.face);
-    const [cx, cy] = centroid(face.poly);
-    let nx = -(e.q[1] - e.p[1]) / len;
-    let ny = (e.q[0] - e.p[0]) / len;
-    const mid = [(e.p[0] + e.q[0]) / 2, (e.p[1] + e.q[1]) / 2];
-    if ((mid[0] - cx) * nx + (mid[1] - cy) * ny < 0) [nx, ny] = [-nx, -ny];
-    const [ux, uy] = [(e.q[0] - e.p[0]) / len, (e.q[1] - e.p[1]) / len];
-    const all = [];
-    for (const push of SLOT_PUSHES) {
-      for (const turn of SLOT_TURNS) {
-        for (const t of SLOT_TS) {
-          const a = [e.p[0] + (e.q[0] - e.p[0]) * t, e.p[1] + (e.q[1] - e.p[1]) * t];
-          // 비스듬한 방향은 변의 가운데 쪽으로 기울인다(양 끝에서 바깥으로 벌어지게)
-          const lean = turn * (t < 0.5 ? -1 : t > 0.5 ? 1 : 1);
-          const [dx, dy] = [nx * Math.cos(lean) + ux * Math.sin(lean), ny * Math.cos(lean) + uy * Math.sin(lean)];
-          const c = [a[0] + dx * push, a[1] + dy * push];
-          const cost = push + Math.abs(t - 0.5) * 40 + Math.abs(turn) * 18;
-          all.push({ c, a, cost, ok: inArea(c) && faceGap(c) >= r + SLOT_GAP });
-        }
-      }
-    }
-    all.sort((x, y) => x.cost - y.cost);
-    return { e, ok: all.filter((x) => x.ok), all };
-  });
-  const order = lists.map((l, i) => ({ l, i })).sort((x, y) => x.l.ok.length - y.l.ok.length || x.i - y.i);
-  const placed = [];
-  const chosen = new Map(); // 변 번호 → 고른 후보 (자리를 바꿔 줄 때)
-  const result = new Array(edges.length);
-  const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) >= SLOT_SIZE + SLOT_GAP;
-  for (const { l, i } of order) {
-    const far = (c) => placed.every((q) => apart(q, c));
-    let pick = l.ok.find((x) => far(x.c)) ?? null;
-    if (!pick) {
-      // 고쳐 놓기: 막는 단추 하나를 그 변의 다른 맞는 자리로 옮기면 이 변의 자리가 생기나
-      for (const x of l.ok) {
-        const blockers = [...chosen].filter(([, y]) => !apart(y.c, x.c));
-        if (blockers.length !== 1) continue;
-        const [j, old] = blockers[0];
-        const others = [...chosen].filter(([k]) => k !== j).map(([, y]) => y.c);
-        const move = lists[j].ok.find((y) => y !== old && apart(y.c, x.c) && others.every((q) => apart(q, y.c)));
-        if (!move) continue;
-        chosen.set(j, move);
-        placed.splice(placed.indexOf(old.c), 1, move.c);
-        result[j] = { ...result[j], x: tidy(move.c[0]), y: tidy(move.c[1]), ax: tidy(move.a[0]), ay: tidy(move.a[1]) };
-        pick = x;
-        break;
-      }
-    }
-    if (!pick) {
-      // 가장 덜 겹치는 자리
-      let best = null;
-      for (const x of l.all) {
-        const near = Math.min(Infinity, ...placed.map((q) => Math.hypot(q[0] - x.c[0], q[1] - x.c[1])));
-        const score = Math.min(near - (SLOT_SIZE + SLOT_GAP), faceGap(x.c) - (r + SLOT_GAP), inArea(x.c) ? 0 : -999);
-        if (!best || score > best.score) best = { ...x, score };
-      }
-      pick = { ...best, overlap: true, none: l.ok.length === 0 };
-    }
-    placed.push(pick.c);
-    chosen.set(i, pick);
-    result[i] = { key: l.e.key, x: tidy(pick.c[0]), y: tidy(pick.c[1]), ax: tidy(pick.a[0]), ay: tidy(pick.a[1]), overlap: Boolean(pick.overlap), none: Boolean(pick.none) };
-  }
-  return result;
 }
 
 /** 가운데 (cx, cy) · 폭 w · 높이 h · 돌림 deg인 직사각형 → { pts(네 꼭짓점), axes(두 방향) } */
