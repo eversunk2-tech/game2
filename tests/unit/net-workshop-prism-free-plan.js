@@ -104,7 +104,7 @@ export function fitOnBoard(play, faces, { rootSolid = 'b0', pick = null } = {}) 
 
 /**
  * 카드를 목표 자리(poly — 놓인 면 placed의 모서리에 맞닿은 자리)에 붙이려면: 카드를 몇 번(30°) 돌려 어디(카드 가운데, cm)에 끌어 놓나.
- * 카드의 맞닿을 변의 가운데가 목표의 그 변의 가운데에 오는 곳(자석이 0 cm 옮긴다) — 안 되면 목표의 가운데. 화면과 같은 settlePoly로 놓아 보아
+ * 목표의 가운데(자석이 그 모서리 방향으로 돌리면 목표와 꼭 같다) — 안 되면 카드의 맞닿을 변의 가운데가 목표의 그 변의 가운데에 오는 곳. 화면과 같은 settlePoly로 놓아 보아
  * 목표 자리에 붙는 것만 → { turn, at, poly } | null
  */
 export function dropFor(play, card, poly, placed) {
@@ -119,14 +119,14 @@ export function dropFor(play, card, poly, placed) {
     return [x + c[0], y + c[1]];
   });
   const touch = touchEdge(exact, placed);
-  const tries = [];
+  // 목표의 가운데에 놓으면 자석이 면을 그 모서리 방향으로 돌린 모습이 목표와 꼭 같다(움직임 0 — G2r-5의 재는 법). 안 되면 맞닿을 변의 가운데를 맞춘 자리
+  const tries = [c];
   if (touch) {
     const n = card.poly.length;
     const [mx, my] = turnPt(mid(card.poly[touch.j], card.poly[(touch.j + 1) % n]), turn * 30);
     const target = mid(exact[touch.j], exact[(touch.j + 1) % n]);
     tries.push([target[0] - mx, target[1] - my]);
   }
-  tries.push(c);
   for (const at of tries) {
     const result = L.settlePoly(card, L.posePoly(card, turn * 30, at), others, size);
     if (result && samePlace(result.poly, poly)) return { turn, at, poly: result.poly };
@@ -195,6 +195,15 @@ export function planBoard(play, fit) {
     steps.push({ group: card.group, card: card.id, turn: drop.turn, at: drop.at, poly: drop.poly, spot, spots: spots.length, root: false });
   }
   return { steps, placed };
+}
+
+/** 놓인 판(placed — 첫 면부터 놓은 차례, 첫 면은 30°의 배수로 돌린 모습)을 화면에서 끌어 놓아 다시 만드는 차례(planBoard) */
+export function planFromPlaced(play, placed) {
+  const cards = L.freeCards(L.freeSolid(play.solidId));
+  const solidOf = (id) => cards.find((c) => c.id === id).solid;
+  const first = cards.find((c) => c.id === placed[0].id);
+  const turn = Math.round(faceAngle(first, placed[0].poly) / 30) % 12;
+  return planBoard(play, { faces: placed.map((f) => ({ solid: solidOf(f.id), poly: f.poly })), rootSolid: first.solid, turn });
 }
 
 /** 카드 묶음마다 돌림이 0에서 시작할 때 차례대로 놓으며 돌리는 횟수(30°씩 — 화면에서 [돌리기]를 누르는 수) */

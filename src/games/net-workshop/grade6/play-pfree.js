@@ -33,6 +33,7 @@ import {
   isOverFree,
   judgeFreeReason,
   primaryFreeProblem,
+  realLengthGap,
   solidText,
 } from './prism-free-logic.js';
 import { groundPose, PRISM_JUDGE_REASONS } from './prism-logic.js';
@@ -352,13 +353,14 @@ export function playPrismFree(stage, ctx, play) {
     resultSection.hidden = false;
   }
 
-  /** 까닭 표시: 길이가 다른 두 선분에 같은 무늬 띠와 길이 이름표 (까닭을 고른 뒤에만) */
+  /** 까닭 표시: 길이가 다른 두 선분에 같은 무늬 띠와 길이 이름표 — 같은 길이가 어긋나게 맞닿은 곳은 같은 무늬만(G2r-1). 까닭을 고른 뒤에만 */
   function showMarks(step, chosen = null) {
     view.reveal();
     if (step.valid) return;
     const problem = primaryFreeProblem(step.problems, chosen);
     const mismatch = problem?.type === 'edge-length' ? problem : null;
-    view.setEdgeMarks((mismatch?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone: 'a', text: cm(mismatch.lengths[i]) })));
+    const withText = mismatch && realLengthGap(mismatch);
+    view.setEdgeMarks((mismatch?.edges ?? []).map((e, i) => ({ face: e.face, edge: e.edge, tone: 'a', ...(withText ? { text: cm(mismatch.lengths[i]) } : {}) })));
   }
 
   // ── 접어 보기 ─────────────────────────

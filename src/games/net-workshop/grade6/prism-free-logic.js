@@ -163,9 +163,13 @@ export function makeFreePlay(stage, rng, { portrait = false } = {}) {
 export const rootCardId = (cards) => cards.find((c) => c.solid === 'b0').id;
 
 // ── 자석 판 (spec-grade6 15-31) ─────────────────
-/** 돌리기 한 번(°) · 붙을 때 맞춰 주는 방향 차이(°) · 붙는 거리(cm — 두 변의 가운데끼리) */
+/**
+ * 돌리기 한 번(°) · 붙을 때 맞춰 주는 방향 차이(°) · 붙는 거리(cm — 두 변의 가운데끼리).
+ * 붙는 각은 30°의 반(15°)보다 넉넉한 20°: 이등변삼각형 · 사다리꼴의 빗변 방향은 30° 단계의 사이(가까운 단계와 11.8~14°, 먼 단계와 16~18.2°)라
+ * 이웃한 두 단계 어느 쪽으로 놓아도 붙게(review-prism-g2r G2r-4) — 모든 모서리에 같은 규칙(정답을 알려 주지 않는다)
+ */
 export const TURN_STEP = 30;
-export const MAGNET_ANGLE = TURN_STEP / 2;
+export const MAGNET_ANGLE = 20;
 export const MAGNET_REACH = 1;
 const toRad = (d) => (d * Math.PI) / 180;
 const normDeg = (d) => {
@@ -201,7 +205,8 @@ const alignsFor = (la, lb) => (Math.abs(la - lb) <= EPS ? ['mid'] : ['mid', 'p',
 /**
  * 자석: 카드(card)를 poly 모양(카드를 돌려 옮긴 것 — 꼭짓점 차례는 카드와 같다)으로 놓을 때 붙을 수 있는 자리들(가까운 차례).
  * 이 면의 변 k와 놓인 면(others)의 빈 모서리 t마다(길이가 달라도 — 사용자 결정 15-31 덧붙임), 붙이면 돌아가는 각이 maxAngle° 안인 것.
- * 길이가 다르면 가운데 · 양 끝 가운데 놓은 자리에서 가장 덜 움직이는 맞춤(끌어 놓은 자리 그대로 모서리에 닿게). 면이 reach cm 넘게 움직이면 뺀다.
+ * 길이가 다르면 가운데 · 양 끝 가운데 놓은 자리에서 가장 덜 움직이는 맞춤(끌어 놓은 자리 그대로 모서리에 닿게). 움직이는 거리는 면을 그 모서리 방향으로
+ * 먼저 돌린 뒤(면의 가운데를 축으로) 잰다 — 빗변처럼 30° 단계와 어긋난 방향에서도 놓은 자리의 맞춤이 되게(G2r-5). 면이 reach cm 넘게 움직이면 뺀다.
  * 붙인 모양이 놓인 면과 겹치거나 판 밖이면 뺀다. 맞는 자리인지 · 길이가 맞는지는 보지 않는다(정답을 알려 주지 않는다).
  * → [{ poly(붙은 모양), face, edge(놓인 면의 변), cardEdge, align, dist, turn }]
  */
@@ -216,7 +221,8 @@ export function magnetCandidates(card, poly, others, { size, reach = MAGNET_REAC
       const b = poly[(k + 1) % n];
       const turn = normDeg(want - edgeDeg(a, b));
       if (Math.abs(turn) > maxAngle + 1e-9) continue;
-      const ma = midOf(a, b);
+      const turned = Math.abs(turn) > 1e-9 ? turnPoly(poly, turn) : poly;
+      const ma = midOf(turned[k], turned[(k + 1) % n]);
       for (const align of alignsFor(Math.hypot(b[0] - a[0], b[1] - a[1]), lt)) {
         const snapped = attachPoly(card.poly, k, [t.p, t.q], align);
         const ms = midOf(snapped[k], snapped[(k + 1) % n]);
@@ -229,11 +235,27 @@ export function magnetCandidates(card, poly, others, { size, reach = MAGNET_REAC
   }
   return out.sort((x, y) => x.dist + Math.abs(x.turn) / 90 - (y.dist + Math.abs(y.turn) / 90));
 }
-/** 놓는 자리 정하기: 가까운 모서리에 붙거나(snap), 그 자리 그대로(free), 놓을 수 없음(null) → { poly, snap } | null */
+/** 판 가장자리에 걸친 모양을 판 안으로 가장 조금 옮긴 것(판보다 크면 null) */
+function intoBoard(poly, size) {
+  const { min, max } = bounds(poly);
+  if (max[0] - min[0] > size.w + EPS || max[1] - min[1] > size.h + EPS) return null;
+  const dx = min[0] < 0 ? -min[0] : max[0] > size.w ? size.w - max[0] : 0;
+  const dy = min[1] < 0 ? -min[1] : max[1] > size.h ? size.h - max[1] : 0;
+  return poly.map(([x, y]) => [tidy(x + dx), tidy(y + dy)]);
+}
+/**
+ * 놓는 자리 정하기: 가까운 모서리에 붙거나(snap), 그 자리 그대로(free), 놓을 수 없음(null) → { poly, snap } | null.
+ * 판 가장자리에 걸치게 놓으면 직육면체처럼 판 안으로 당겨 놓는다(당긴 자리에서도 자석 — review-prism-g2r G2r-7). 놓인 면과 겹치면 놓지 않는다
+ */
 export function settlePoly(card, poly, others, size) {
   const best = magnetCandidates(card, poly, others, { size })[0];
   if (best) return { poly: best.poly, snap: best };
-  return canPlace(poly, others, size) ? { poly, snap: null } : null;
+  if (canPlace(poly, others, size)) return { poly, snap: null };
+  const inside = size && !insideBoard(poly, size) ? intoBoard(poly, size) : null;
+  if (!inside) return null;
+  const again = magnetCandidates(card, inside, others, { size })[0];
+  if (again) return { poly: again.poly, snap: again };
+  return canPlace(inside, others, size) ? { poly: inside, snap: null } : null;
 }
 
 /** 꼭짓점 모음으로 본 같은 자리(꼭짓점 차례와 상관없이) */
@@ -413,14 +435,19 @@ export function netItemId(solidId, code) {
 const PROBLEM_ORDER = ['overlap', 'wrong-hinge', 'vertex-full', 'edge-length', 'gap', 'disconnected', 'face-count'];
 /** 고른 까닭(PRISM_JUDGE_REASONS의 id)에 드는 문제의 꼴 */
 const REASON_TYPES = Object.freeze({ overlap: ['overlap', 'wrong-hinge', 'vertex-full'], length: ['edge-length', 'gap'] });
+/** 맞닿는 두 선분의 길이가 정말 다른가(같은 길이가 어긋나게 맞닿은 것 — fold.js의 shifted — 은 아니다, review-prism-g2r G2r-1) */
+export const realLengthGap = (p) => p.type === 'edge-length' && Math.abs(p.lengths[0] - p.lengths[1]) > 1e-6;
 /**
- * 까닭을 하나만 말할 때 먼저 고르는 것: 겹침 → 접을 수 없는 경첩 → 한 점을 둘러쌈 → 길이(이어 붙인 곳 먼저) → 빈 곳.
+ * 까닭을 하나만 말할 때 먼저 고르는 것: 겹침 → 접을 수 없는 경첩 → 한 점을 둘러쌈 → 길이 → 빈 곳.
+ * 길이는 길이가 정말 다른 곳(이어 붙인 곳 먼저 → 접어서 만나는 곳)을 먼저, 같은 길이가 어긋나게 맞닿은 곳은 그다음(G2r-1).
  * chosen: 학생이 고른 까닭이 참이면 그 까닭의 문제를 먼저(쪽지 · 무대 표시가 학생이 찾은 까닭을 보이게 — review-prism-g2 G2-5)
  */
 export function primaryFreeProblem(problems, chosen = null) {
   const prefer = chosen && freeReasons(problems).includes(chosen) ? REASON_TYPES[chosen] ?? [] : [];
   for (const type of [...PROBLEM_ORDER.filter((t) => prefer.includes(t)), ...PROBLEM_ORDER.filter((t) => !prefer.includes(t))]) {
-    const found = (type === 'edge-length' ? problems.find((p) => p.type === type && p.hinge) : null) ?? problems.find((p) => p.type === type);
+    const found = type === 'edge-length'
+      ? problems.find((p) => realLengthGap(p) && p.hinge) ?? problems.find((p) => realLengthGap(p)) ?? problems.find((p) => p.type === type && p.hinge) ?? problems.find((p) => p.type === type)
+      : problems.find((p) => p.type === type);
     if (found) return found;
   }
   return problems[0] ?? null;
@@ -484,8 +511,14 @@ export function explainFreeProblem(net, problems, chosen = null) {
   }
   if (p.type === 'vertex-full') return '한 꼭짓점에 면이 빈틈없이 둘러 모여 있어 접을 수 없어요.';
   if (p.type === 'edge-length') {
-    const [x, y] = p.lengths.map(cm);
     const [a, b] = p.faces.map((id) => labelOf(net, id));
+    // 같은 길이가 어긋나게 맞닿음: 직육면체(cuboid-logic.js)와 같은 말 — "길이가 달라요"라고 하지 않는다(G2r-1)
+    if (!realLengthGap(p)) {
+      return p.hinge
+        ? `${a} 면과 ${b} 면이 어긋나게 붙어 있어요. 맞닿는 선분은 끝과 끝이 꼭 맞아야 해요.`
+        : `접으면 ${a} 면과 ${b} 면의 선분이 어긋나게 만나요. 맞닿는 선분은 끝과 끝이 꼭 맞아야 해요.`;
+    }
+    const [x, y] = p.lengths.map(cm);
     return `접으면 ${a} 면과 ${b} 면이 맞닿는 두 선분의 길이가 ${josa(x, '과/와')} ${y}로 달라요. 맞닿는 선분은 길이가 같아야 해요.`;
   }
   return '접으면 맞닿지 않는 선분이 있어요. 각기둥이 되려면 맞닿는 선분끼리 길이가 같아야 해요.';

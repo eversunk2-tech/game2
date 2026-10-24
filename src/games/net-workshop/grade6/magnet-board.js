@@ -115,7 +115,7 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     role: 'group',
     tabindex: '0',
     'aria-roledescription': '전개도 놓는 판',
-    'aria-label': '전개도 놓는 판. 카드에서 Enter로 들고, 방향키로 자리를 고르고 Enter로 놓아요. R 키는 돌리기, Delete는 빼기예요.',
+    'aria-label': '전개도 놓는 판. Enter로 카드 칸 맨 앞 카드를 들고(카드에서 Enter도 돼요), 방향키로 자리를 고르고 Enter로 놓아요. 놓인 면은 방향키로 골라요. R 키는 돌리기, Delete는 빼기예요.',
   }, frame, overlay, marks, boardHandle);
   host.prepend(boardEl);
 
@@ -189,6 +189,17 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     const c = centroid(now);
     const turned = extraTurns ? turnPoly(now, extraTurns * TURN_STEP, c) : now;
     return settle(id, turned.map(([x, y]) => [x - c[0] + at[0], y - c[1] + at[1]]), '옮겼어요');
+  }
+  /** 카드 칸 맨 앞 카드(남은 것 가운데 첫 묶음) */
+  const frontGroup = () => groups.find((g) => remainingIn(g).length > 0) ?? null;
+  /** 빈 판 누르기: 카드 칸 맨 앞 카드를 그 자리를 가운데로, 카드 칸에서 돌려 둔 대로 놓는다(직육면체의 빈 칸 누르기와 같은 뜻 — G2r-2) */
+  function placeNext(at) {
+    const g = frontGroup();
+    if (!g) {
+      ctx.feedback.announce(`면 ${cards.length}장을 모두 놓았어요. 옮기려면 놓인 면을 끌거나 눌러 골라요.`);
+      return false;
+    }
+    return placeCard(g, at);
   }
   function removeFace(id) {
     if (!enabled || !placed.has(id)) return false;
@@ -401,6 +412,19 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
         if (!s || v.variant !== s.variant) v.el.remove();
         else Object.assign(v.el.style, { visibility: '', left: `${s.x}px`, top: `${s.y}px` });
       }
+      // 떨어진 면인데 "떨어짐"이 면 안에 들지 않으면(작은 면): 직육면체처럼 면 아래(판 아래 끝이면 위)에 단다(review-prism-g2r G2r-6)
+      if (detached.has(n.id) && !s?.variant.startsWith('apart')) {
+        const pts = faces.find((f) => f.id === n.id).poly.map(px);
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        const tag = h('span', { class: 'pf-apart-tag is-outside' }, '떨어짐');
+        marks.append(tag);
+        const [tw, th] = [tag.offsetWidth || 44, tag.offsetHeight || 18];
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+        let top = Math.max(...ys) + 3;
+        if (top + th > view.H) top = Math.min(...ys) - 3 - th;
+        Object.assign(tag.style, { left: `${Math.max(0, Math.min(view.W - tw, cx - tw / 2)).toFixed(1)}px`, top: `${Math.max(0, top).toFixed(1)}px` });
+      }
     }
   }
 
@@ -504,10 +528,21 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
       rotateFace(tile.dataset.face);
       return;
     }
-    // 고른 것 없이 빈 판을 누르면: 키보드로 고른 면 표시를 지운다
+    // 고른 것 없이 빈 판을 누르면(직육면체의 빈 칸 누르기처럼 — G2r-2): 카드 칸 맨 앞 카드가 그 자리에 놓인다(가까운 모서리면 자석).
+    // 키보드로 든 것이 있으면 그것을 그 자리에(끌어 놓기와 같이 놓은 그대로 자석). 고른 카드 · 면을 놓는 것은 끌기 엔진(onDrop)이 한다
     if (target && frame.contains(target) && !tile && !root.classList.contains('has-selection')) {
+      event.stopPropagation();
       focusId = null;
-      render();
+      const at = toCm(event.clientX, event.clientY);
+      if (held) {
+        const h0 = held;
+        held = null;
+        hidePreview();
+        if (h0.kind === 'card') placeCard(h0.key, at, ((h0.deg / TURN_STEP - turns.get(h0.key)) % 12 + 12) % 12);
+        else moveFace(h0.id, at, (h0.deg / TURN_STEP) % 12);
+        return;
+      }
+      placeNext(at);
     }
   }
   root.addEventListener('click', onClickCapture, true);
@@ -939,6 +974,12 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     } else if ((key === 'Enter' || key === ' ') && focusId && placed.has(focusId)) {
       event.preventDefault();
       startHold('tile', focusId);
+    } else if (key === 'Enter' || key === ' ') {
+      // 고른 면 없이 판에서 Enter: 카드 칸 맨 앞 카드를 든다(직육면체 판의 빈 칸 Enter처럼 — 들고 나서 자리를 골라 Enter로 놓는다)
+      event.preventDefault();
+      const g = frontGroup();
+      if (g) startHold('card', g);
+      else placeNext(null);
     } else if ((key === 'Delete' || key === 'Backspace') && focusId) {
       event.preventDefault();
       removeFace(focusId);

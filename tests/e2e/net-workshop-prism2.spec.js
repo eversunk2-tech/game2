@@ -10,7 +10,7 @@ import { centroid } from '../../src/games/net-workshop/geometry.js';
 import { PRISM_STAGES } from '../../src/games/net-workshop/grade6/prism-stages.js';
 import * as L from '../../src/games/net-workshop/grade6/prism-free-logic.js';
 import { judgeCount, makeCountQuestions } from '../../src/games/net-workshop/grade6/prism-count-logic.js';
-import { dropFor, fitOnBoard, looseSpot, planBoard, planCatalog, samePlace, turnCost } from '../unit/net-workshop-prism-free-plan.js';
+import { dropFor, fitOnBoard, looseSpot, planBoard, planCatalog, planFromPlaced, randomBoard, samePlace, turnCost } from '../unit/net-workshop-prism-free-plan.js';
 import { collectErrors, fileUrl, hasHorizontalScroll, touchFlick, touchGestures } from './helpers.js';
 
 const FILE = 'net-workshop.html';
@@ -809,7 +809,7 @@ test('전개도 완성하기 손짓(마우스): 놓인 면 끌어 옮기기 · �
   await expect(page.locator('.free-fold')).toBeDisabled();
   await expect(page.locator('.free-note')).toContainText('떨어진 면이 있어요');
   await expect(page.locator('.pf-apart')).toHaveCount(1); // 떨어진 면의 점선 테두리(이름 옆 "떨어짐"은 면 안에 들 때)
-  expect(await page.locator('.pf-apart-tag').count()).toBeLessThanOrEqual(1);
+  await expect(page.locator('.pf-apart-tag')).toHaveCount(1); // 면 안에 들지 않으면 면 아래에(G2r-6)
   await expectMatClear(page, '떨어진 면');
   await page.locator('.tool-undo').click();
   await expect(page.locator('.free-fold')).toBeEnabled();
@@ -819,6 +819,96 @@ test('전개도 완성하기 손짓(마우스): 놓인 면 끌어 옮기기 · �
   await expect(tiles(page)).toHaveCount(0);
   await expect(page.locator('.free-fold')).toBeDisabled();
   expect(await page.evaluate(() => window.menus)).toBe(0);
+  expect(errors).toEqual([]);
+});
+
+test('전개도 완성하기 빈 판 누르기(사용자 결정 — 직육면체처럼, review-prism-g2r G2r-2): 고른 것 없이 빈 판을 누르면 카드 칸 맨 앞 카드가 카드 칸에서 돌려 둔 대로 그 자리에(가까운 모서리면 자석), 판 가장자리에 걸치면 판 안으로(G2r-7), 다 놓은 뒤 누르면 알림. 키보드: 판에서 Enter → 맨 앞 카드를 든다', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const touch = touchOf(testInfo);
+  const tapAt = async (pt) => (touch ? page.touchscreen.tap(...pt) : page.mouse.click(...pt));
+  await openStage(page, 'prism-free', '', '1');
+  const play = freePlay('1', page);
+  const cards = L.freeCards(L.freeSolid(play.solidId));
+  const groups = [...new Set(cards.map((c) => c.group))];
+  const front = () => cards.find((c) => c.group === groups.find((g) => cards.some((x) => x.group === g && !placedIds.includes(x.id))) && !placedIds.includes(c.id));
+  const placedIds = [];
+  const placedPolys = [];
+  /** 빈 판의 at(cm)을 누르면 놓일 모양(화면과 같은 놓기 함수 — 맨 앞 카드, 카드 칸의 돌림 turn) */
+  const expectTapAt = async (at, turn = 0) => {
+    const card = front();
+    const want = L.settlePoly(card, L.posePoly(card, turn * 30, at), placedPolys, play.board);
+    expect(want, '놓일 수 있는 자리').not.toBeNull();
+    await tapAt(toScreen(await boardBox(page, play), at));
+    await expect(tiles(page)).toHaveCount(placedIds.length + 1);
+    await expectAt(page, play, { card: card.id, poly: want.poly });
+    placedIds.push(card.id);
+    placedPolys.push({ id: card.id, poly: want.poly });
+    return { card, want };
+  };
+  // 첫 면: 판 가운데쯤 → 맨 앞 카드(가)가 그 자리를 가운데로
+  const a = await expectTapAt([play.board.w / 2, play.board.h / 2]);
+  await expect(liveText(page)).toContainText(`${a.card.label} 면을 놓았어요`);
+  // 다음 맨 앞 카드를 카드 칸에서 R로 돌려 두고(0이 아닌 돌림), 첫 면의 모서리 가까이 누르면 돌린 대로 자석처럼 붙는다
+  const next = front();
+  const spot = L.magnetSpots(next, placedPolys, play.board).map((s) => dropFor(play, next, s.poly, placedPolys)).find((d) => d && d.turn > 0);
+  expect(spot, '돌려서 붙는 자리').toBeTruthy();
+  await cardOf(page, next.group).focus();
+  for (let i = 0; i < spot.turn; i += 1) await page.keyboard.press('r');
+  await expect(cardOf(page, next.group)).toHaveAttribute('data-turn', String(spot.turn));
+  const snapped = await expectTapAt(spot.at, spot.turn);
+  expect(snapped.want.snap, '모서리에 붙음').toBeTruthy();
+  await expect(liveText(page)).toContainText('면의 모서리에 붙었어요');
+  // 판 가장자리에 걸치게(왼쪽 끝에서 0.3 cm) 누르면 판 안으로 당겨 놓인다(G2r-7)
+  const c = front();
+  const turnNow = Number(await cardOf(page, c.group).getAttribute('data-turn'));
+  const edgeAt = [0.3, play.board.h - 1.2];
+  const raw = L.posePoly(c, turnNow * 30, edgeAt);
+  expect(L.insideBoard(raw, play.board)).toBe(false);
+  const got = await expectTapAt(edgeAt, turnNow);
+  expect(L.insideBoard(got.want.poly, play.board)).toBe(true);
+  // 키보드: 판에서(고른 면 없이) Enter → 맨 앞 카드를 든다 → Esc
+  await page.locator('.pf-mboard').focus();
+  await page.keyboard.press('Enter');
+  await expect(liveText(page)).toContainText(`${front().label} 면을 들었어요`);
+  await expect(page.locator('.pf-preview')).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.pf-preview')).toHaveCount(0);
+  // 나머지를 [모두 빼기] 없이 다 놓은 뒤 빈 곳을 누르면 놓을 카드가 없다는 알림(판은 그대로)
+  await pressBtn(page, '.tool-clear', touch ? 'tap' : 'click');
+  await buildPlan(page, play, netPlan(play, 0), [touch ? 'tap' : 'click']);
+  // 빈 곳: 판의 네 귀퉁이 가운데 놓인 면이 없는 곳
+  const polys = await boardPolys(page, play);
+  const empty = [[0.4, 0.4], [play.board.w - 0.4, 0.4], [0.4, play.board.h - 0.4], [play.board.w - 0.4, play.board.h - 0.4]]
+    .find(([x, y]) => polys.every((f) => Math.min(...f.poly.map((v) => Math.hypot(v[0] - x, v[1] - y))) > 0.6 && !(x > Math.min(...f.poly.map((v) => v[0])) && x < Math.max(...f.poly.map((v) => v[0])) && y > Math.min(...f.poly.map((v) => v[1])) && y < Math.max(...f.poly.map((v) => v[1])))));
+  expect(empty, '빈 귀퉁이').toBeTruthy();
+  await tapAt(toScreen(await boardBox(page, play), empty));
+  await expect(liveText(page)).toContainText('모두 놓았어요');
+  await expect(tiles(page)).toHaveCount(cards.length);
+  expect(errors).toEqual([]);
+});
+
+test('전개도 완성하기 같은 길이가 어긋나게 맞닿은 판(review-prism-g2r G2r-1): "맞닿는 선분의 길이가 달라요"를 고르면 쪽지 · 이름표의 두 길이는 정말 다르다(같은 길이를 "달라요"라고 하지 않는다)', async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  const touch = touchOf(testInfo);
+  await openStage(page, 'prism-free', '', '1');
+  const play = freePlay('1', page);
+  // 이 시드의 판에 학생처럼 놓은 판 하나(검사 도우미의 무작위 판 — 어긋나게 맞닿은 경첩이 먼저 나와 예전 규칙이면 "4 cm와 4 cm"였던 판)
+  const b = randomBoard(play, createRng('find-1-2862'));
+  const r = L.judgeFreeNet(L.freeSolid(play.solidId), b.placed, L.rootCardId(L.freeCards(L.freeSolid(play.solidId))));
+  expect(r.problems.some((p) => p.type === 'edge-length' && p.hinge && Math.abs(p.lengths[0] - p.lengths[1]) < 1e-6), '어긋나게 맞닿은 경첩').toBe(true);
+  await buildPlan(page, play, planFromPlaced(play, b.placed), [touch ? 'tap' : 'click']);
+  await foldNow(page, touch ? 'touch' : 'mouse');
+  await pressBtn(page, '.reason-chip[data-reason="length"]', touch ? 'tap' : 'click');
+  await expect(page.locator('.reason-pick-result')).toContainText('맞아요');
+  const note = await page.locator('.reason').textContent();
+  const m = /길이가 (.+?) cm[와과] (.+?) cm로 달라요/.exec(note);
+  expect(m, note).not.toBeNull();
+  expect(m[1]).not.toBe(m[2]);
+  const tags = (await page.locator('.free-host .edge-tag').allTextContents()).map((t) => t.trim());
+  expect(tags).toHaveLength(2);
+  expect(tags[0]).not.toBe(tags[1]);
   expect(errors).toEqual([]);
 });
 
@@ -1010,6 +1100,7 @@ for (const sizeName of Object.keys(SIZES)) test(`전개도 완성하기 배치($
     else await page.mouse.click(sx, sy);
     await expect(page.locator('.free-fold')).toBeDisabled();
     await expect(page.locator('.pf-apart')).toHaveCount(1);
+    await expect(page.locator('.pf-apart-tag')).toHaveCount(1); // 작은 면이면 면 아래에(G2r-6)
     await noScroll(page, `${size.width} 떨어진 면`);
     await expectPanelFits(page, `${size.width} 떨어진 면`);
     await expectMatClear(page, `${size.width} 떨어진 면`);

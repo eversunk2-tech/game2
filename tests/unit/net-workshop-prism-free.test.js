@@ -295,7 +295,7 @@ test('자석이 붙는 자리 = 독립 계산: 무작위로 놓아 가는 판 90
   assert.ok(spots > 10_000 && unequal > 3_000 && equal > 3_000, `${spots} · 같은 길이 ${equal} · 다른 길이 ${unequal}`);
 });
 
-test('끌어 놓기 자석(15-31 · 덧붙임): 방향이 15° 안 · 변의 가운데가 1 cm 안이면 붙고(넘으면 놓은 그대로), 길이가 다르면 가운데 · 양 끝 맞춤 가운데 덜 움직이는 쪽(독립 계산), 겹치거나 판 밖이면 놓이지 않는다', () => {
+test('끌어 놓기 자석(15-31 · 덧붙임 · G2r-4 · 5 · 7): 방향이 20° 안 · (면을 그 모서리 방향으로 돌린 뒤) 변의 가운데가 1 cm 안이면 붙고(넘으면 놓은 그대로), 길이가 다르면 가운데 · 양 끝 맞춤 가운데 덜 움직이는 쪽(독립 계산), 겹치면 놓이지 않고 판 가장자리에 걸치면 판 안으로', () => {
   const rng = createRng('magnet');
   let checked = 0;
   let unequal = 0;
@@ -316,7 +316,7 @@ test('끌어 놓기 자석(15-31 · 덧붙임): 방향이 15° 안 · 변의 가
     if (placed.some((g) => convexOverlap(target, g.poly))) continue;
     // 목표 자리에서 조금 돌리고(±dθ) 옮겨(변을 따라 · 바깥쪽으로) 놓는다
     const c = target.reduce((s, v) => [s[0] + v[0] / target.length, s[1] + v[1] / target.length], [0, 0]);
-    const dTurn = rng.pick([0, 5, -9, 14, -14, 16, -20]);
+    const dTurn = rng.pick([0, 5, -9, 14, -14, 16, -19, 20, -21, 25]);
     const u = [(q[0] - p[0]) / d2(p, q), (q[1] - p[1]) / d2(p, q)];
     const along = rng.pick([0, 0.1, -0.2, 0.3]);
     const out = rng.pick([0, 0.4, 0.8, 1.3]);
@@ -327,13 +327,18 @@ test('끌어 놓기 자석(15-31 · 덧붙임): 방향이 15° 안 · 변의 가
     });
     if (!moved.every(([x, y]) => x >= 0 && y >= 0 && x <= size.w && y <= size.h)) continue;
     const got = L.settlePoly(b, moved, placed, size);
-    // 독립: 움직인 변 k의 가운데에서 가장 가까운 맞춤(같은 모서리) — 1 cm 안이고 방향이 15° 안이면 그 자리
+    // 독립: 놓은 모양을 그 모서리 방향으로 되돌린(가운데를 축으로 −dθ) 뒤 변 k의 가운데에서 가장 가까운 맞춤(같은 모서리) — 1 cm 안이고 방향이 20° 안이면 그 자리
     const mid = (poly) => [(poly[k][0] + poly[(k + 1) % poly.length][0]) / 2, (poly[k][1] + poly[(k + 1) % poly.length][1]) / 2];
+    const mc = moved.reduce((acc, v) => [acc[0] + v[0] / moved.length, acc[1] + v[1] / moved.length], [0, 0]);
+    const back = moved.map((v) => {
+      const r = rot([v[0] - mc[0], v[1] - mc[1]], (-dTurn * Math.PI) / 180);
+      return [r[0] + mc[0], r[1] + mc[1]];
+    });
     const options = (same ? ['mid'] : ['mid', 'p', 'q']).map((al) => ({ al, poly: indepAttach(b.poly, k, p, q, al) }))
       .filter((o) => !placed.some((g) => convexOverlap(o.poly, g.poly)) && o.poly.every(([x, y]) => x >= -1e-6 && y >= -1e-6 && x <= size.w + 1e-6 && y <= size.h + 1e-6))
-      .map((o) => ({ ...o, dist: d2(mid(o.poly), mid(moved)) }))
+      .map((o) => ({ ...o, dist: d2(mid(o.poly), mid(back)) }))
       .sort((x, y) => x.dist - y.dist);
-    const snaps = Math.abs(dTurn) <= 15 && options.length > 0 && options[0].dist <= 1 + 1e-9;
+    const snaps = Math.abs(dTurn) <= 20 && options.length > 0 && options[0].dist <= 1 + 1e-9;
     // 다른 변(k가 아닌 변)이 더 가까이 맞는 경우는 빼고 견준다 — 이 검사는 한 변을 본다
     if (got?.snap && got.snap.cardEdge !== k) continue;
     if (snaps) {
@@ -348,12 +353,16 @@ test('끌어 놓기 자석(15-31 · 덧붙임): 방향이 15° 안 · 변의 가
     checked += 1;
   }
   assert.ok(checked > 300 && unequal > 50, `${checked} · ${unequal}`);
-  // 겹침 · 판 밖
+  assert.equal(L.MAGNET_ANGLE, 20);
+  // 겹침 · 판 가장자리(직육면체처럼 판 안으로 당김 — 가장 조금)
   const play = { solidId: 'hex-a', board: L.boardSize('hex-a') };
   const cards = L.freeCards(L.freeSolid('hex-a'));
   const base = L.posePoly(cards[0], 0, [9, 6]);
   assert.equal(L.settlePoly(cards[1], L.posePoly(cards[1], 0, [9.3, 6.2]), [{ id: 'f0', poly: base }], play.board), null, '겹침');
-  assert.equal(L.settlePoly(cards[2], L.posePoly(cards[2], 0, [0.2, 6]), [], play.board), null, '판 밖');
+  const edge = L.settlePoly(cards[2], L.posePoly(cards[2], 0, [0.2, 6]), [], play.board);
+  assert.ok(edge && L.insideBoard(edge.poly, play.board), '판 가장자리에 걸치면 판 안으로');
+  assert.ok(Math.abs(Math.min(...edge.poly.map((v) => v[0]))) < 1e-9, '왼쪽 끝에 닿게(가장 조금 옮김)');
+  assert.ok(samePlace(edge.poly, L.posePoly(cards[2], 0, [0.2 - Math.min(...L.posePoly(cards[2], 0, [0.2, 6]).map((v) => v[0])), 6])));
   assert.ok(L.settlePoly(cards[2], L.posePoly(cards[2], 0, [15, 6]), [{ id: 'f0', poly: base }], play.board), '빈 곳');
 });
 
@@ -370,13 +379,11 @@ test('정답 노출 0(자석): 붙는 자리 · 붙은 모양은 길이가 맞�
     const card = L.freeCards(L.freeSolid(play.solidId)).find((c) => c.id === next.card);
     const all = L.magnetSpots(card, placed, play.board);
     for (const s of all) {
-      // 그 자리를 놓인 면에서 0.3 cm 떨어뜨리고 붙는 변의 가운데를 축으로 8° 돌려 놓아도 그 자리에 붙는다(맞는 자리 · 틀린 자리 · 길이가 다른 자리 같게)
+      // 그 자리를 놓인 면에서 0.3 cm 떨어뜨리고 면의 가운데를 축으로 8° 돌려 놓아도 그 자리에 붙는다(맞는 자리 · 틀린 자리 · 길이가 다른 자리 같게)
       const parent = placed.find((f) => f.id === s.face).poly;
       const [p, q] = [parent[s.edge], parent[(s.edge + 1) % parent.length]];
       const out = [(q[1] - p[1]) / d2(p, q), -(q[0] - p[0]) / d2(p, q)];
-      const n = s.poly.length;
-      const m = [(s.poly[s.cardEdge][0] + s.poly[(s.cardEdge + 1) % n][0]) / 2 + out[0] * 0.3, (s.poly[s.cardEdge][1] + s.poly[(s.cardEdge + 1) % n][1]) / 2 + out[1] * 0.3];
-      const raw = L.turnPoly(s.poly.map(([x, y]) => [x + out[0] * 0.3, y + out[1] * 0.3]), 8, m);
+      const raw = L.turnPoly(s.poly.map(([x, y]) => [x + out[0] * 0.3, y + out[1] * 0.3]), 8);
       if (!raw.every(([x, y]) => x >= 0 && y >= 0 && x <= play.board.w && y <= play.board.h)) continue;
       const got = L.settlePoly(card, raw, placed, play.board);
       assert.ok(got?.snap, '자리마다 붙는다');
@@ -387,6 +394,83 @@ test('정답 노출 0(자석): 붙는 자리 · 붙은 모양은 길이가 맞�
     }
   }
   assert.ok(right >= 100 && wrong > 1000, `맞는 자리 ${right} · 다른 자리 ${wrong}`);
+});
+
+test('빗변에 붙이기(review-prism-g2r G2r-4 · G2r-5): 밑면 하나에 붙는 모든 자리(빈 모서리 × 카드의 변 × 맞춤 — 독립 계산)마다, 그 방향에서 20° 안인 30° 단계로 그 자리의 가운데에 놓으면 바로 그 자리(그 맞춤)에 붙는다. 빗변 방향이 단계의 가운데쯤이면(가까운 11.8~14°, 먼 16~18.2°) 이웃한 두 단계 모두', () => {
+  const tally = { spots: 0, tries: 0, slantedSides: 0, sideBoth: 0, unequal: 0 };
+  for (const id of Object.keys(L.FREE_SHAPES)) {
+    const play = { solidId: id, board: L.boardSize(id) };
+    const cards = L.freeCards(L.freeSolid(id));
+    for (const turn0 of [0, 1, 2]) {
+      const base = L.posePoly(cards[0], turn0 * 30, [play.board.w / 2, play.board.h / 2]);
+      const placed = [{ id: cards[0].id, poly: base }];
+      for (const card of cards.slice(1)) {
+        for (const spot of indepSpots(card, placed, play.board)) {
+          tally.spots += 1;
+          // 그 자리의 방향(카드에서 돌린 각) — 독립: 변 0의 방향 차
+          const deg = ((((ang(spot.poly[0], spot.poly[1]) - ang(card.poly[0], card.poly[1])) * 180) / Math.PI) % 360 + 360) % 360;
+          const steps = Array.from({ length: 12 }, (_, k) => k).filter((k) => {
+            const off = Math.abs(((deg - k * 30) % 360 + 540) % 360 - 180);
+            return off <= 20 + 1e-9;
+          });
+          const c = spot.poly.reduce((acc, v) => [acc[0] + v[0] / spot.poly.length, acc[1] + v[1] / spot.poly.length], [0, 0]);
+          for (const k of steps) {
+            const got = L.settlePoly(card, L.posePoly(card, k * 30, c), placed, play.board);
+            tally.tries += 1;
+            assert.ok(got?.snap && samePlace(got.poly, spot.poly, 1e-6), `${id} ${card.label} ${deg.toFixed(1)}° → ${k * 30}°: 그 자리(${spot.equal ? '같은 길이' : '다른 길이'})에`);
+          }
+          if (card.role === 'side' && steps.length === 2) {
+            tally.slantedSides += 1;
+            tally.sideBoth += 1;
+          }
+          if (!spot.equal) tally.unequal += 1;
+        }
+      }
+    }
+  }
+  assert.ok(tally.slantedSides > 50 && tally.unequal > 300 && tally.tries > tally.spots, JSON.stringify(tally));
+  // 빗변 방향이 30° 단계의 가운데쯤(10~20°)이면 이웃한 두 단계 모두 20° 안 — 그런 빗변이 있는 각기둥(이등변삼각 · 사다리꼴)에서 실제로 두 단계가 붙었다
+  const middling = [];
+  for (const id of ['tri-a', 'tri-b', 'trap-a', 'trap-b']) {
+    const base = L.FREE_SHAPES[id].base;
+    for (let i = 0; i < base.length; i += 1) {
+      const a = (((ang(base[i], base[(i + 1) % base.length]) * 180) / Math.PI) % 30 + 30) % 30;
+      if (a >= 10 && a <= 20) middling.push(`${id}:${i}`);
+    }
+  }
+  assert.ok(middling.length >= 4, middling.join(' '));
+});
+
+test('같은 길이가 어긋나게 맞닿은 곳(review-prism-g2r G2r-1): 학생처럼 놓은 판 6,000개 — 쪽지가 "○ cm와 △ cm로 달라요"라고 할 때 두 길이는 늘 다르고, 어긋나게 맞닿은 곳은 "어긋나게"로 말한다(길이가 정말 다른 곳이 있으면 그것을 먼저). 무대의 길이 이름표도 길이가 다를 때만', () => {
+  const tally = { boards: 0, shifted: 0, saidShift: 0, saidLen: 0 };
+  for (let seed = 0; seed < 6000; seed += 1) {
+    const rng = createRng(`shift-${seed}`);
+    const play = L.makeFreePlay(STAGE, rng, { portrait: seed % 2 === 0 });
+    const b = randomBoard(play, rng);
+    if (!b || !L.foldReadiness(b.placed, b.placed.length).ready) continue;
+    tally.boards += 1;
+    const r = L.judgeFreeNet(L.freeSolid(play.solidId), b.placed, rootOf(play.solidId));
+    if (r.valid) continue;
+    const shifted = r.problems.filter((p) => p.type === 'edge-length' && Math.abs(p.lengths[0] - p.lengths[1]) < 1e-6);
+    const real = r.problems.filter((p) => p.type === 'edge-length' && Math.abs(p.lengths[0] - p.lengths[1]) > 1e-6);
+    if (shifted.length > 0) tally.shifted += 1;
+    for (const chosen of [null, 'length', 'overlap']) {
+      const text = L.explainFreeProblem(r.net, r.problems, chosen);
+      const m = /길이가 (.+?) cm[와과] (.+?) cm로 달라요/.exec(text);
+      if (m) {
+        tally.saidLen += 1;
+        assert.notEqual(m[1], m[2], `시드 ${seed}: ${text}`);
+      }
+      const p = L.primaryFreeProblem(r.problems, chosen);
+      if (p?.type === 'edge-length' && !L.realLengthGap(p)) {
+        tally.saidShift += 1;
+        assert.match(text, /어긋나게/);
+        assert.equal(real.length, 0, '길이가 정말 다른 곳이 있으면 그것을 먼저');
+      }
+      if (chosen === 'length' && real.length > 0) assert.ok(L.realLengthGap(p), '길이를 고르면 길이가 정말 다른 곳');
+    }
+  }
+  assert.ok(tally.shifted > 50 && tally.saidLen > 1000, JSON.stringify(tally));
 });
 
 // ── 판정 ────────────────────────────────────
