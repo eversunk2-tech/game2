@@ -149,13 +149,21 @@
 }
 .pf-legends[hidden] { display: none; }
 .prism-free .pf-legends .board-legend { position: static; max-width: 100%; white-space: normal; }
-.pf-mboard { position: absolute; z-index: 2; touch-action: manipulation; }
-.pf-mboard[hidden] { display: none; }
-.pf-mboard:focus-visible { outline: 3px solid var(--paper); outline-offset: 3px; }
+.pf-mboard-clip { position: absolute; z-index: 2; overflow: hidden; border-radius: 10px; }
+.pf-mboard-clip[hidden] { display: none; }
+.pf-mboard { position: absolute; left: 0; top: 0; touch-action: manipulation; }
+/* 판을 옮겨 볼 수 있는 동안: 두 손가락 끌기를 판이 받는다(브라우저 확대 · 쓸기 대신) */
+.pf-mboard.can-pan { touch-action: none; }
+/* 판 옮겨 보기 [◀][▶] — 자유 쌓기(blocks.css .blk-free-pan)와 같은 모습 */
+.pf-pan { position: absolute; z-index: 4; border-radius: 50%; }
+.pf-pan.is-next .icon { transform: scaleX(-1); }
+.pf-pan:disabled { opacity: 0.45; }
+.pf-mboard:focus-visible { outline: 3px solid var(--paper); outline-offset: -3px; }
+/* 판은 매트의 놓는 곳을 꽉 채우고 잘린다: 고르기 · 끄는 중의 놓을 곳 테두리(엔진 base.css)를 안쪽에 */
+.prism-free .pf-mboard-frame.dnd-target { outline-offset: -4px; }
 /* 판의 테두리(칸 없음): 놓을 수 있는 곳을 점선으로 */
-/* 테두리는 그림만(::before) — 판의 (0, 0) cm가 판 상자의 왼쪽 위 그대로(면 · 선 · 누른 자리 셈이 같은 원점) */
+/* 판 = 매트의 놓는 곳 전체(15-32): 흰 점선 테두리는 그리지 않는다. 판의 (0, 0) cm가 판 상자의 왼쪽 위 */
 .pf-mboard-frame { position: absolute; inset: 0; }
-.pf-mboard-frame::before { content: ''; position: absolute; inset: 0; border: 2px dashed rgb(255 253 248 / 55%); border-radius: 10px; pointer-events: none; }
 .pf-tiles { position: absolute; inset: 0; }
 .pf-tile { position: absolute; cursor: grab; touch-action: none; }
 .pf-tile svg { position: absolute; left: 0; top: 0; overflow: visible; }

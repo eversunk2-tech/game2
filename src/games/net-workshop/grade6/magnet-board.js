@@ -74,12 +74,13 @@ function cardArt(card, deg, k) {
  * @param {HTMLElement} p.root    끌어다 놓기의 뿌리(작업대 — 판과 카드 칸을 함께 품는다. .has-selection · .is-dragging-any가 붙는다)
  * @param {HTMLElement} p.host    판을 그릴 곳(.free-host — 무대와 같은 자리)
  * @param {Array} p.cards         면 카드 한 벌 (prism-free-logic.js freeCards)
- * @param {{w:number,h:number}} p.size  판의 크기(cm)
- * @param {Function} p.area       판으로 쓸 곳 () => { left, top, width, height } (host 기준 px)
+ * @param {{w:number,h:number}} p.fit   1 cm의 크기를 정하는 크기(cm): 만들 각기둥 창에 가리지 않는 곳(free)에 이만큼이 늘 들게(어느 전개도든 다 보이게)
+ * @param {Function} p.area       판으로 쓸 곳 () => { left, top, width, height(매트의 놓는 곳 전체 — host 기준 px), free: 창에 가리지 않는 가장 큰 직사각형,
+ *                                cover: 판을 가리는 창의 자리 | null }. 판은 매트 전체(15-32 "초록 판을 다 활용") — 창에 가린 곳은 옆으로 옮겨 본다
  * @param {Function} [p.onChange] 놓인 면이 바뀌면 (message)
  * @param {Function} [p.onRefuse] 놓이지 않을 때 (text)
  */
-export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange = null, onRefuse = null }) {
+export function createMagnetBoard({ ctx, root, host, cards, fit: fitSize, area, onChange = null, onRefuse = null }) {
   const { h } = ctx;
   const cardById = new Map(cards.map((c) => [c.id, c]));
   const groups = [...new Set(cards.map((c) => c.group))];
@@ -89,6 +90,12 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
   let turns = new Map(groups.map((g) => [g, 0])); // 카드 칸 카드의 돌림(30° 몇 번)
   const history = [];
   let view = { unit: 20, origin: [0, 0], W: 0, H: 0 };
+  let size = { w: fitSize.w, h: fitSize.h }; // 판(매트 전체)의 크기(cm) — fit()이 화면에 맞춰 정한다
+  let free = { x: 0, y: 0, w: fitSize.w, h: fitSize.h }; // 창에 가리지 않는 곳(cm)
+  // 판 옮겨 보기(15-32 — 자유 쌓기 결정 15-19의 9와 같은 뜻): 판(놓인 면과 함께)을 옆으로 옮긴 거리(px). lo ≤ x ≤ 0(0 = 제자리)
+  let pan = { x: 0, lo: 0, target: 0 };
+  let blockers = [];
+  let panRaf = 0;
   let enabled = true;
   let last = null; // 마지막으로 놓거나 옮긴 면 ([돌리기]가 가리키는 면)
   let held = null; // 키보드로 든 것: { kind: 'card' | 'tile', id, spots, index, at, deg }
@@ -115,9 +122,21 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     role: 'group',
     tabindex: '0',
     'aria-roledescription': '전개도 놓는 판',
-    'aria-label': '전개도 놓는 판. Enter로 카드 칸 맨 앞 카드를 들고(카드에서 Enter도 돼요), 방향키로 자리를 고르고 Enter로 놓아요. 놓인 면은 방향키로 골라요. R 키는 돌리기, Delete는 빼기예요.',
+    'aria-label': '전개도 놓는 판. Enter로 카드 칸 맨 앞 카드를 들고(카드에서 Enter도 돼요), 방향키로 자리를 고르고 Enter로 놓아요. 놓인 면은 방향키로 골라요. R 키는 돌리기, Delete는 빼기, Shift와 방향키는 판 옮겨 보기예요.',
   }, frame, overlay, marks, boardHandle);
-  host.prepend(boardEl);
+  // 매트의 놓는 곳: 판을 옆으로 옮겨도 매트 밖으로 나간 부분은 보이지 않게 자른다
+  const clip = h('div', { class: 'pf-mboard-clip' }, boardEl);
+  const panButton = (cls, label) => h('button', {
+    type: 'button',
+    class: `btn btn-icon pf-pan ${cls}`,
+    hidden: true,
+    'aria-label': label,
+    title: label,
+    onclick: () => panBy(cls === 'is-prev' ? -1 : 1, { say: true }),
+  }, icon('back'));
+  const panPrev = panButton('is-prev', '판 왼쪽 보기'); // ◀ 판을 제자리 쪽(오른쪽)으로 — 왼쪽 부분을 본다
+  const panNext = panButton('is-next', '판 오른쪽 보기'); // ▶ 판을 왼쪽으로 — 창에 가린 오른쪽 부분을 본다
+  host.prepend(clip, panPrev, panNext);
 
   const tileEls = new Map();
   const cardEls = new Map(groups.map((g) => [g, h('button', { type: 'button', class: 'tray-card pf-card dnd-item', dataset: { group: g }, 'aria-pressed': 'false' })]));
@@ -269,16 +288,174 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
   }
 
   // ── 판의 크기 · 그리기 ──────────────────
+  /**
+   * 판 = 매트의 놓는 곳 전체(box). 1 cm(unit)는 창에 가리지 않는 곳(box.free)에 fit 크기가 들게 — 어느 전개도든 옮기지 않고 다 보인다.
+   * 창이 판을 가리면(box.cover) 판을 왼쪽으로 창의 폭만큼까지 옮겨 볼 수 있다(lo). 크기가 바뀌어 놓인 면이 판 밖이면 함께 안으로 옮긴다
+   */
   function fit() {
+    if (!enabled && view.W > 0) return; // 접는 동안(판이 숨음 · 만들 각기둥 창도 숨음)은 판의 모양을 그대로 둔다
     const box = area();
-    const unit = Math.max(4, Math.min(box.width / size.w, box.height / size.h));
-    const W = size.w * unit;
-    const H = size.h * unit;
-    view = { unit, origin: [box.left + (box.width - W) / 2, box.top + (box.height - H) / 2], W, H };
-    Object.assign(boardEl.style, { left: `${view.origin[0]}px`, top: `${view.origin[1]}px`, width: `${W}px`, height: `${H}px` });
+    const fr = box.free ?? box;
+    const unit = Math.max(4, Math.min(fr.width / fitSize.w, fr.height / fitSize.h));
+    const [W, H] = [box.width, box.height];
+    view = { unit, origin: [box.left, box.top], W, H };
+    size = { w: W / unit, h: H / unit };
+    free = { x: (fr.left - box.left) / unit, y: (fr.top - box.top) / unit, w: fr.width / unit, h: fr.height / unit };
+    Object.assign(clip.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${W}px`, height: `${H}px` });
+    Object.assign(boardEl.style, { width: `${W}px`, height: `${H}px` });
     overlay.setAttribute('width', String(W));
     overlay.setAttribute('height', String(H));
+    // 놓인 면이 판 밖으로 나갔으면(화면 크기가 바뀜) 모두 함께 가장 조금 안으로
+    if (placed.size > 0) {
+      const pts = [...placed.values()].flat();
+      const [x0, x1] = [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0]))];
+      const [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
+      const dx = x0 < 0 ? -x0 : x1 > size.w ? Math.max(-x0, size.w - x1) : 0;
+      const dy = y0 < 0 ? -y0 : y1 > size.h ? Math.max(-y0, size.h - y1) : 0;
+      if (dx || dy) placed = new Map([...placed].map(([k, poly]) => [k, poly.map(([x, y]) => [x + dx, y + dy])]));
+    }
+    // 옮겨 볼 수 있는 범위: 창(cover)이 판과 겹치면 창의 오른쪽 끝이 창 왼쪽 8px 밖으로 나올 만큼
+    const cv = box.cover;
+    const covers = cv && cv.left < box.left + W && cv.left + cv.width > box.left && cv.top < box.top + H && cv.top + cv.height > box.top;
+    const lo = covers ? -Math.round(Math.min(cv.left + cv.width, box.left + W) - Math.max(cv.left, box.left) + 8) : 0;
+    pan.lo = lo;
+    // 손잡이가 피할 곳(판 상자 기준 px — 옮기지 않은 판의 자리): 만들 각기둥 창과 판 옮겨 보기 버튼 줄
+    blockers = covers ? [{ x0: cv.left - box.left - 4, x1: cv.left + cv.width - box.left + 4, y0: cv.top - box.top - 4, y1: cv.top + cv.height + 8 + 48 + 4 - box.top }] : [];
+    if (pan.x < lo || pan.x > 0) pan.x = Math.min(0, Math.max(lo, pan.x));
+    pan.target = Math.min(0, Math.max(lo, pan.target));
+    applyPan();
+    if (!panRaf) boardEl.dataset.pan = String(Math.round(pan.x));
+    placePanButtons(box);
+    boardEl.dataset.unit = unit.toFixed(4);
+    boardEl.dataset.board = `${size.w.toFixed(4)},${size.h.toFixed(4)}`;
+    boardEl.dataset.free = [free.x, free.y, free.w, free.h].map((v) => v.toFixed(4)).join(',');
   }
+
+  // ── 판 옮겨 보기: [◀][▶] · Shift+방향키 · 두 손가락으로 함께 끌기. 새로 만들기 · 접었다 펴기 · 다시 들어오기에서 제자리 ─────
+  const PAN_PART = 0.3;
+  const PAN_MS = 180;
+  const canPan = () => enabled && pan.lo < -4;
+  const instantPan = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) || Boolean(host.closest('.fx-low'));
+  function applyPan() {
+    boardEl.style.transform = pan.x ? `translateX(${pan.x.toFixed(2)}px)` : '';
+    boardEl.classList.toggle('can-pan', canPan());
+  }
+  function placePanButtons(box = null) {
+    const on = canPan();
+    panPrev.hidden = !on;
+    panNext.hidden = !on;
+    if (!on) return;
+    if (box) {
+      // 만들 각기둥 창 바로 아래, 오른쪽에 붙여 [◀][▶]
+      const cv = box.cover;
+      const top = Math.round(Math.min(cv.top + cv.height + 8, box.top + box.height - 48 - 4));
+      const right = Math.round(Math.min(cv.left + cv.width, box.left + box.width - 4));
+      Object.assign(panNext.style, { left: `${right - 48}px`, top: `${top}px` });
+      Object.assign(panPrev.style, { left: `${right - 48 - 8 - 48}px`, top: `${top}px` });
+    }
+    setPanOff(panPrev, pan.target >= -0.5);
+    setPanOff(panNext, pan.target <= pan.lo + 0.5);
+  }
+  function setPanOff(button, off) {
+    if (button.disabled === off) return;
+    const focused = off && document.activeElement === button;
+    button.disabled = off;
+    if (!focused) return;
+    const other = button === panPrev ? panNext : panPrev;
+    (other.disabled || other.hidden ? boardEl : other).focus({ preventScroll: true });
+  }
+  /** look −1 = 왼쪽 보기(판을 오른쪽 · 제자리 쪽으로), +1 = 오른쪽 보기(판을 왼쪽으로 — 창에 가린 곳이 창 왼쪽에 나온다) */
+  function panBy(look, { say = false } = {}) {
+    if (!canPan()) return;
+    const step = Math.max(48, Math.round(view.W * PAN_PART));
+    const from = panRaf ? pan.target : pan.x;
+    if (look < 0 ? from >= -0.5 : from <= pan.lo + 0.5) return;
+    const to = look < 0 ? Math.min(0, from + step) : Math.max(pan.lo, from - step);
+    panTo(to);
+    if (say) {
+      const end = look < 0 ? to >= -0.5 : to <= pan.lo + 0.5;
+      ctx.feedback.announce(look < 0 ? `판 왼쪽을 보도록 옮겼어요.${end ? ' 제자리예요.' : ''}` : `판 오른쪽을 보도록 옮겼어요.${end ? ' 끝까지 옮겼어요.' : ''}`);
+    }
+  }
+  function panTo(target, { instant = false } = {}) {
+    cancelAnimationFrame(panRaf);
+    panRaf = 0;
+    pan.target = target;
+    placePanButtons();
+    const from = pan.x;
+    if (instant || instantPan() || Math.abs(target - from) < 0.5) {
+      pan.x = target;
+      applyPan();
+      afterPan();
+      return;
+    }
+    let t0 = null;
+    boardEl.dataset.panning = '1'; // 움직이는 동안(검사가 끝을 기다린다)
+    const tick = (now) => {
+      t0 ??= now;
+      const p = Math.min(1, (now - t0) / PAN_MS);
+      pan.x = from + (target - from) * (1 - (1 - p) ** 3);
+      applyPan();
+      if (p < 1) panRaf = requestAnimationFrame(tick);
+      else {
+        panRaf = 0;
+        pan.x = target;
+        applyPan();
+        afterPan();
+      }
+    };
+    panRaf = requestAnimationFrame(tick);
+  }
+  /** 옮긴 뒤: 손잡이 자리 · 키보드로 든 것의 미리 보기는 판과 함께 움직였다(판 안의 것) — 상태 글만 */
+  function afterPan() {
+    delete boardEl.dataset.panning;
+    boardEl.dataset.pan = String(Math.round(pan.x));
+    placeHandles();
+  }
+  function resetPan() {
+    panTo(0, { instant: true });
+  }
+  // 두 손가락으로 함께 끌기: 빈 곳에서 시작한 두 손가락(끄는 중이 아닐 때) — 손을 따라 판이 옆으로
+  const touches = new Map();
+  let twoPan = null;
+  let swallowTapUntil = 0;
+  function onTouchDown(event) {
+    if (event.pointerType !== 'touch' || !canPan()) return;
+    touches.set(event.pointerId, { x: event.clientX, y: event.clientY, onTile: Boolean(event.target instanceof Element && event.target.closest('.pf-tile')) });
+    if (touches.size === 2 && !dragging() && ![...touches.values()].some((t) => t.onTile)) {
+      const xs = [...touches.values()].map((t) => t.x);
+      cancelAnimationFrame(panRaf);
+      panRaf = 0;
+      delete boardEl.dataset.panning;
+      twoPan = { mid: (xs[0] + xs[1]) / 2, from: pan.x };
+      event.preventDefault();
+    }
+  }
+  function onTouchMove(event) {
+    if (!touches.has(event.pointerId)) return;
+    touches.set(event.pointerId, { ...touches.get(event.pointerId), x: event.clientX, y: event.clientY });
+    if (!twoPan || touches.size < 2) return;
+    event.preventDefault();
+    const xs = [...touches.values()].map((t) => t.x);
+    const mid = (xs[0] + xs[1]) / 2;
+    pan.x = Math.min(0, Math.max(pan.lo, twoPan.from + mid - twoPan.mid));
+    pan.target = pan.x;
+    applyPan();
+    placePanButtons();
+    afterPan();
+  }
+  function onTouchUp(event) {
+    if (!touches.has(event.pointerId)) return;
+    touches.delete(event.pointerId);
+    if (twoPan) {
+      swallowTapUntil = performance.now() + 400; // 두 손가락을 뗄 때 따라오는 누르기는 놓기로 받지 않는다
+      if (touches.size === 0) twoPan = null;
+    }
+  }
+  boardEl.addEventListener('pointerdown', onTouchDown, true);
+  window.addEventListener('pointermove', onTouchMove, { passive: false });
+  window.addEventListener('pointerup', onTouchUp);
+  window.addEventListener('pointercancel', onTouchUp);
   const px = ([x, y]) => [x * view.unit, y * view.unit];
   /** 화면 점(client px) → 판의 cm */
   function toCm(clientX, clientY) {
@@ -532,6 +709,7 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     // 키보드로 든 것이 있으면 그것을 그 자리에(끌어 놓기와 같이 놓은 그대로 자석). 고른 카드 · 면을 놓는 것은 끌기 엔진(onDrop)이 한다
     if (target && frame.contains(target) && !tile && !root.classList.contains('has-selection')) {
       event.stopPropagation();
+      if (performance.now() < swallowTapUntil) return; // 두 손가락으로 판을 옮긴 뒤의 누르기
       focusId = null;
       const at = toCm(event.clientX, event.clientY);
       if (held) {
@@ -662,16 +840,19 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
       handle.hidden = !on;
       if (!on || turning) continue;
       if (handle === boardHandle) {
-        // 면의 꼭짓점 가운데 판의 가운데에서 가장 먼 쪽 바깥(판 안으로 당김)
+        // 면의 꼭짓점 바깥(면 가운데에서 먼 꼭짓점 차례로) — 판 안으로 당기고, 만들 각기둥 창 · 판 옮겨 보기 버튼에 가리지 않는 첫 자리(15-32)
         const pts = placed.get(target.id).map(px);
         const c = centroid(pts);
-        const far = pts.reduce((best, p) => (Math.hypot(p[0] - c[0], p[1] - c[1]) - p[1] * 0.05 > Math.hypot(best[0] - c[0], best[1] - c[1]) - best[1] * 0.05 ? p : best), pts[0]);
-        const d = [far[0] - c[0], far[1] - c[1]];
-        const len = Math.hypot(...d) || 1;
-        const x = far[0] + (d[0] / len) * 26 - HANDLE / 2;
-        const y = far[1] + (d[1] / len) * 26 - HANDLE / 2;
-        handle.style.left = `${Math.max(0, Math.min(view.W - HANDLE, x))}px`;
-        handle.style.top = `${Math.max(0, Math.min(view.H - HANDLE, y))}px`;
+        const order = [...pts].sort((a, b) => (Math.hypot(b[0] - c[0], b[1] - c[1]) - b[1] * 0.05) - (Math.hypot(a[0] - c[0], a[1] - c[1]) - a[1] * 0.05));
+        const at = (far) => {
+          const d = [far[0] - c[0], far[1] - c[1]];
+          const len = Math.hypot(...d) || 1;
+          return [Math.max(0, Math.min(view.W - HANDLE, far[0] + (d[0] / len) * 26 - HANDLE / 2)), Math.max(0, Math.min(view.H - HANDLE, far[1] + (d[1] / len) * 26 - HANDLE / 2))];
+        };
+        const blocked = ([x, y]) => blockers.some((b) => x + pan.x < b.x1 && x + pan.x + HANDLE > b.x0 && y < b.y1 && y + HANDLE > b.y0);
+        const [x, y] = order.map(at).find((spot) => !blocked(spot)) ?? at(order[0]);
+        handle.style.left = `${x}px`;
+        handle.style.top = `${y}px`;
       } else {
         const card = cardEls.get(target.id);
         const tb = trayEl.getBoundingClientRect();
@@ -834,7 +1015,7 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
   }
 
   // ── 키보드 ───────────────────────────
-  const centerAt = () => [size.w / 2, size.h / 2];
+  const centerAt = () => [free.x + free.w / 2, free.y + free.h / 2]; // 창에 가리지 않는 곳의 가운데
   /** 키보드로 들기: 카드(묶음의 맨 앞) 또는 놓인 면. 놓인 다른 면이 있으면 자석 자리를 고르고, 없으면 판 가운데 */
   function startHold(kind, key) {
     if (!enabled) return;
@@ -930,6 +1111,13 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     if (!enabled) return;
     if (event.ctrlKey || event.metaKey || event.altKey) return; // Ctrl+Z(되돌리기)는 단계 화면이 받는다
     const key = event.key;
+    // Shift+←→: 판 옮겨 보기(자유 쌓기와 같은 키) — 든 것 · 고른 면은 그대로
+    if (event.shiftKey && (key === 'ArrowLeft' || key === 'ArrowRight')) {
+      if (!canPan()) return;
+      event.preventDefault();
+      panBy(key === 'ArrowLeft' ? -1 : 1, { say: true });
+      return;
+    }
     const arrows = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
     if (held) {
       if (arrows[key]) {
@@ -1021,7 +1209,7 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
   render();
 
   return {
-    el: boardEl,
+    el: clip,
     trayEl,
     faces: asFaces,
     rootId: () => rootCardId(cards),
@@ -1035,9 +1223,17 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     render,
     refit: render,
     /** 판에서 무대로 이어 접을 때: 1 cm의 크기와 (0, 0) cm의 자리(host 기준 px) */
-    layout: () => ({ unit: view.unit, origin: [...view.origin] }),
+    layout: () => ({ unit: view.unit, origin: [view.origin[0] + pan.x, view.origin[1]] }),
+    /** 판 옮겨 보기를 제자리로(새로 만들기 · 접었다 펴기) */
+    resetPan,
+    /** 검사 · 화면 읽기용: 지금 옮긴 거리(px)와 범위 */
+    panState: () => ({ x: pan.x, lo: pan.lo }),
     setEnabled(value) {
       enabled = value;
+      if (!value) {
+        panPrev.hidden = true;
+        panNext.hidden = true;
+      }
       held = null;
       if (!value) dnd.clearSelection();
       render();
@@ -1058,6 +1254,10 @@ export function createMagnetBoard({ ctx, root, host, cards, size, area, onChange
     placedPolys: () => new Map([...placed].map(([k, v]) => [k, v.map((p) => [...p])])),
     destroy() {
       if (turning) endTurning();
+      cancelAnimationFrame(panRaf);
+      window.removeEventListener('pointermove', onTouchMove);
+      window.removeEventListener('pointerup', onTouchUp);
+      window.removeEventListener('pointercancel', onTouchUp);
       resizer?.disconnect();
       clearTimeout(afterTimer);
       dnd.destroy();

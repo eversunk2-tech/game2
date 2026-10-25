@@ -143,10 +143,11 @@ export function overlapsPlaced(poly, placed) {
 
 // ── 한 판 (시드 ctx.rng로 재현) ───────────────────
 /**
- * 판의 크기(cm, 가로 × 세로): 그 각기둥의 서로 다른 전개도가 모두 들어가는 크기(15° 단위로 돌려 본 가장 작은 둘레 상자의 긴 쪽 · 짧은 쪽의 최댓값을
- * 올림 + 1 cm — 검사가 전개도 목록으로 다시 잰다). 휴대폰처럼 판이 세로로 긴 화면이면 세로를 길게
+ * 1 cm의 크기를 정하는 크기(cm, 가로 × 세로 — 15-32): 만들 각기둥 창에 가리지 않는 곳에 이만큼이 늘 들게 1 cm를 고른다. 그 각기둥의 서로 다른
+ * 전개도가 모두 들어가는 가장 작은 크기(첫 면을 30°씩 돌리고 판 가운데의 0.5 cm 칸에 둔 채 — 검사가 전개도 목록으로 다시 잰다) + 0.5 cm.
+ * 면을 놓는 판은 매트 전체라 이보다 넓다(창에 가린 곳은 옆으로 옮겨 본다). 휴대폰처럼 판이 세로로 긴 화면이면 세로를 길게
  */
-const BOARD_CM = Object.freeze({ 'tri-a': [16, 11], 'tri-b': [17, 11], 'trap-a': [17, 12], 'trap-b': [17, 12], 'hex-a': [19, 13], 'hex-b': [22, 15] });
+const BOARD_CM = Object.freeze({ 'tri-a': [14.5, 10.5], 'tri-b': [15.5, 11], 'trap-a': [16, 11.5], 'trap-b': [15.5, 11], 'hex-a': [19, 12], 'hex-b': [21, 13.5] });
 export function boardSize(solidId, { portrait = false } = {}) {
   const [w, h] = BOARD_CM[solidId];
   return portrait ? { w: h, h: w } : { w, h };
