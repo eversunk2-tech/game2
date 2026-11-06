@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`f55ee6b`**(G2r 각기둥 4단계 자유 배치 — CI 통과, 두 사이트 확인, 2026-10-25) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **⏸ 일시정지(2026-10-25, 사용자 "일시정지해줘")** — 도는 서브에이전트·테스트·서버 0. **G2s는 Review 통과 뒤 이 컴퓨터의 `main`에 합쳤으나(`41fcf0a`) 아직 올리지 않음** — 합친 뒤 전체 테스트 중 단위 425·0은 통과, 브라우저(보통)는 도중에 멈춤(161번째 검사쯤, 그때까지 실패 없음), 글꼴 흉내는 시작 전. "이어서"면: `E2E_PORT=5330 npm run test:e2e -- --workers=4`와 `E2E_WIDE_TEXT=font E2E_PORT=5330 npm run test:e2e -- --workers=4`를 처음부터 → 실패 0이면 푸시 → CI·두 사이트 확인 |
+| 지금 도는 것 | 일시정지 풀림(2026-11-06 사용자 "이어서 해줘"): **G2s 합친 뒤 전체 테스트를 처음부터 다시**(`main` `41fcf0a` + 문서, 컴퓨터를 다시 켠 뒤라 단위부터 셋 다) → 실패 0이면 올림 → CI·두 사이트 확인 |
 | **⛔ 멈춤** | **원기둥 G3는 사용자가 "시작하라"고 할 때까지 시작하지 않는다**(2026-10-18 사용자 — 15-21). 각기둥 G2는 2026-10-20 사용자가 시작하라고 함(15-25). "이어서 해줘"도 G3로 넘어가지 않는다 |
 
 ## 2. 진행 중인 일 — 없음 (G2r 끝, 2026-10-25 올림)
@@ -127,7 +127,7 @@
 - **Cloudflare Pages**(2026-10-17 사용자가 연결 — 코디네이터는 화면을 보기만 하며 안내): 프로젝트 `solid-figure`, GitHub `eversunk2-tech/game2`의 `main`, Framework preset None, Build command `npm run build`, output `dist`, 환경 변수 `NODE_VERSION=22`. `/x.html`을 `/x`로 308(쿼리 그대로). 처음 잘못 만든 Worker "game2"는 지우거나 Git 연결을 끊으라고 안내함(확인 못 함). 저장소에 Cloudflare 설정 파일은 없다.
 - 학생 기록: 브라우저 `localStorage`(열쇠 `edu:net-workshop:*`) — 탭·창을 닫아도 남고 사이트 데이터를 지우기 전까지 유지(10-18 두 사이트에서 직접 확인). 주소(출처)마다 따로, 시크릿·게스트 창은 닫으면 지워짐, 별·다음 단계 열림은 단계를 마쳐야 저장.
 - 테스트용 브라우저: `~/Library/Caches/ms-playwright`(Chromium 141). 없으면 `npx playwright install chromium`(내려받기라 사용자에게 먼저 확인).
-- 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다 — 시안 그림(`design-grade/`, `build-c4/cmp/`, `plan-rotate/`, `build-f1/`)도 그때 없어진다.
+- 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다(2026-11-06 실제로 비워짐 — 앞의 시안·검토 그림·도구는 없음) — 시안 그림(`design-grade/`, `build-c4/cmp/`, `plan-rotate/`, `build-f1/`)도 그때 없어진다.
 - GitHub: `eversunk2-tech/game2`(공개). 사용량 한도에 걸리면 서브에이전트가 도중에 끊긴다 — 한도가 풀린 뒤 다시 맡긴다.
 
 ## 9. 지금까지 한 일 (짧게 — 자세한 것은 HANDOFF.md "끝난 것" 1~20)
