@@ -12,12 +12,14 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **원기둥 G3 Plan**(2026-11-07 사용자 "원기둥 시작해줘" — 15-33): 지침 [plan-brief-cylinder.md](games/net-workshop/plan-brief-cylinder.md), 작업 폴더 `.worktrees/cuboid`, 포트 5371~5372, scratchpad `plan-cylinder/`, 결과 `plan-cylinder.md` → 사용자에게 물을 것을 물음 → 승인 뒤 Build 차례 1(시안) |
+| 지금 도는 것 | **원기둥 G3a Build 차례 1(시안)**: 계획 승인(15-34 — 다섯 갈림길 모두 추천안, 1·2단계 먼저 올림). 지침 [build-brief-g3a.md](games/net-workshop/build-brief-g3a.md), 작업 폴더 `.worktrees/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g3a/` → 시안을 사용자에게 → "계속" → Review(5363~5364) |
 | 멈춤 | 없음 — 원기둥 G3는 2026-11-07 사용자가 시작하라고 함(15-33, 15-21의 멈춤을 풂) |
 
-## 2. 진행 중인 일 — 원기둥 G3 Plan (2026-11-07~)
+## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
 
-- 사용자 "원기둥 시작해줘"(15-33). 2-3절(2026-10-09 승인)을 그 뒤 결정(15-2 직접 만드는 단계에 예상 없음, 15-30~15-32 각기둥 4단계 자유 배치·판 전체·옮겨 보기)과 지금 앱 부품에 맞춰 다시 보는 Plan. 갈림길(특히 `cylinder-free`, 도장·도전)은 선택지·추천으로 사용자에게 → 승인 뒤 Build(차례 1 = 시안).
+- 사용자 "원기둥 시작해줘"(15-33). Plan [plan-cylinder.md](games/net-workshop/plan-cylinder.md)(`f4ec117`) — 1~3단계는 2-3절 그대로 + 손질, 4단계는 새로 짬. 사용자 결정 15-34: 4단계 **주문받은 원기둥 3개 만들기**(초록 판·자석·말아 보기, 2개면 끝·3개 ★3), 3단계 계산은 **숫자판**, 도전 **"꼭 맞는 통"은 네 단계를 올린 뒤 따로**(G3c), 도장 **"원기둥 설계사"**(도장판 18칸), **1·2단계 먼저 올림**.
+- 차례: **G3a**(원기둥 바탕 · 1단계 밑면과 옆면 · 2단계 원기둥이 될까? · 영역 카드 열림) → Review → 올림 → **G3b**(3·4단계 · 숫자판 · 도장 · `?pi=`) → Review → 올림 → **G3c**(도전). Build마다 차례 1 = 시안.
+- 지금: G3a Build 차례 1(시안). 설명 그림(손그림)은 scratchpad `plan-cylinder/`(컴퓨터를 다시 켜면 지워짐).
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
