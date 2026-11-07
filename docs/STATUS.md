@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **원기둥 G3a Review**(2026-11-07~): 지침 [review-brief-g3a.md](games/net-workshop/review-brief-g3a.md), 작업 폴더 `.worktrees/cuboid`(`bea877f`), 포트 e2e 5363·측정 5364, scratchpad `review-g3a/`, 결과 `review-cylinder-g3a.md`. Build 끝(최종 보고: 단위 439·0, 브라우저 630·0 보통·글꼴 흉내, CPU 4·8·12배 값 실패 0, 처음 받는 크기 199.7 → 206.7 KB) |
+| 지금 도는 것 | **원기둥 G3a 고치기(Build)**: Review [review-cylinder-g3a.md](games/net-workshop/review-cylinder-g3a.md)(`a2f424d`) "수정 필요 — 반드시 1(G3a-1 높이 문항의 정답이 `data-guide` 속성에)". 지침 [build-fix-brief-g3a.md](games/net-workshop/build-fix-brief-g3a.md)(G3a-1 + 고치면 좋음 G3a-2~5), 같은 Build, 작업 폴더 `.worktrees/cuboid`, 포트 5301·e2e 5361~5362 → 같은 Review가 재검토 [review-fix-brief-g3a.md](games/net-workshop/review-fix-brief-g3a.md)(5363~5364) → 통과면 올림 → **멈춤(15-36)** |
 | 멈춤 | **원기둥 G3b(3·4단계)·G3c(도전)** — 2026-11-07 사용자 "1,2단계 검토 끝나고 푸시하면, 그 다음 단계는 바로 진행하지 말고 일시 정지해줘"(15-36). G3a(1·2단계)는 Review → 올림 · CI · 두 사이트 확인까지 하고 멈춤. 사용자가 시작하라고 할 때까지 G3b 지침·Plan도 시작하지 않음 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
