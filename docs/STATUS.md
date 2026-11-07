@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **원기둥 G3a 고치기(Build)**: Review [review-cylinder-g3a.md](games/net-workshop/review-cylinder-g3a.md)(`a2f424d`) "수정 필요 — 반드시 1(G3a-1 높이 문항의 정답이 `data-guide` 속성에)". 지침 [build-fix-brief-g3a.md](games/net-workshop/build-fix-brief-g3a.md)(G3a-1 + 고치면 좋음 G3a-2~5), 같은 Build, 작업 폴더 `.worktrees/cuboid`, 포트 5301·e2e 5361~5362 → 같은 Review가 재검토 [review-fix-brief-g3a.md](games/net-workshop/review-fix-brief-g3a.md)(5363~5364) → 통과면 올림 → **멈춤(15-36)** |
+| 지금 도는 것 | **없음 — 일시정지(2026-11-07 21:00쯤, 사용자 "일시정지해줘")**. 원기둥 G3a 고치기(Build)를 멈춤 — 멈춘 곳과 "이어서"면 할 일은 2절 |
 | 멈춤 | **원기둥 G3b(3·4단계)·G3c(도전)** — 2026-11-07 사용자 "1,2단계 검토 끝나고 푸시하면, 그 다음 단계는 바로 진행하지 말고 일시 정지해줘"(15-36). G3a(1·2단계)는 Review → 올림 · CI · 두 사이트 확인까지 하고 멈춤. 사용자가 시작하라고 할 때까지 G3b 지침·Plan도 시작하지 않음 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -24,6 +24,10 @@
   - 커밋된 것: `track/cuboid` **`bea877f`** — `59b6153` 위에 Build 3커밋(`eed1eef` 바탕·1·2단계·영역 열림, `2b7b55f` 높이 칩 스타일·화면 읽기 이름·`?fx=low` 검사, `bea877f` 크기가 다른 원 겹그림 — 띠 1px 비침 고침), 19파일 +3200 −26. 작업 트리 깨끗함. `main`에는 아직 안 합침.
   - 도중인 것: 단위 439·0과 브라우저(보통) 628·0·162는 **마지막 두 커밋 전**(13:42~14:04)에 돈 것. **글꼴 흉내는 아직 안 돌림.** CPU 4배는 끝(원기둥 22·0·8, 고친 기존 검사 14·0), **8배는 도중에 끊김, 12배는 안 돌림**. 최종 보고 아직 없음.
   - 사용자 "이어서 해줘"(같은 날) → 같은 Build에게 "`bea877f`부터, 테스트 셋(단위·보통·글꼴 흉내) 처음부터 + 새로 만들거나 고친 검사 CPU 4·8·12배, 그다음 최종 보고"로 이어 맡김 → Build 끝(`bea877f`, 서버 모두 내림) → 새 Review에게 [review-brief-g3a.md](games/net-workshop/review-brief-g3a.md)(1024×768 결과 화면 21px 넘침을 검사에서 뺀 것, 처음 받는 크기 +7 KB, 낯선 꼴 66.6%를 특히 보라고 함).
+- **G3a Review → 고치기 → 일시정지(2026-11-07 21:00쯤)**: Review [review-cylinder-g3a.md](games/net-workshop/review-cylinder-g3a.md)(`a2f424d`) "수정 필요 — 반드시 1(G3a-1)". 같은 Build에게 [build-fix-brief-g3a.md](games/net-workshop/build-fix-brief-g3a.md)로 맡김 → 사용자 "일시정지해줘"로 Build(`ad95379…` — 코디네이터가 멈춤, 이어 맡기기 가능)를 멈춤. 그가 이어 돌리던 전체 검사 묶음(`final.sh`)도 함께 끊김. 남은 서버·실행 없음(5301·5361~5364 비어 있음).
+  - 커밋된 것: `track/cuboid` **`c713f78`** "G3a 고치기"(G3a-1 높이 정답 속성 없앰 · G3a-3 사다리꼴 위 원 · G3a-4 다음 문항에서 알림 지움 · G3a-5 검사 한 줄 · G3a-2 결과 화면 예외의 까닭, 7파일 +149 −25). 작업 트리 깨끗함. 그 위 단위 검사 실패 0, 원기둥 검사 61 통과. 새 노출 검사는 고치기 전 코드(`bea877f`)에서 실패함(Build가 확인 — Review가 다시 볼 것).
+  - 도중인 것: 브라우저 검사(보통)는 794개 중 222번째에서 끊김(그때까지 실패 0). **글꼴 흉내와 CPU 4·8·12배는 안 돌림.** 최종 보고 아직 없음.
+  - "이어서"면: 같은 Build에게 "`c713f78`부터, 테스트 셋(단위·보통·글꼴 흉내) 처음부터 + 고친 검사 CPU 4·8·12배, 그다음 고치기 지침대로 최종 보고"로 이어 맡김 → 같은 Review(`a3c0e80…`)에게 재검토 [review-fix-brief-g3a.md](games/net-workshop/review-fix-brief-g3a.md) → 통과면 올림 → 멈춤(15-36).
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
