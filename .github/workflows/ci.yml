@@ -9,7 +9,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # ubuntu-latest가 26.04가 되자 Playwright 1.56.1이 chromium을 설치하지 못했다(2026-11-07) — Playwright를 올리기 전까지 24.04로 고정
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
