@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **없음 — 일시정지(2026-11-07 14:20쯤, 사용자 "일시정지해줘")**. 원기둥 G3a Build를 멈춤 — 멈춘 곳과 "이어서"면 할 일은 2절 |
+| 지금 도는 것 | **원기둥 G3a Build — 일시정지 뒤 이어서(2026-11-07, 사용자 "이어서 해줘")**: `bea877f`부터 테스트 셋(단위·보통·글꼴 흉내) 처음부터 + CPU 4·8·12배 → 최종 보고. 지침 [build-brief-g3a.md](games/net-workshop/build-brief-g3a.md)(+덧붙임), 작업 폴더 `.worktrees/cuboid`, 포트 5301·e2e 5361~5362, scratchpad `build-g3a/` → 다음 Review [review-brief-g3a.md](games/net-workshop/review-brief-g3a.md)(5363~5364, 결과 `review-cylinder-g3a.md`) |
 | 멈춤 | 없음 — 원기둥 G3는 2026-11-07 사용자가 시작하라고 함(15-33, 15-21의 멈춤을 풂) |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -23,7 +23,7 @@
 - **G3a 일시정지(2026-11-07 14:20쯤)**: Build(`ad95379…` — 코디네이터가 멈춤, 이어 맡기기 가능)를 멈추고 그가 띄운 개발 서버(5301, PID 72900, `.worktrees/cuboid`)를 내림. 다른 실행 없음(5361~5364 비어 있음).
   - 커밋된 것: `track/cuboid` **`bea877f`** — `59b6153` 위에 Build 3커밋(`eed1eef` 바탕·1·2단계·영역 열림, `2b7b55f` 높이 칩 스타일·화면 읽기 이름·`?fx=low` 검사, `bea877f` 크기가 다른 원 겹그림 — 띠 1px 비침 고침), 19파일 +3200 −26. 작업 트리 깨끗함. `main`에는 아직 안 합침.
   - 도중인 것: 단위 439·0과 브라우저(보통) 628·0·162는 **마지막 두 커밋 전**(13:42~14:04)에 돈 것. **글꼴 흉내는 아직 안 돌림.** CPU 4배는 끝(원기둥 22·0·8, 고친 기존 검사 14·0), **8배는 도중에 끊김, 12배는 안 돌림**. 최종 보고 아직 없음.
-  - "이어서"면: 같은 Build에게 "`bea877f`부터, 테스트 셋(단위·보통·글꼴 흉내) 처음부터 + 새로 만들거나 고친 검사 CPU 4·8·12배, 그다음 최종 보고"로 이어 맡김 → 새 Review에게 [review-brief-g3a.md](games/net-workshop/review-brief-g3a.md).
+  - 사용자 "이어서 해줘"(같은 날) → 같은 Build에게 "`bea877f`부터, 테스트 셋(단위·보통·글꼴 흉내) 처음부터 + 새로 만들거나 고친 검사 CPU 4·8·12배, 그다음 최종 보고"로 이어 맡김 → 다음은 새 Review에게 [review-brief-g3a.md](games/net-workshop/review-brief-g3a.md).
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
