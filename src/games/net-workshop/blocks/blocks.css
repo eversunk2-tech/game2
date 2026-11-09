@@ -621,3 +621,40 @@
   .blk-free-slot .blk-pad-grid, .blk-free-slot .blk-pad-row { gap: 2px; }
   .blk-free-colors { position: static; order: 7; width: 100%; flex-direction: row; flex-wrap: wrap; }
 }
+
+/* ══ 더 큰 판 (spec-grade6 15-37 · 15-39, plan-big-board.md — free-big.js) ══════════════════
+   메뉴 ②(결정 4): 띠 맨 아래(1000px 이하는 띠 줄 끝). 쌓기 도구와 섞이지 않게 가름선으로 나누고 버튼은 노랑 바탕
+   (점선 테두리는 이 앱에서 "지금은 누를 수 없음"이라 쓰지 않는다). 큰 판 화면에서는 같은 자리가 [← 보통 판으로](+ [전체 화면]) */
+.blk-free-door { margin-top: auto; padding-top: 8px; border-top: 2px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
+.blk-free-strip .btn.blk-free-big, .blk-free-strip .btn.blk-free-back { background: var(--butter-soft); }
+.blk-free-strip .btn.blk-free-big:hover:not([disabled]), .blk-free-strip .btn.blk-free-back:hover:not([disabled]) { background-color: var(--butter); }
+/* 큰 판의 띠 맨 위: 판 이름 */
+.blk-free-bigname { margin: 0 0 2px; padding-bottom: 4px; border-bottom: 2px solid var(--line); display: flex; flex-direction: column; align-items: center; line-height: 1.15; }
+.blk-free-bigname b { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; white-space: nowrap; }
+.blk-free-bigname small { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); white-space: nowrap; }
+/* 띠가 낮은 창(크롬북 아래 선반이 보이는 1366×653 · 633 등 — 띠 안 스크롤로 숨기지 않는다): 개수를 한 줄로, 띠 간격을 줄인다(play-free-build.js가 넘침을 재서 단다) */
+.blk-free-strip.is-tight { gap: 1px; padding-block: 6px; }
+.blk-free-strip.is-tight .blk-free-modes { gap: 1px; }
+.blk-free-strip.is-tight .blk-free-count { flex-direction: row; align-items: baseline; justify-content: center; gap: 4px; margin: 0; }
+.blk-free-strip.is-tight .blk-free-count b { font-size: 1.3rem; }
+.blk-free-strip.is-tight .blk-free-door { padding-top: 4px; gap: 1px; }
+.blk-free-strip.is-tight .blk-free-bigname { margin: 0; padding-bottom: 2px; }
+
+/* 큰 판 화면(결정 2): 앱 틀의 폭 상한 · 맨 위 띠 · 머리(제목 · [← 단계 선택])를 감추고 작업대를 화면 높이에 맞춘다 */
+html.blk-big-on .edu-app { max-width: none; padding: 10px 12px; }
+html.blk-big-on .topbar, html.blk-big-on .screen-play .play-header { display: none; }
+html.blk-big-on .workbench.blk-free { --bench-h: calc(100vh - 20px); --bench-h: calc(100dvh - 20px); height: var(--bench-h); }
+
+/* 1000px 이하(태블릿 세로): 메뉴는 띠 줄의 끝(오른쪽으로 붙임), 가름선은 세로 */
+@media (max-width: 1000px) {
+  .blk-free-door { margin: 0 0 0 auto; padding: 0 0 0 10px; border-top: 0; border-left: 2px solid var(--line); flex-direction: row; }
+  .blk-free-bigname { margin: 0; padding: 0 10px 0 2px; border-bottom: 0; border-right: 2px solid var(--line); justify-content: center; }
+}
+
+/* 휴대폰 안내 카드(결정 5): 화면 가운데의 종이 카드, 뒤는 옅게 어둡게 */
+.blk-free-notice { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(30 33 64 / 32%); }
+.blk-free-notice-card { width: min(100%, 320px); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 20px 18px; border: 2px solid var(--ink); border-radius: var(--radius-lg); background: var(--paper); box-shadow: var(--edge); text-align: center; }
+.blk-free-notice-ico { display: inline-flex; color: var(--primary); }
+.blk-free-notice-ico .icon { width: 34px; height: 34px; }
+.blk-free-notice-text { margin: 0; font-size: var(--fs-md); font-weight: 700; line-height: 1.45; word-break: keep-all; text-wrap: balance; }
+.blk-free-notice-ok { min-width: 150px; }

@@ -129,7 +129,8 @@ test('판(결정 4·7): 14×14칸, 처음 보기 맞춤 한 변, 오른쪽 좁�
   expect(b.unit).toBeGreaterThanOrEqual(36); // 계획 시안(34~36px)보다 크다 — 1366×768에서 39px(원근 — 원근 없을 때 40px, 가까운 쪽은 더 크다)
   expect(b.out).toBe(0);
   const names = await page.locator('.blk-free-strip button').evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? el.textContent.trim()));
-  expect(names).toEqual(['쌓기', '빼기', '되돌리기', '모두 치우기', '위에서 본 판', '층별로 벌려 보기', '위ㆍ앞ㆍ옆 모양', '쌓기나무 색 고르기, 지금 노랑']); // F1-6: 제목 글꼴로 그리는 버튼에는 "ㆍ"
+  // F1-6: 제목 글꼴로 그리는 버튼에는 "ㆍ". 더 큰 판(spec-grade6 15-39 결정 4): 띠 맨 아래(가름선 아래)에 [더 큰 판] — 띠의 마지막 버튼
+  expect(names).toEqual(['쌓기', '빼기', '되돌리기', '모두 치우기', '위에서 본 판', '층별로 벌려 보기', '위ㆍ앞ㆍ옆 모양', '쌓기나무 색 고르기, 지금 노랑', '더 큰 판에서 쌓기']);
   // 세로 한 줄: 버튼마다 띠 폭 그대로, 위에서 아래로
   const boxes = await page.locator('.blk-free-strip button').evaluateAll((els) => els.map((el) => el.getBoundingClientRect()).map((r) => ({ x: Math.round(r.x), y: Math.round(r.y), h: Math.round(r.height) })));
   expect(new Set(boxes.map((r) => r.x)).size).toBe(1);
