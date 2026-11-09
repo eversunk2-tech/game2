@@ -636,7 +636,7 @@ export function playFreeBuild(stage, ctx) {
   const phoneBoard = normal === FREE_BOARDS.phone;
   let unmount = null;
   let notice = null;
-  let escTold = false; // "전체 화면을 나가려면 Esc를 눌러요."는 처음 한 번
+  let escTold = false; // 전체 화면 안내 "전체 화면을 나가려면 [전체 화면]을 다시 눌러요."(FULL_ESC)는 처음 한 번
   let visit = 0; // 판을 바꿀 때마다 1 — 늦게 오는 전체 화면 결과가 지난 판에 알리지 않게
   let gone = false;
 
@@ -707,7 +707,7 @@ export function playFreeBuild(stage, ctx) {
       ctx.feedback.info(BIG_HELLO);
       return;
     }
-    // 화면 전체가 되었는지 안 뒤에 한 번 알린다(되었으면 Esc 안내까지 — 처음 한 번)
+    // 화면 전체가 되었는지 안 뒤에 한 번 알린다(되었으면 전체 화면 안내까지 — 처음 한 번)
     const at = visit;
     asking.then((on) => {
       if (at !== visit || gone) return;

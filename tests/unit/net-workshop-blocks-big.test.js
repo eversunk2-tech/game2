@@ -124,7 +124,10 @@ test('글(결정 2 · 5, Plan 7-1 · 7-2): 알림 · 안내 카드 · 버튼 이
   assert.equal(BIG_NAME, '더 큰 판');
   assert.equal(BIG_SIZE, '20칸 20줄');
   assert.equal(BIG_HELLO, '더 큰 판이에요. 20칸 20줄이고 10층까지 쌓을 수 있어요.');
-  assert.equal(FULL_ESC, '전체 화면을 나가려면 Esc를 눌러요.');
+  // 15-41 B-5 "버튼 안내로 바꾸기": 키보드가 없는 태블릿에도 맞게 Esc가 아니라 띠의 [전체 화면] 버튼(켜고 끄기)으로 안내한다
+  assert.equal(FULL_ESC, '전체 화면을 나가려면 [전체 화면]을 다시 눌러요.');
+  assert.ok(FULL_ESC.includes('[전체 화면]'));
+  assert.doesNotMatch(FULL_ESC, /Esc/);
   assert.equal(PHONE_TEXT, '더 큰 판은 태블릿이나 컴퓨터에서 쓸 수 있어요.');
   assert.equal(BIG_LABEL, '더 큰 판에서 쌓기');
   assert.equal(BIG_LABEL_PHONE, '더 큰 판에서 쌓기, 태블릿과 컴퓨터에서 쓸 수 있어요');
@@ -229,7 +232,7 @@ test('전체 화면(결정 2): 되면 true, 막히거나(거절 · 던짐) 없�
   const webkit = fakeDocument({ api: 'webkit' });
   await withDocument(webkit, async () => {
     assert.equal(canFullscreen(), true);
-    assert.equal(await requestFullscreen(), false); // 불렀지만 결과를 모른다 — Esc 안내를 하지 않는다
+    assert.equal(await requestFullscreen(), false); // 불렀지만 결과를 모른다 — 전체 화면 안내를 하지 않는다
     assert.equal(webkit.calls.req, 1);
   });
 });

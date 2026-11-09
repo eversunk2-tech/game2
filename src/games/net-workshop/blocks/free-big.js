@@ -30,7 +30,8 @@ export const BIG_LABEL = '더 큰 판에서 쌓기';
 export const BIG_LABEL_PHONE = '더 큰 판에서 쌓기, 태블릿과 컴퓨터에서 쓸 수 있어요';
 export const BACK_LABEL = '보통 판으로 돌아가기';
 export const BIG_HELLO = '더 큰 판이에요. 20칸 20줄이고 10층까지 쌓을 수 있어요.';
-export const FULL_ESC = '전체 화면을 나가려면 Esc를 눌러요.';
+/** 전체 화면이 된 뒤 처음 한 번 알리는 글(사용자 결정 15-41 B-5 "버튼 안내로 바꾸기" — 키보드가 없는 태블릿도 같은 길: 띠의 [전체 화면]은 켜고 끄는 버튼) */
+export const FULL_ESC = '전체 화면을 나가려면 [전체 화면]을 다시 눌러요.';
 export const PHONE_TEXT = '더 큰 판은 태블릿이나 컴퓨터에서 쓸 수 있어요.';
 
 // ── 그림(엔진 아이콘과 같은 24×24 · 선 · currentColor — 엔진에 없는 두 가지만 여기에) ──
