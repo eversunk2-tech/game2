@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **자유 쌓기 "더 큰 판" Plan**(2026-11-09 사용자 요청 15-37): 지침 [plan-brief-big-board.md](games/net-workshop/plan-brief-big-board.md), 측정 작업 폴더 `.worktrees/blocks`, 포트 5341·5342, scratchpad `plan-big-board/`, 결과 `plan-big-board.md` → 사용자에게 물음 |
+| 지금 도는 것 | **없음 — 전체 일시정지(2026-11-09 14:50쯤, 사용자 "맥북이 갑자기 느려져서 재시동해야겠어. 일단 전체 일시정지하고 껐다 켤거니깐 기록 정리 저장해둬")**. 서브에이전트 0 · 서버 · 테스트 0. **"이어서"면: 원기둥은 그대로 멈춤(15-38), 자유 쌓기 "더 큰 판" Plan부터 다시**(사용자: "이어서 해달라고 하면 기존 요청대로 원기둥은 정지하고 큰판 만들기 시작해줘") — 방법은 2-1절 |
 | 멈춤 | **원기둥 전부** — ① **G3a 고치기·재검토·올림**: 2026-11-09 사용자 "원기둥 고치기는 일시정지하고 큰판 만들기부터 해줘. 원기둥 고치기는 급하지 않아서 큰판 완료되고 나면 일시정지하고 내가 재개하라고 요청하면 시작해줘"(15-38) — 큰 판을 올린 뒤에도 사용자가 재개하라고 할 때까지 시작하지 않음(멈춘 곳은 2절). ② **G3b(3·4단계)·G3c(도전)**: 15-36 — G3a를 올린 뒤에도 멈춤 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -35,6 +35,11 @@
 
 - 사용자 요청 15-37(말 그대로 옮김): 자유 쌓기에 "더 큰 판" 메뉴(한쪽 구석) → 더 큰 판에서 활동, 큰 판 작품은 큰 판에서만, 태블릿·PC에서만(휴대폰은 간단한 안내), 새 창(팝업)·양옆 빈 배경 없이 꽉 차게는 물음, **칸 수는 시뮬레이션으로 정해 제안**.
 - 차례: Plan([plan-brief-big-board.md](games/net-workshop/plan-brief-big-board.md) → `plan-big-board.md`) → 사용자 결정 → Build(차례 1 = 시안, `.worktrees/blocks` · 포트 5302 · e2e 5352~5353) → Review(5354~5355) → 올림. 원기둥 G3a와 따로 진행.
+- 같은 날 사용자 결정 15-38: 원기둥 고치기는 멈추고 **큰 판부터**(큰 판을 올린 뒤에도 원기둥은 사용자가 재개하라고 할 때까지 멈춤).
+- **Plan 일시정지(2026-11-09 14:50쯤 — 맥북 재시동)**: Plan(`a0941bb…` — 코디네이터가 멈춤)을 멈추고 그가 띄운 미리 보기 서버(5341, PID 69018, scratchpad `plan-big-board/base`)를 내림. 다른 실행 없음.
+  - 한 것: 계획 1절 "지금 모습 재기"만 끝 — 10가지 화면 크기에서 지금 자유 쌓기의 판 · 쌓기나무 한 변 · 위에서 본 판 칸 · 양옆 빈 배경을 잼(예: 1366×768에서 양옆 빈 배경 63px씩, 앱 폭 1240px, 쌓기나무 한 칸 39px(한 변 26~41px), 위에서 본 판 칸 24px, 위 · 앞 · 옆 모양 그림 칸 8px). 그림 `now-<크기>-{home,pad,views}.png`. 시뮬레이션용 저장소 복사본(`sim/`)은 만들었고 아직 고친 것 없음. **`plan-big-board.md`는 아직 없음.**
+  - **scratchpad는 재시동하면 지워진다** → 남길 것을 `.worktrees/_saved-scratchpad-2026-11-09/`(git에서 가려진 폴더 — 저장소에 올라가지 않음)에 옮겨 둠: `plan-big-board/`(out/now.json · shots/now-*.png · tools/*.mjs · sim/ 복사본), `review-g3a/`(원기둥 재검토 때 쓸 도구 · 로그 · 그림), `build-g3a/`(사용자가 고른 원기둥 시안 그림 · 고친 그림 · CPU 배수 스크립트), `plan-cylinder/`(손그림).
+  - "이어서"면: **원기둥은 건드리지 않는다**(15-38). 같은 Plan에게 이어 맡겨 보고, 안 되면(재시동으로 이어 맡기기가 안 되면) **새 Plan에게 같은 지침 [plan-brief-big-board.md](games/net-workshop/plan-brief-big-board.md) + "`.worktrees/_saved-scratchpad-2026-11-09/plan-big-board/`의 잰 값 · 그림 · 도구를 읽고 1절은 그 값을 쓰되(필요하면 다시 재고) 2절 시뮬레이션부터 이어서"**로. 새 scratchpad 경로는 새 세션의 것을 알려 준다. 측정 작업 폴더 `.worktrees/blocks`(`main` `b8ceeb1`과 같음 — 이어서 할 때 `main`에 맞춰 ff), 포트 5341 · 5342.
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
@@ -157,6 +162,7 @@
 - **Cloudflare Pages**(2026-10-17 사용자가 연결 — 코디네이터는 화면을 보기만 하며 안내): 프로젝트 `solid-figure`, GitHub `eversunk2-tech/game2`의 `main`, Framework preset None, Build command `npm run build`, output `dist`, 환경 변수 `NODE_VERSION=22`. `/x.html`을 `/x`로 308(쿼리 그대로). 처음 잘못 만든 Worker "game2"는 지우거나 Git 연결을 끊으라고 안내함(확인 못 함). 저장소에 Cloudflare 설정 파일은 없다.
 - 학생 기록: 브라우저 `localStorage`(열쇠 `edu:net-workshop:*`) — 탭·창을 닫아도 남고 사이트 데이터를 지우기 전까지 유지(10-18 두 사이트에서 직접 확인). 주소(출처)마다 따로, 시크릿·게스트 창은 닫으면 지워짐, 별·다음 단계 열림은 단계를 마쳐야 저장.
 - 테스트용 브라우저: `~/Library/Caches/ms-playwright`(Chromium 141). 없으면 `npx playwright install chromium`(내려받기라 사용자에게 먼저 확인).
+- **재시동 전에 옮겨 둔 임시 파일**: `.worktrees/_saved-scratchpad-2026-11-09/`(2026-11-09 — 큰 판 Plan의 잰 값 · 원기둥 G3a의 검토 도구 · 시안 그림. `.worktrees/`라 저장소에 올라가지 않음. 일이 끝나면 지워도 됨).
 - 세션 임시 폴더(scratchpad)는 컴퓨터를 다시 켜면 비워진다(2026-11-06 실제로 비워짐 — 앞의 시안·검토 그림·도구는 없음) — 시안 그림(`design-grade/`, `build-c4/cmp/`, `plan-rotate/`, `build-f1/`)도 그때 없어진다.
 - GitHub: `eversunk2-tech/game2`(공개). 사용량 한도에 걸리면 서브에이전트가 도중에 끊긴다 — 한도가 풀린 뒤 다시 맡긴다.
 
