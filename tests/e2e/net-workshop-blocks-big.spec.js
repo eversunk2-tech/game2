@@ -7,7 +7,8 @@
  * - 휴대폰(창의 짧은 변 600px 미만): 안내 카드 + [알겠어요], ?board=big을 바로 열면 6×6 판 + 안내 한 번
  * 전체 화면은 헤드리스에서 화면 크기가 바뀌지 않으므로 요청 · 끔이 불렸는지만 본다(대체 함수 — spyFullscreen). 크기는 그 크기의 창으로 흉내 낸다.
  * 정해진 시간으로 기다리지 않는다: 움직임이 끝난 것은 getAnimations · is-easing으로, 무대 그리기는 화면 프레임 두 번으로 본다.
- * 시간 예산(CPU 4 · 8 · 12배 흉내에서 잼 — 아래 각 검사의 setTimeout): 머리말 끝의 표는 Build 보고(build-brief-big-board 최종 보고)에 있다.
+ * 시간 예산(CPU 4 · 8 · 12배 흉내에서 잼, 2026-11-09): 12배에서 가장 긴 검사(큰 판 화면 네 크기씩 — 위에서 본 판 옮기기 포함) 30.0 · 28.8초 → 예산 240초,
+ *   저장 7.0초 → 90초, 나머지는 5.8초 이하(전체 화면 막힘 · 없음 5.8 · 두 탭 5.5 · 휴대폰 4.1) → 기본 30초.
  */
 import { expect, test } from '@playwright/test';
 import { collectErrors, fileUrl, hasHorizontalScroll } from './helpers.js';
