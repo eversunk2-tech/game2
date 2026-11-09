@@ -25,6 +25,10 @@ import { icon } from '../../../shared/ui/icons.js';
 import { count, emptyMap, frontView, sideView, topView } from './blocks.js';
 import { createBlockTools } from './block-pad.js';
 import { createBlockView, createViewControls, eyeDistance, homeFitPersp, prefersReducedMotion, svgEl } from './block-view.js';
+import {
+  BACK_LABEL, BIG_BOARD, BIG_HELLO, BIG_LABEL, BIG_LABEL_PHONE, BIG_NAME, BIG_SIZE, FULL_ESC, bigIcon, canFullscreen, createPhoneNotice, exitFullscreen,
+  fullIcon, isFullscreen, isPhoneSize, onFullscreenChange, requestFullscreen, setBigScreen, wantsBig,
+} from './free-big.js';
 
 /** 판 크기 (결정 4): 넓은 판 = 알지오매스와 같은 14×14칸(높이 10층은 Plan이 고름), 휴대폰 = 6×6칸·6층 */
 export const FREE_BOARDS = Object.freeze({
@@ -37,8 +41,8 @@ const FIT_H = 3;
 export const FREE_PERSP = 3.0;
 /** 화면의 짧은 변이 600px 미만이면 휴대폰 판 */
 export const boardFor = (width, height) => (Math.min(width, height) < 600 ? FREE_BOARDS.phone : FREE_BOARDS.wide);
-/** 저장 열쇠: 판 크기마다 하나 */
-export const freeKey = (board) => `free-${board.cols}x${board.rows}`;
+/** 저장 열쇠: 판 크기마다 하나(큰 판은 따로 정한 열쇠 — free-big.js BIG_BOARD.key) */
+export const freeKey = (board) => board.key ?? `free-${board.cols}x${board.rows}`;
 
 /** 색 고르기(결정 6): 색 이름을 함께 쓴다(색만으로 구분하지 않는다) */
 export const FREE_COLORS = Object.freeze([
@@ -54,7 +58,7 @@ const PAN_PART = 0.3;
 const PAN_MS = 180;
 /** 펼치는 칸의 위아래 여백(blocks.css .blk-free-slot — top 84px · 아래 12px) · 넓은 판의 칸 크기(px) 처음과 가장 작게 */
 const SLOT_EDGE = 96;
-const CELL_MAX = 24;
+const CELL_MAX = 24; // 큰 판은 board.cell(18px)
 const CELL_MIN = 13;
 /** 엔진 알림이 기준 요소 안 아래쪽에 뜨는 폭(shared/ui/feedback.js ANCHOR_MEDIA와 같다 — 늦게 받는 묶음이라 값을 옮겨 적는다) · 좁은 화면 알림에 비워 두는 높이 */
 const WIDE_TOAST = '(min-width: 901px)';
@@ -70,6 +74,8 @@ function createFreeStore(gameId) {
   const memory = new Map();
   const full = (key) => `edu:${gameId}:${key}`;
   return {
+    /** localStorage에 쓰는 열쇠 전체(storage 알림을 가려 듣는 데) */
+    fullKey: full,
     get(key) {
       try {
         const raw = globalThis.localStorage.getItem(full(key));
@@ -129,11 +135,14 @@ function flatPicture({ cells, cols, rows, cell, label, ground }) {
   return svg;
 }
 
-export function playFreeBuild(stage, ctx) {
+/**
+ * 판 하나를 만든다(보통 판 14×14 · 6×6, 큰 판 20×20 — 같은 단계 안에서 바꾼다).
+ * extra = { head(띠 맨 위에 더할 것), foot(띠 맨 아래 묶음 — 메뉴 · 돌아가기), sync(다른 탭과 맞추기 — 큰 판) }.
+ * → 정리 함수(판을 치우고 리스너 · 타이머를 모두 푼다)
+ */
+function mountBoard(ctx, board, storage, extra = {}) {
   const { h } = ctx;
-  const board = boardFor(globalThis.innerWidth ?? 1366, globalThis.innerHeight ?? 768);
   const { cols, rows, maxH } = board;
-  const storage = createFreeStore(ctx.game?.id ?? 'net-workshop');
   const view = createBlockView({ h, cols, rows, maxH, fit: 'home', fitH: FIT_H, persp: FREE_PERSP });
   const controls = createViewControls({ ctx, view });
 
@@ -224,7 +233,8 @@ export function playFreeBuild(stage, ctx) {
   const panNext = panButton('is-next'); // ▶ 판 오른쪽 보기 · ▼ 판 아래쪽 보기
 
   const { add, remove, undo, clear } = tools.buttons;
-  const strip = h('aside', { class: 'blk-free-strip', 'aria-label': '자유 쌓기 도구' },
+  const strip = h('aside', { class: `blk-free-strip${board.big ? ' is-big' : ''}`, 'aria-label': board.big ? '더 큰 판 도구' : '자유 쌓기 도구' },
+    extra.head ?? null,
     countBox,
     h('div', { class: 'blk-free-modes', role: 'group', 'aria-label': '무대와 판을 누르면 할 일' }, add, remove),
     undo,
@@ -232,10 +242,12 @@ export function playFreeBuild(stage, ctx) {
     padButton,
     apartButton,
     viewsButton,
-    colorButton);
+    colorButton,
+    extra.foot ?? null);
   const toastMark = h('i', { class: 'blk-free-toastmark', 'aria-hidden': 'true' });
   const mat = h('div', { class: 'mat blk-mat blk-free-mat' }, view.el, controls.dirs, controls.pad, panPrev, panNext, slot, colorPop, toastMark);
-  ctx.el.append(h('div', { class: 'workbench blk-bench blk-free' }, mat, strip));
+  const bench = h('div', { class: `workbench blk-bench blk-free${board.big ? ' is-big' : ''}` }, mat, strip);
+  ctx.el.append(bench);
   ctx.feedback.anchor?.(mat, { lift: 16, narrow: 'below' });
   // 휴대폰(560px 이하 — 무대가 매트 안 흐름에 놓인다)에서 무대의 높이를 판에 맞춘다: 처음 보기 맞춤이 너비로 정해지게(block-view.js homeFitPersp와 같은 비)
   const fitBox = homeFitPersp(1, 1, { cols, rows, fitH: FIT_H, eye: eyeDistance({ cols, rows, maxH, fitH: FIT_H, persp: FREE_PERSP }) });
@@ -296,8 +308,14 @@ export function playFreeBuild(stage, ctx) {
   function layoutSlot() {
     const { w, h: sh } = view.getSize();
     if (w && sh) mat.classList.toggle('is-tall', sh > w * 0.9);
-    slot.style.removeProperty('--free-cell');
-    slot.style.removeProperty('--free-cell-font');
+    const cellMax = board.cell ?? CELL_MAX;
+    if (board.cell) {
+      slot.style.setProperty('--free-cell', `${board.cell}px`);
+      slot.style.setProperty('--free-cell-font', '12px');
+    } else {
+      slot.style.removeProperty('--free-cell');
+      slot.style.removeProperty('--free-cell-font');
+    }
     tools.pad.classList.remove('is-low');
     if (!board.compact || open !== 'pad' || slot.hidden || !sh || getComputedStyle(slot).position !== 'absolute') return;
     const room = sh - SLOT_EDGE; // 칸의 max-height(calc(100% − 96px))와 같다
@@ -306,7 +324,7 @@ export function playFreeBuild(stage, ctx) {
     tools.pad.classList.add('is-low');
     const height = tools.pad.getBoundingClientRect().height;
     if (height <= room) return;
-    const cell = Math.max(CELL_MIN, Math.floor(CELL_MAX - (height - room) / rows));
+    const cell = Math.max(CELL_MIN, Math.floor(cellMax - (height - room) / rows));
     slot.style.setProperty('--free-cell', `${cell}px`);
     slot.style.setProperty('--free-cell-font', `${Math.max(12, Math.min(13, Math.round(cell * 0.6)))}px`);
   }
@@ -541,13 +559,34 @@ export function playFreeBuild(stage, ctx) {
   tools.lock(false);
   setPaint(paint);
   view.setViewEnabled(true);
-  view.setLabel(`자유 쌓기 무대. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.compact ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
+  view.setLabel(`${board.big ? '더 큰 판 무대' : '자유 쌓기 무대'}. 판은 ${cols}칸 ${rows}줄이고 ${maxH}층까지 쌓을 수 있어요. 옆으로 끌면 판이 돌고, 위아래로 끌면 내려다보는 높이가 바뀌어요.${board.compact ? ' 위에서 본 판을 펼쳐 판이 비키면 Shift와 방향키나 두 손가락으로 판을 옮겨 가려진 곳을 봐요.' : ''}`);
   controls.lock(false);
   showCount();
+
+  // 같은 판을 다른 탭에서도 열어 그쪽에서 쌓으면(storage 알림 — 다른 탭이 저장할 때만 온다) 이 판을 다시 읽는다: 마지막에 한 것이 두 탭에 같게,
+  // 한쪽이 다른 쪽 것을 모르고 덮어쓰지 않게(plan 4-2 — 큰 판). 다시 읽으면 이 탭의 되돌리기 기록은 새로 시작한다
+  const onStorage = (event) => {
+    if (event.key !== null && event.key !== storage.fullKey(freeKey(board))) return;
+    const next = readSaved(storage.get(freeKey(board)), board);
+    tools.load(next?.map ?? emptyMap(cols, rows), next?.cubes ?? null);
+    showCount();
+    if (open === 'views') drawViews();
+    if (view.isApart()) syncMarks();
+    if (open) placeBoard({ keep: true });
+  };
+  if (extra.sync) globalThis.addEventListener('storage', onStorage);
+
+  /** 띠가 낮아 버튼이 띠 안에 다 들지 않으면(크롬북 아래 선반이 보이는 창 등) 개수를 한 줄로 · 간격을 줄인다 — 띠 안 스크롤로 숨기지 않는다(plan 7-1) */
+  const fitStrip = () => {
+    strip.classList.remove('is-tight');
+    if (getComputedStyle(strip).flexDirection !== 'column') return;
+    if (strip.scrollHeight > strip.clientHeight + 0.5) strip.classList.add('is-tight');
+  };
   // 무대 크기가 바뀌면(창 크기·화면 방향) 펼치는 칸의 자리·칸 크기·비킬 거리·알림 자리를 다시 잰다 — 무대가 제 크기를 다시 잰 뒤에(F1b-1).
   // 같은 무대를 지켜보는 ResizeObserver는 만든 차례대로 알림을 받으므로, block-view의 것(먼저 만듦)이 view.getSize()를 새 값으로 바꾼 뒤 이것이 돈다.
   // (창 크기 이벤트 뒤의 requestAnimationFrame은 ResizeObserver보다 먼저 돌아 옛 무대 크기로 배치했다.) 지켜보기를 시작할 때 한 번 불려 처음 배치도 한다
   const relayout = () => {
+    fitStrip();
     layoutSlot();
     placeBoard();
     placeToast();
@@ -573,6 +612,7 @@ export function playFreeBuild(stage, ctx) {
   return () => {
     stageWatch?.disconnect();
     globalThis.removeEventListener('resize', onResize);
+    globalThis.removeEventListener('storage', onStorage);
     cancelAnimationFrame(resizeRaf);
     cancelAnimationFrame(panRaf);
     panRaf = 0;
@@ -580,5 +620,122 @@ export function playFreeBuild(stage, ctx) {
     tools.destroy();
     controls.destroy();
     view.destroy();
+    bench.remove();
+  };
+}
+
+/**
+ * 자유 쌓기 단계: 보통 판(창 크기로 14×14 또는 휴대폰 6×6)으로 시작하고, 띠 맨 아래의 [더 큰 판]으로 같은 화면이 큰 판 화면(20×20)으로 바뀐다
+ * (spec-grade6 15-37 · 15-39 — free-big.js). 큰 판 화면에서는 같은 자리가 [← 보통 판으로]. 두 판의 작품은 따로 저장된다(열쇠가 따로).
+ * 주소 ?board=big은 큰 판으로 바로 연다(휴대폰이면 보통 판 + 안내 카드 한 번). 단계에서 나가면 큰 판 화면 표시 · 전체 화면을 모두 푼다.
+ */
+export function playFreeBuild(stage, ctx) {
+  const { h } = ctx;
+  const normal = boardFor(globalThis.innerWidth ?? 1366, globalThis.innerHeight ?? 768);
+  const storage = createFreeStore(ctx.game?.id ?? 'net-workshop'); // 두 판이 함께 쓴다(막힌 저장소에서는 이 단계 동안 두 판 모두 남는다)
+  const phoneBoard = normal === FREE_BOARDS.phone;
+  let unmount = null;
+  let notice = null;
+  let escTold = false; // "전체 화면을 나가려면 Esc를 눌러요."는 처음 한 번
+  let visit = 0; // 판을 바꿀 때마다 1 — 늦게 오는 전체 화면 결과가 지난 판에 알리지 않게
+  let gone = false;
+
+  const doorButton = (cls, glyph, text, label, onclick, attrs = {}) => h('button', {
+    type: 'button',
+    class: `btn blk-sbtn blk-free-doorbtn ${cls}`,
+    'aria-label': label,
+    ...attrs,
+    onclick: (event) => {
+      ctx.sfx.play('click');
+      onclick(event);
+    },
+  }, h('span', { class: 'btn-ico', 'aria-hidden': 'true' }, glyph), h('span', { class: 'blk-sbtn-text' }, text));
+
+  // 보통 판의 메뉴(결정 4): 띠 맨 아래 · 휴대폰(누르는 순간의 창 크기로)은 안내 카드(결정 5)
+  const bigButton = doorButton('blk-free-big', bigIcon(), BIG_NAME, phoneBoard ? BIG_LABEL_PHONE : BIG_LABEL, () => {
+    if (isPhoneSize(globalThis.innerWidth ?? 1366, globalThis.innerHeight ?? 768)) showNotice();
+    else openBig({ full: true, focus: true });
+  });
+  // 큰 판 화면: 같은 자리에 [← 보통 판으로], 그 위에 [전체 화면](되는 기기에서만 — 켜고 끄기, Esc로 나간 뒤 다시 켤 수 있다)
+  const backButton = doorButton('blk-free-back', icon('back'), '보통 판으로', BACK_LABEL, () => openNormal());
+  const fullButton = canFullscreen()
+    ? doorButton('blk-free-full', fullIcon(false), '전체 화면', '전체 화면', () => {
+      if (isFullscreen()) {
+        exitFullscreen();
+        return;
+      }
+      const at = visit;
+      requestFullscreen().then((on) => {
+        if (on && at === visit && !gone) tellEsc();
+      });
+    }, { 'aria-pressed': 'false' })
+    : null;
+  const syncFull = () => {
+    if (!fullButton) return;
+    const on = isFullscreen();
+    fullButton.setAttribute('aria-pressed', String(on));
+    fullButton.querySelector('.btn-ico').replaceChildren(fullIcon(on));
+  };
+  const offFull = onFullscreenChange(syncFull);
+  function tellEsc() {
+    if (escTold) return;
+    escTold = true;
+    ctx.feedback.info(FULL_ESC);
+  }
+
+  function mount(board, extra) {
+    unmount?.();
+    visit += 1;
+    unmount = mountBoard(ctx, board, storage, extra);
+  }
+  function openNormal({ focus = true } = {}) {
+    exitFullscreen();
+    setBigScreen(false);
+    mount(normal, { foot: h('div', { class: 'blk-free-door' }, bigButton) });
+    if (focus) bigButton.focus({ preventScroll: true }); // 같은 자리의 [더 큰 판]
+  }
+  function openBig({ full = false, focus = false } = {}) {
+    // 전체 화면은 누른 순간에 요청한다(늦게 부르면 브라우저가 막는다). 막히거나 없어도 큰 판 화면은 열린다
+    const asking = full ? requestFullscreen() : null;
+    setBigScreen(true);
+    const head = h('p', { class: 'blk-free-bigname' }, h('b', null, BIG_NAME), h('small', null, BIG_SIZE));
+    mount(BIG_BOARD, { head, foot: h('div', { class: 'blk-free-door' }, fullButton, backButton), sync: true });
+    syncFull();
+    globalThis.scrollTo?.(0, 0);
+    if (focus) backButton.focus({ preventScroll: true }); // 누른 자리(띠 맨 아래)의 같은 문 [← 보통 판으로]
+    if (!asking) {
+      ctx.feedback.info(BIG_HELLO);
+      return;
+    }
+    // 화면 전체가 되었는지 안 뒤에 한 번 알린다(되었으면 Esc 안내까지 — 처음 한 번)
+    const at = visit;
+    asking.then((on) => {
+      if (at !== visit || gone) return;
+      ctx.feedback.info(on && !escTold ? `${BIG_HELLO} ${FULL_ESC}` : BIG_HELLO);
+      if (on) escTold = true;
+    });
+  }
+  function showNotice() {
+    notice?.close();
+    notice = createPhoneNotice({ h, sfx: ctx.sfx, back: bigButton, onClose: () => { notice = null; } });
+    ctx.el.append(notice.el);
+    notice.ok.focus({ preventScroll: true });
+  }
+
+  const direct = wantsBig(globalThis.location?.search);
+  if (direct && !phoneBoard) openBig();
+  else {
+    openNormal({ focus: false });
+    if (direct) showNotice();
+  }
+
+  return () => {
+    gone = true;
+    notice?.close();
+    offFull();
+    unmount?.();
+    unmount = null;
+    exitFullscreen();
+    setBigScreen(false);
   };
 }

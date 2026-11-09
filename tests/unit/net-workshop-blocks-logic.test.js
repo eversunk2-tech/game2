@@ -146,8 +146,9 @@ test('단계 목록: 교과서 1~5차시와 짝지은 다섯 차시 × 세 단�
   assert.equal(BLOCK_UNIT, '6학년 2학기 · 공간과 입체');
   // 놀이 방법: 3·4차시의 모눈 칠하기·수 쓰기(review-blocks-s2 S2-12) · 5차시의 층별 모양과 도전 주문서(S3) 다음에 쌓기·돌려 보기 두 줄이 맨 끝
   // (처음 화면의 놀이 방법 검사가 끝 두 줄을 본다)
-  assert.equal(BLOCK_HOW_TO.length, 7); // F1: 자유 쌓기 한 줄(끝 두 줄 바로 앞)이 더해졌다
+  assert.equal(BLOCK_HOW_TO.length, 8); // F1: 자유 쌓기 한 줄 · 더 큰 판 한 줄(spec-grade6 15-39 — 자유 쌓기 줄 바로 뒤)이 끝 두 줄 바로 앞에 더해졌다
   assert.match(BLOCK_HOW_TO[4], /^\[자유 쌓기\]에서는 넓은 판에/);
+  assert.equal(BLOCK_HOW_TO[5], '[자유 쌓기]의 [더 큰 판]을 누르면 두 배 넓은 판에서 쌓아요. 태블릿과 컴퓨터에서 쓸 수 있어요.');
   for (const line of BLOCK_HOW_TO) assert.match(line, /요\.$/);
   for (const line of BLOCK_HOW_TO.slice(-2)) assert.match(line, /쌓기나무.*요\.$/);
   for (const line of BLOCK_HOW_TO.slice(0, 4)) assert.doesNotMatch(line, /쌓기나무/);
