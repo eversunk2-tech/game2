@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`41fcf0a`**(G2s 각기둥 4단계 판 = 초록 판 전체 · 옆으로 옮겨 보기, 2026-11-07 올림) + CI 실행 기계 고정 `c6cfc27`(CI 통과, 두 사이트 확인) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **자유 쌓기 "더 큰 판" Build 차례 1(시안)**: Plan [plan-big-board.md](games/net-workshop/plan-big-board.md)(`9fa10cb`) → 사용자 결정 15-39(모두 추천안 — 20×20 · 10층, 같은 화면 + 화면 전체, 두 판 따로, 메뉴 ② 띠 맨 아래, 휴대폰 안내 카드). 지침 [build-brief-big-board.md](games/net-workshop/build-brief-big-board.md), 작업 폴더 `.worktrees/blocks`, 포트 5302 · e2e 5352~5353, scratchpad `build-big/` → 시안을 사용자에게 → "계속". 원기둥은 멈춘 채(15-38) |
+| 지금 도는 것 | **자유 쌓기 "더 큰 판" Build 차례 2~(완성 · 테스트 · 커밋)**: 시안 확인(15-40 — 노랑 바탕 버튼, 낮은 창만 띠 촘촘하게, 이대로 완성). 지침 [build-brief-big-board.md](games/net-workshop/build-brief-big-board.md)(+덧붙임), 작업 폴더 `.worktrees/blocks`, 포트 5302 · e2e 5352~5353, scratchpad `build-big/` → 다음 Review [review-brief-big-board.md](games/net-workshop/review-brief-big-board.md)(5354~5355, 결과 `review-blocks-big.md`). 원기둥은 멈춘 채(15-38) |
 | 멈춤 | **원기둥 전부** — ① **G3a 고치기·재검토·올림**: 2026-11-09 사용자 "원기둥 고치기는 일시정지하고 큰판 만들기부터 해줘. 원기둥 고치기는 급하지 않아서 큰판 완료되고 나면 일시정지하고 내가 재개하라고 요청하면 시작해줘"(15-38) — 큰 판을 올린 뒤에도 사용자가 재개하라고 할 때까지 시작하지 않음(멈춘 곳은 2절). ② **G3b(3·4단계)·G3c(도전)**: 15-36 — G3a를 올린 뒤에도 멈춤 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -46,6 +46,7 @@
   - 임시 파일(잰 값 · 그림 · 도구 · `sim/` 복사본, 98 MB)은 다시 `.worktrees/_saved-scratchpad-2026-11-09/plan-big-board/`에 옮겨 둠(재시동하면 scratchpad가 지워지므로).
   - "이어서"면: 원기둥은 건드리지 않는다. 같은 Plan에게 "5절(그리는 속도 — 부하가 낮은 것을 확인하고 CPU 1 · 4배)을 재서 채우고, 0절 · 2-8 · 9절에 반영한 뒤 최종 보고"로 이어 맡김(scratchpad가 비었으면 옮겨 둔 폴더에서 되돌려 놓고). 안 되면 새 Plan에게 `plan-big-board.md` + 옮겨 둔 폴더를 읽고 5절부터.
 - **Plan 끝(2026-11-09 18:50쯤)**: [plan-big-board.md](games/net-workshop/plan-big-board.md)(`9fa10cb`). 그리는 속도(CPU 4배, 지금 판과 나란히): 20×20 보통 장면 끊김 0, 판 전체 "도시"(약 2,000개)도 지금 판의 가장 나쁜 꼴과 같은 정도, 떨어진 10층 기둥 200개만 느려짐(8.8초 vs 5.9초). 사용자 결정 **15-39**(모두 추천안). → Build 차례 1(시안) [build-brief-big-board.md](games/net-workshop/build-brief-big-board.md).
+- **Build 차례 1 시안 → 사용자 결정 15-40**(모두 추천안): 시안 `build-big/shots/sheet-{menu,big,all}.png`(scratchpad). 큰 판 쌓기나무 한 변 크롬북 같은 탭 32 · 전체 화면 36 · 가로 태블릿 34 · 세로 태블릿 27 · 선반 보임 1366×633 30px, 넘침 0. → 같은 Build에게 "계속".
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
