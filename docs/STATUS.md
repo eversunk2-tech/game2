@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`571cddc`**(자유 쌓기 "더 큰 판" 20×20 · 10층, 2026-11-09 올림 — 배포 성공 · 두 사이트 확인 · CI 통과) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **큰 판 고치기(15-41 B-5 — 전체 화면 안내 글을 "전체 화면을 나가려면 [전체 화면]을 다시 눌러요."로)**: 같은 Build에게 [build-fix-brief-big-board.md](games/net-workshop/build-fix-brief-big-board.md)(`.worktrees/blocks` · 5302 · 5352~5353) → 같은 Review가 [review-fix-brief-big-board.md](games/net-workshop/review-fix-brief-big-board.md)(5354~5355, `review-blocks-big.md`에 재검토 절) → 합침 · 전체 테스트 · 올림. 원기둥은 멈춘 채(15-38 — 사용자가 재개하라고 할 때까지) |
+| 지금 도는 것 | **큰 판 B-5 고친 것 재검토**(같은 Review, [review-fix-brief-big-board.md](games/net-workshop/review-fix-brief-big-board.md), 대상 `track/blocks` `bf68a07`, 5354~5355) → 통과면 합침 · 전체 테스트(5330) · 올림. 사용자가 자는 동안 승인은 코디네이터(15-42). 원기둥은 멈춘 채(15-38) |
 | 멈춤 | **원기둥 전부** — ① **G3a 고치기·재검토·올림**: 2026-11-09 사용자 "원기둥 고치기는 일시정지하고 큰판 만들기부터 해줘. 원기둥 고치기는 급하지 않아서 큰판 완료되고 나면 일시정지하고 내가 재개하라고 요청하면 시작해줘"(15-38) — 큰 판을 올린 뒤에도 사용자가 재개하라고 할 때까지 시작하지 않음(멈춘 곳은 2절). ② **G3b(3·4단계)·G3c(도전)**: 15-36 — G3a를 올린 뒤에도 멈춤 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -52,6 +52,7 @@
 - **올림(2026-11-09 22:27)**: `track/blocks` 합침 `571cddc`. 합친 뒤 전체 테스트(5330): 단위 433 · 0, 브라우저 623 · 0 · 165 건너뜀(보통 · 글꼴 흉내). 이 컴퓨터에서 합친 화면을 열어 봄(큰 판 · 돌아오기 · 휴대폰 카드, 오류 0). 배포 성공, **두 사이트에서 새 파일(`net-workshop-OAXYUZP6.js` · `blocks-play-GNVIKXKC.js`) · 응답 400 이상 0 · 콘솔 오류 0** — [더 큰 판] → 큰 판(띠 "더 큰 판 / 20칸 20줄", 전체 화면 켜짐) → [보통 판으로](표시 지워짐), 휴대폰 390×844 안내 카드. CI(`42625599773`) 통과(54분).
 - **사용자 결정 15-41(2026-11-10)**: B-1 "다음 기회에"(코디네이터 추천은 이번에 고치기 — 7절에 남김), B-4 "그대로 두기 (추천)", B-5 "버튼 안내로 바꾸기 (추천)" → 고치기 라운드(Build 지침 [build-fix-brief-big-board.md](games/net-workshop/build-fix-brief-big-board.md), 재검토 [review-fix-brief-big-board.md](games/net-workshop/review-fix-brief-big-board.md)).
 - **사용자 위임 15-42(2026-11-10 02:40쯤)**: 사용자가 자는 동안 승인이 필요한 것을 코디네이터 판단에 맡김(다시 채팅할 때까지). 정한 것은 spec-grade6.md 15-42 아래에 적는다. 원기둥(멈춘 일)은 이 위임으로 시작하지 않는다. 컴퓨터 잠들지 않게 함(세션이 쉬면 풀림).
+- **B-5 고치기 Build 끝(2026-11-10 03:25쯤)**: `track/blocks` `bf68a07`(`free-big.js` 글 · `play-free-build.js` 주석 · 검사 둘 — 전체 화면을 못 하는 기기에서 안내가 안 뜨는 검사 더함). Build 보고: 단위 433 · 브라우저 790(625 · 165 · 0, 보통 · 글꼴 흉내), 들어갈 때 알림 2줄 그대로. → 같은 Review가 재검토(5354~5355).
 
 ### 끝난 일 — G2s 각기둥 4단계 판 전체 · 옆으로 옮겨 보기 (2026-11-07 올림)
 
