@@ -17,7 +17,7 @@ const FILE = 'net-workshop.html';
 const KEY14 = 'edu:net-workshop:free-14x14';
 const KEYBIG = 'edu:net-workshop:free-big-20x20';
 const HELLO = '더 큰 판이에요. 20칸 20줄이고 10층까지 쌓을 수 있어요.';
-const ESC = '전체 화면을 나가려면 Esc를 눌러요.';
+const ESC = '전체 화면을 나가려면 [전체 화면]을 다시 눌러요.'; // 전체 화면 안내(15-41 B-5 "버튼 안내로 바꾸기" — 전에는 Esc 안내)
 const PHONE = '더 큰 판은 태블릿이나 컴퓨터에서 쓸 수 있어요.';
 const LABEL = '더 큰 판에서 쌓기';
 const BACK = '보통 판으로 돌아가기';
@@ -381,7 +381,7 @@ test('큰 판 화면(결정 1 · 2) 태블릿 가로 · 세로: 20×20칸, 한 �
 
 // ── 전체 화면 ──────────────────────────
 
-test('전체 화면(결정 2): [더 큰 판]을 누른 순간 한 번 요청, 들어갈 때 알림 + "Esc" 한 번, [전체 화면]으로 끄고 다시 켬(Esc 안내는 처음 한 번만), [← 보통 판으로]에서 끔', async ({ page }, testInfo) => {
+test('전체 화면(결정 2 · 15-41 B-5): [더 큰 판]을 누른 순간 한 번 요청, 들어갈 때 알림 + 전체 화면 안내(버튼 이름 [전체 화면]) 한 번, [전체 화면]으로 끄고 다시 켬(안내는 처음 한 번만), [← 보통 판으로]에서 끔', async ({ page }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북');
   const errors = collectErrors(page);
   await spyFullscreen(page, 'ok');
@@ -393,7 +393,9 @@ test('전체 화면(결정 2): [더 큰 판]을 누른 순간 한 번 요청, �
   await expect(page.locator('.toast')).toHaveText(`${HELLO} ${ESC}`);
   await expect(live(page)).toHaveText(`${HELLO} ${ESC}`);
   await expect(fullButton(page)).toHaveAttribute('aria-pressed', 'true');
-  // 끄고(Esc로 나간 것과 같다) 다시 켜기
+  // 안내가 가리키는 버튼이 띠에 그 이름으로 있다(켜고 끄는 버튼)
+  expect(ESC).toContain(`[${(await fullButton(page).textContent()).trim()}]`);
+  // 끄고(안내대로 [전체 화면]을 다시 누름 — Esc로 나간 것과 같다) 다시 켜기
   await fullButton(page).click();
   expect(await fs(page)).toEqual({ req: 1, exit: 1 });
   await expect(fullButton(page)).toHaveAttribute('aria-pressed', 'false');
@@ -402,7 +404,7 @@ test('전체 화면(결정 2): [더 큰 판]을 누른 순간 한 번 요청, �
   await expect(fullButton(page)).toHaveAttribute('aria-pressed', 'true');
   await page.evaluate(() => new Promise((r) => setTimeout(r, 0))); // 요청 결과(약속)가 돌아온 뒤
   expect((await fs(page)).req).toBe(2);
-  expect((await toastTexts(page)).filter((t) => t === ESC || t.endsWith(ESC))).toHaveLength(1); // Esc 안내는 처음 한 번
+  expect((await toastTexts(page)).filter((t) => t === ESC || t.endsWith(ESC))).toHaveLength(1); // 전체 화면 안내는 처음 한 번
   // [← 보통 판으로]: 전체 화면도 끈다 · 큰 판 화면 표시가 없어진다 · 보통 판 14×14
   await backButton(page).click();
   await waitNormal(page);
@@ -412,7 +414,7 @@ test('전체 화면(결정 2): [더 큰 판]을 누른 순간 한 번 요청, �
   expect(errors).toEqual([]);
 });
 
-test('전체 화면이 막히거나(거절) 없는 브라우저: 큰 판 화면은 그대로 열리고 오류 0 · Esc 안내 없음. 주소로 바로 열면 요청하지 않고, [전체 화면]을 누르면 그때 Esc 안내 한 번', async ({ browser }, testInfo) => {
+test('전체 화면이 막히거나(거절) 없는 브라우저: 큰 판 화면은 그대로 열리고 오류 0 · 전체 화면 안내 없음. 주소로 바로 열면 요청하지 않고, [전체 화면]을 누르면 그때 전체 화면 안내 한 번', async ({ browser }, testInfo) => {
   test.skip(isTouch(testInfo), '크롬북');
   for (const mode of ['reject', 'none']) {
     const { context, page } = await newPage(browser, 1366, 768, { fsMode: mode });
@@ -434,7 +436,7 @@ test('전체 화면이 막히거나(거절) 없는 브라우저: 큰 판 화면�
     expect(errors, mode).toEqual([]);
     await context.close();
   }
-  // 주소로 바로 열기(?board=big): 요청하지 않는다. [전체 화면]을 누르면 그때 요청하고 Esc 안내를 처음 한 번
+  // 주소로 바로 열기(?board=big): 요청하지 않는다. [전체 화면]을 누르면 그때 요청하고 전체 화면 안내를 처음 한 번
   const { context, page } = await newPage(browser, 1366, 768);
   const errors = collectErrors(page);
   await openFree(page, '&board=big');
@@ -450,6 +452,34 @@ test('전체 화면이 막히거나(거절) 없는 브라우저: 큰 판 화면�
   expect((await toastTexts(page)).filter((t) => t === ESC)).toHaveLength(1);
   expect(errors).toEqual([]);
   await context.close();
+});
+
+test('전체 화면을 못 하는 기기(15-41 B-5): [전체 화면] 버튼이 없고 전체 화면 안내 글이 한 번도 뜨지 않는다 — [더 큰 판]으로 들어갈 때 · 보통 판에 다녀와 다시 · 주소로 바로 열 때(화면 글 · 화면 읽기 모두)', async ({ page }, testInfo) => {
+  const errors = collectErrors(page);
+  await spyFullscreen(page, 'none');
+  const noGuide = async (tag) => {
+    await expect(page.locator('.toast'), tag).toHaveText(HELLO);
+    await expect(live(page), tag).toHaveText(HELLO);
+    await expect(fullButton(page), tag).toHaveCount(0);
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 0))); // 늦게 오는 결과(약속)까지
+    await frames(page);
+    expect((await toastTexts(page)).filter((t) => t.includes(ESC)), tag).toEqual([]);
+    expect(await live(page).textContent(), tag).not.toContain(ESC);
+  };
+  await openFree(page);
+  await press(testInfo, bigButton(page));
+  await waitBig(page);
+  await noGuide('[더 큰 판]');
+  await press(testInfo, backButton(page));
+  await waitNormal(page);
+  await press(testInfo, bigButton(page));
+  await waitBig(page);
+  await noGuide('다시 들어감');
+  await openFree(page, '&board=big');
+  await waitBig(page);
+  await noGuide('주소로 바로');
+  expect(await fs(page)).toEqual({ req: 0, exit: 0 });
+  expect(errors).toEqual([]);
 });
 
 test('나가기: 큰 판 화면에는 단계 지도로 나가는 다른 길이 없고([← 단계 선택] · 맨 위 띠가 안 보임), 단계에서 나가면(엔진이 정리) 표시 · 전체 화면이 남지 않는다. 보통 판에서 나가도 같다', async ({ page }, testInfo) => {
