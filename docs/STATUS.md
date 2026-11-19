@@ -1,6 +1,6 @@
 # 지금 상태 (STATUS)
 
-> 마지막으로 고친 날: **2026-11-19**(원기둥 재개 — 15-43). 일이 한 고비 넘을 때마다 이 문서를 고친다.
+> 마지막으로 고친 날: **2026-11-19**(디자인 요청 15-44 — 버튼 · 메뉴의 덧붙은 그림자, Plan 시작). 일이 한 고비 넘을 때마다 이 문서를 고친다.
 > 규칙은 [CLAUDE.md](../CLAUDE.md)와 [common-rules.md](games/net-workshop/common-rules.md), 예전 경위와 "끝난 것" 목록은 [HANDOFF.md](HANDOFF.md)에 있다.
 
 ## 1. 한눈에
@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`2608765`**(자유 쌓기 "더 큰 판" `571cddc` 2026-11-09 + 전체 화면 안내 글 고침 15-41 B-5, 2026-11-10 올림 — 배포 성공 · 두 사이트 확인 · CI 통과) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | 없음 — **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")**. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
+| 지금 도는 것 | **디자인 Plan(15-44, 2026-11-19 22시~)** — 버튼 · 메뉴의 "덧붙은 단단한 그림자"를 사람 디자이너 방식으로: 분석 + 실제 빌드에 덧씌운 시안(지금 + A · B · C, [입장하기]도). 지침 [plan-brief-ui-depth.md](games/net-workshop/plan-brief-ui-depth.md), 작업 폴더 `.worktrees/design` · 포트 5341~5342. 시안을 사용자가 고른 뒤 Build. / 원기둥은 **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")** 그대로 — "이어서"를 기다림. 15-43 위임은 사용자가 돌아와 끝남. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
 | 멈춤 | 없음(원기둥은 15-43으로 재개). 재시동으로 scratchpad가 비어 `.worktrees/_saved-scratchpad-2026-11-09/`의 `build-g3a/` · `review-g3a/` · `plan-cylinder/`를 되돌려 놓음 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
@@ -173,6 +173,7 @@
 | --- | --- | --- | --- |
 | `blocks` · `track/blocks` `876aef2`(`main`에 합쳐짐) | 쉼 — 큰 판 끝 | 5302 · 5352~5353 | Review 5354~5355 |
 | `cuboid` · `track/cuboid` `c713f78` | 원기둥 G3a 고치기 **멈춤**(15-38 — 사용자가 재개하라고 할 때까지) | 5301 · 5361~5362 | Review 5363~5364 |
+| `design` · `track/design`(2026-11-19 `main`에서) | 디자인 15-44 Plan 측정 · 시안(코드는 아직 안 고침) | Plan 5341~5342 | Build · Review 포트는 Build 때 정함 |
 | `c1` · `track/c1` `e590c55`(`main`에 합쳐짐) | 쉼 | 5304 · 5305 | 작은 손질 |
 | `b0` · `track/b0`, `b0d` · `track/b0d`(모두 `main`에 합쳐짐) | 쉼 | 5303 · 5306~5309 / 5325~5329 | 쓰지 않음 — 지워도 됨 |
 
