@@ -1,6 +1,6 @@
 # 지금 상태 (STATUS)
 
-> 마지막으로 고친 날: **2026-11-19**(디자인 요청 15-44 — 버튼 · 메뉴의 덧붙은 그림자, Plan 시작). 일이 한 고비 넘을 때마다 이 문서를 고친다.
+> 마지막으로 고친 날: **2026-11-20**(디자인 15-45 — Build 차례 2). 일이 한 고비 넘을 때마다 이 문서를 고친다.
 > 규칙은 [CLAUDE.md](../CLAUDE.md)와 [common-rules.md](games/net-workshop/common-rules.md), 예전 경위와 "끝난 것" 목록은 [HANDOFF.md](HANDOFF.md)에 있다.
 
 ## 1. 한눈에
@@ -12,7 +12,7 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`2608765`**(자유 쌓기 "더 큰 판" `571cddc` 2026-11-09 + 전체 화면 안내 글 고침 15-41 B-5, 2026-11-10 올림 — 배포 성공 · 두 사이트 확인 · CI 통과) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **디자인 Build 차례 1(15-45, 2026-11-19 23시~)** — 사용자가 고른 "C 차분한 면 + 모든 메뉴 버튼에 은은한 그림자 · 올리면 살짝 떠오름(모두의 배움터처럼) · 받침 두께 없음 · [입장하기] 노랑 + 파란 테두리"를 모든 화면에 입힌 시안 → 사용자 확인 → "계속". 지침 [build-brief-ui-depth.md](games/net-workshop/build-brief-ui-depth.md), 작업 폴더 `.worktrees/design` · 포트 5581~5583(Review 5584~5585). Plan [plan-ui-depth.md](games/net-workshop/plan-ui-depth.md) 끝(시안 그림 `.worktrees/_saved-scratchpad-2026-11-19/plan-depth/`). / 원기둥은 **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")** 그대로 — "이어서"를 기다림. 15-43 위임은 사용자가 돌아와 끝남. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
+| 지금 도는 것 | **디자인 Build 차례 2(15-45, 2026-11-20~ — 사용자가 차례 1 시안을 "이대로 넣기", [입장하기] "위가 조금 밝은 노랑 + 파란 테 6px")**: CSS 마무리 · 검사 · 테스트 셋 → 그다음 Review [review-brief-ui-depth.md](games/net-workshop/review-brief-ui-depth.md)(5584~5585). 차례 1 내용 — 사용자가 고른 "C 차분한 면 + 모든 메뉴 버튼에 은은한 그림자 · 올리면 살짝 떠오름(모두의 배움터처럼) · 받침 두께 없음 · [입장하기] 노랑 + 파란 테두리"를 모든 화면에 입힌 시안 → 사용자 확인 → "계속". 지침 [build-brief-ui-depth.md](games/net-workshop/build-brief-ui-depth.md), 작업 폴더 `.worktrees/design` · 포트 5581~5583(Review 5584~5585). Plan [plan-ui-depth.md](games/net-workshop/plan-ui-depth.md) 끝(시안 그림 `.worktrees/_saved-scratchpad-2026-11-19/plan-depth/`). / 원기둥은 **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")** 그대로 — "이어서"를 기다림. 15-43 위임은 사용자가 돌아와 끝남. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
 | 멈춤 | 없음(원기둥은 15-43으로 재개). 재시동으로 scratchpad가 비어 `.worktrees/_saved-scratchpad-2026-11-09/`의 `build-g3a/` · `review-g3a/` · `plan-cylinder/`를 되돌려 놓음 |
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
