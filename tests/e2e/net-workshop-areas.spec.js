@@ -528,17 +528,21 @@ test('배치(네 크기): 처음 화면·두 학년 화면·영역의 단계 지
       await expect(tab(page, a.id)).toHaveAttribute('aria-selected', 'true');
       await settled(page);
       check(await layoutOf(page), `${a.id} 지도`);
-      // 지금 탭은 눌린 키(내려앉음) — 같은 학년의 다른 탭과 색만이 아니라 자리·그림자도 다르다. 탭은 한 줄
+      // 지금 탭(spec-grade6 15-45 "차분한 면"): 파랑 면 흰 글자 + 눌린 그림자 — 같은 학년의 다른 탭과 면 색 · 글자 색 · 그림자 · aria가 다르다
+      // (예전 "내려앉음(transform)"은 15-45에서 뺐다: 지금 탭도 다른 탭과 같은 자리 — 그래서 탭은 한 줄이고 자리 차이 대신 색 · 그림자로 가린다). 탭은 한 줄
       const tabs = await page.locator('.area-tab').evaluateAll((els) => els.map((el) => {
         const s = getComputedStyle(el);
-        return { top: el.offsetTop, current: el.getAttribute('aria-selected') === 'true', shadow: s.boxShadow, transform: s.transform };
+        return { top: el.offsetTop, current: el.getAttribute('aria-selected') === 'true', shadow: s.boxShadow, transform: s.transform, bg: s.backgroundColor, color: s.color };
       }));
       if (tabs.length > 1) {
         if (w > 560) expect(new Set(tabs.map((t) => t.top)).size, `${w}×${hgt} 탭 한 줄`).toBe(1);
         const on = tabs.find((t) => t.current);
         const off = tabs.find((t) => !t.current);
+        expect(tabs.filter((t) => t.current), `${w}×${hgt} 지금 탭은 하나`).toHaveLength(1);
         expect(on.shadow).not.toBe(off.shadow);
-        expect(on.transform).not.toBe(off.transform);
+        expect(on.bg).not.toBe(off.bg);
+        expect(on.color).not.toBe(off.color);
+        expect([on.transform, off.transform], `${w}×${hgt} 지금 탭도 내려앉지 않는다(자리가 같다)`).toEqual(['none', 'none']);
       }
     }
   }

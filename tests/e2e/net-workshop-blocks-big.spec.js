@@ -232,7 +232,7 @@ test('메뉴 ②(결정 4 · 15-40): 보통 판 띠 맨 아래(크롬북) · 띠
     expect(m.last, `${w}×${h}`).toBe(true);
     expect(m.big.height, `${w}×${h}`).toBeGreaterThanOrEqual(48);
     expect(m.border).toBe('solid'); // 점선은 이 앱에서 "지금은 누를 수 없음"
-    expect(m.bg).not.toBe(m.toolBg); // 쌓기 도구(흰 바탕)와 다른 바탕(노랑)
+    expect(m.bg).not.toBe(m.toolBg); // 쌓기 도구(옅은 파랑 면 — spec-grade6 15-45)와 다른 바탕(노랑)
     expect(m.tight, `${w}×${h}`).toBe(false); // 넘치지 않는 창의 보통 판은 그대로(15-40)
     const [padR, padB, edge] = m.stripPad;
     if (w > 1000) {

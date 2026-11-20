@@ -79,7 +79,7 @@
   justify-items: center;
   padding: 4px 6px 4px 8px;
   border-radius: 12px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--flat-line);
   background: rgb(255 253 248 / 94%);
 }
 .blk-pad-title { grid-area: title; font-size: var(--fs-xs); font-weight: 800; line-height: 1.4; white-space: nowrap; }
@@ -117,23 +117,24 @@
 .blk-tools { min-height: 52px; }
 .blk-tools .btn { min-height: 52px; padding: 6px 14px; gap: 6px; white-space: nowrap; }
 .blk-modes { display: flex; gap: 4px; flex: none; }
-.blk-mode[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-edge); box-shadow: inset 0 3px 0 var(--primary-edge); transform: translateY(3px); }
+/* 켠 것(쌓기 · 빼기 · 펼친 쪽 · 고른 색): 파랑 면 흰 글자 + 눌린 그림자, 떠오르지 않는다(aria-pressed · aria-expanded — 색만으로 구분하지 않는다) */
+.blk-mode[aria-pressed="true"], .blk-mode[aria-pressed="true"]:hover:not([disabled]), .blk-mode[aria-pressed="true"]:active:not([disabled]) { background: var(--primary); color: var(--on-primary); box-shadow: var(--pri-shadow-down); transform: none; }
 .blk-tools .blk-check { margin-left: auto; padding: 6px 20px; font-size: 1.2rem; }
 .blk-tools .blk-hint:not([hidden]) { margin-left: auto; }
 .blk-tools .blk-hint:not([hidden]) + .blk-check { margin-left: 0; }
 
 /* ── 주어진 그림 한 장 (매트 오른쪽, 조작판 아래): 내 판 옆에서 견줘 본다 ── */
 .blk-card { position: absolute; right: 14px; top: 186px; z-index: 3; }
-.blk-card .blk-figure { background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; box-shadow: 3px 4px 0 rgb(0 0 0 / 25%); padding: 4px 6px 2px; }
+.blk-card .blk-figure { background: var(--paper); border: 2px solid var(--flat-line); border-radius: 6px; padding: 4px 6px 2px; }
 .blk-card .blk-plan { width: 166px; }
 .blk-card .blk-flat { width: 124px; }
 /* 조형물 이름표 (매트 왼쪽, 방향 버튼 아래) */
-.blk-key { position: absolute; left: 14px; top: 84px; z-index: 3; padding: 6px 10px; border-radius: 12px; border: 2px solid var(--ink); background: rgb(255 253 248 / 94%); }
+.blk-key { position: absolute; left: 14px; top: 84px; z-index: 3; padding: 6px 10px; border-radius: 12px; border: 2px solid var(--flat-line); background: rgb(255 253 248 / 94%); }
 
 /* ── 매트 위 이름표 · 위에서 내려다본 배치 그림 ── */
 .blk-mat .blk-tag { left: 50%; top: 20px; transform: translateX(-50%); max-width: calc(100% - 430px); line-height: 1.3; }
 .blk-photo { position: absolute; inset: 20px 0 84px; display: grid; place-items: center; }
-.blk-photo .blk-figure { background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; box-shadow: 4px 5px 0 rgb(0 0 0 / 25%); padding: 8px 10px 6px; }
+.blk-photo .blk-figure { background: var(--paper); border: 2px solid var(--flat-line); border-radius: 6px; padding: 8px 10px 6px; }
 .blk-map { display: block; width: min(330px, 100%); height: auto; max-height: 100%; }
 .blk-map-card .blk-figure { height: min(100%, 372px); aspect-ratio: 1 / 1.08; }
 .blk-map-card .blk-map { width: 100%; height: calc(100% - 22px); }
@@ -209,7 +210,7 @@
 /* ── 쌓기 놀이터의 주문 셋 ───────────────── */
 .blk-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .blk-task { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 12px; border: 2px dashed var(--line); font-weight: 700; line-height: 1.35; color: var(--ink-2); }
-.blk-task.is-now { border: 2px solid var(--ink); background: var(--butter-soft); color: var(--ink); }
+.blk-task.is-now { border: 2px solid var(--primary); background: var(--butter-soft); color: var(--ink); }
 .blk-task.is-done { border-style: solid; color: var(--correct); }
 .blk-task-mark { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; border: 2px solid currentColor; font-family: var(--font-display); font-weight: 700; line-height: 1; }
 .blk-task-mark .icon { width: 1em; height: 1em; stroke-width: 3; }
@@ -548,10 +549,10 @@
   flex-direction: column;
   gap: 3px;
   padding: 8px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--flat-line);
   border-radius: var(--radius-lg);
   background: var(--paper);
-  box-shadow: var(--sheet);
+  box-shadow: var(--flat-shadow);
   overflow: hidden auto;
 }
 .blk-free-strip .btn { flex: none; width: 100%; min-height: var(--tap); padding: 4px 8px; gap: 6px; justify-content: flex-start; font-size: 0.98rem; line-height: 1.15; text-align: left; }
@@ -572,7 +573,9 @@
 .blk-padbox.is-compact .blk-cell.is-on { box-shadow: inset 0 -2px 0 rgb(30 33 64 / 22%); }
 .blk-padbox.is-compact .blk-cell:focus-visible { position: relative; z-index: 2; outline: 3px solid var(--ink); outline-offset: 0; box-shadow: 0 0 0 6px var(--butter); }
 /* 펼친 쪽·켠 것: 쌓기·빼기 버튼의 눌린 모습과 같다 */
-.blk-free-strip .btn[aria-expanded="true"], .blk-free-strip .btn[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary-edge); box-shadow: inset 0 3px 0 var(--primary-edge); }
+.blk-free-strip .btn[aria-expanded="true"], .blk-free-strip .btn[aria-pressed="true"],
+.blk-free-strip .btn[aria-expanded="true"]:hover:not([disabled]), .blk-free-strip .btn[aria-pressed="true"]:hover:not([disabled]),
+.blk-free-strip .btn[aria-expanded="true"]:active:not([disabled]), .blk-free-strip .btn[aria-pressed="true"]:active:not([disabled]) { background: var(--primary); color: var(--on-primary); box-shadow: var(--pri-shadow-down); transform: none; }
 .blk-free-swatch { flex: none; width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--ink); }
 /* 펼치는 칸 (매트 왼쪽, [위][앞][옆] 아래). 매트가 세로로 길면(.is-tall — 세로 태블릿처럼) 매트 왼쪽 아래 — 자리는 폭이 아니라 매트 모양으로(F1b, play-free-build.js layoutSlot) */
 .blk-free-slot { position: absolute; left: 14px; top: 84px; z-index: 4; max-height: calc(100% - 96px); overflow: auto; }
@@ -587,9 +590,9 @@
 .blk-free-fig { padding: 4px 6px 2px; background: var(--paper); }
 .blk-free-flat { display: block; width: auto; height: auto; }
 /* 색 고르기 (매트 오른쪽 아래 — 띠의 [색] 바로 옆) */
-.blk-free-colors { position: absolute; right: 14px; bottom: 12px; z-index: 4; display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 2px solid var(--ink); border-radius: 12px; background: var(--paper); box-shadow: var(--edge-sm); }
+.blk-free-colors { position: absolute; right: 14px; bottom: 12px; z-index: 4; display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 2px solid transparent; border-radius: 12px; background: var(--paper); box-shadow: var(--float); }
 .blk-free-colors .btn { min-height: var(--tap); padding: 4px 12px; gap: 8px; justify-content: flex-start; font-size: 1rem; }
-.blk-free-colors .btn[aria-pressed="true"] { background: var(--primary-soft); box-shadow: inset 0 3px 0 var(--primary-edge); }
+.blk-free-colors .btn[aria-pressed="true"], .blk-free-colors .btn[aria-pressed="true"]:hover:not([disabled]), .blk-free-colors .btn[aria-pressed="true"]:active:not([disabled]) { background: var(--primary); color: var(--on-primary); box-shadow: var(--pri-shadow-down); transform: none; }
 /* 판 옮기기(결정 9): 펼쳐서 판이 가려진 동안만, 무대 가장자리(가려진 쪽)에 — 자리는 play-free-build.js가 잰다 */
 .blk-free-pan { position: absolute; z-index: 4; border-radius: 50%; }
 .blk-free-pan.is-flip .icon { transform: scaleX(-1); }
@@ -653,7 +656,7 @@ html.blk-big-on .workbench.blk-free { --bench-h: calc(100vh - 20px); --bench-h: 
 
 /* 휴대폰 안내 카드(결정 5): 화면 가운데의 종이 카드, 뒤는 옅게 어둡게 */
 .blk-free-notice { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(30 33 64 / 32%); }
-.blk-free-notice-card { width: min(100%, 320px); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 20px 18px; border: 2px solid var(--ink); border-radius: var(--radius-lg); background: var(--paper); box-shadow: var(--edge); text-align: center; }
+.blk-free-notice-card { width: min(100%, 320px); display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px 20px 18px; border: 2px solid transparent; border-radius: var(--radius-lg); background: var(--paper); box-shadow: var(--float); text-align: center; }
 .blk-free-notice-ico { display: inline-flex; color: var(--primary); }
 .blk-free-notice-ico .icon { width: 34px; height: 34px; }
 .blk-free-notice-text { margin: 0; font-size: var(--fs-md); font-weight: 700; line-height: 1.45; word-break: keep-all; text-wrap: balance; }

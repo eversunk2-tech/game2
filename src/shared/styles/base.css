@@ -1,6 +1,6 @@
 /*
  * 모든 게임이 함께 쓰는 디자인 토큰과 기본 부품: "종이 공방" (docs/design/spec.md 2~3절)
- * - 잉크 테두리 + 아래 단단한 그림자 = 누를 수 있는 것. 옅은 선 + 부드러운 그림자 = 읽을 정보.
+ * - 누를 수 있는 것 = 채운 면(옅은 파랑 · 파랑 · 흰 카드) + 은은한 그림자, 올리면 살짝 떠오름. 읽을 정보 = 흰 면 + 옅은 선 (spec-grade6 15-45).
  * - 외부 글꼴을 불러오지 않는다. 제목 글꼴(Do Hyeon)은 빌드가 쓰인 글자만 잘라 파일 안에 넣는다.
  *   글꼴이 없으면 기기 글꼴 굵게(700)로 보인다.
  * - 누르는 곳은 48px 이상(태블릿·크롬북 터치). 움직이는 것은 transform·opacity만.
@@ -70,11 +70,37 @@
   --radius-lg: 22px;
   --tap: 48px;
 
-  /* 깊이: 단단한 그림자(움직이는 것) · 흐린 그림자(정지한 판에만) */
-  --edge-sm: 0 3px 0 var(--ink);
-  --edge: 0 4px 0 var(--ink);
-  --sheet: 5px 6px 0 rgb(30 33 64 / 10%);
-  --lift: 0 1px 0 rgb(30 33 64 / 6%), 0 10px 24px -10px rgb(30 33 64 / 22%);
+  /* 깊이: "차분한 면 + 은은한 그림자" (spec-grade6 15-45). 잉크 테두리 · 덧붙은 두께(아래 · 옆으로 밀린 단단한 그림자)는 쓰지 않는다.
+     누르는 것 = 면 색 + 은은한 두 겹 그림자(닿는 그림자 + 옅은 퍼짐), 마우스를 올리면 살짝 떠오르고 그림자가 커진다, 누르면 면이 진해지며 제자리에 앉는다.
+     읽는 판 = 흰 면 + 옅은 선(그림자는 아주 옅게) · 잠깐 뜨는 것(알림 · 색 고르기 · 이름표) = 뜬 그림자.
+     그림자 색은 잉크 색조(30 33 64)를 옅게, 흐림 반경 20px 이하. 그림자 값은 상태가 바뀔 때 한 번 바뀌고 전환하지 않는다(움직이는 것은 transform만).
+     ?fx=low는 흐림 없는 그림자만(아래 .fx-low), 움직임 줄이기 · ?fx=low는 떠오르지 않는다(--rise-* = 0) */
+  --key-face: #dfe5fb;        /* 보통 버튼 면(옅은 파랑) — 잉크 글자 12.43 */
+  --key-face-up: #d6defa;     /* 올렸을 때 — 잉크 글자 11.65 */
+  --key-face-down: #c2cdf6;   /* 눌렀을 때 — 잉크 글자 9.92 */
+  --primary-up: #2f52dc;      /* 주 버튼을 올렸을 때 — 흰 글자 6.25 */
+  --card-line: #d3c8b2;       /* 누르는 카드 · 답 버튼 · 입력 칸의 옅은 선 */
+  --flat-line: var(--line);   /* 읽는 판의 옅은 선 */
+  --cut-line: #c9bfa9;        /* 비활성 · 잠김의 점선 */
+  --label: #ebe4d4;           /* 칩 · 꼬리표의 납작한 면 — 잉크 12.31 · 흐린 글자 5.84 */
+  --key-shadow: 0 1px 2px rgb(30 33 64 / 12%), 0 2px 6px -1px rgb(30 33 64 / 12%);
+  --key-shadow-up: 0 2px 3px rgb(30 33 64 / 8%), 0 6px 16px -4px rgb(30 33 64 / 18%);
+  --key-shadow-down: 0 1px 1px rgb(30 33 64 / 14%);
+  --pri-shadow: 0 1px 2px rgb(24 48 143 / 26%), 0 3px 8px -2px rgb(39 71 200 / 32%);
+  --pri-shadow-up: 0 2px 3px rgb(24 48 143 / 16%), 0 8px 16px -4px rgb(39 71 200 / 40%);
+  --pri-shadow-down: 0 1px 1px rgb(24 48 143 / 32%);
+  --flat-shadow: 0 1px 2px rgb(30 33 64 / 5%);
+  --float: 0 2px 4px rgb(30 33 64 / 10%), 0 10px 20px -6px rgb(30 33 64 / 30%);
+  --rise-key: -2px;           /* 버튼 · 탭 · 답 버튼이 떠오르는 거리 (0.2초) */
+  --rise-card: -3px;          /* 단계 카드 · 자유 공간 카드 (0.3초) */
+  --rise-big: -4px;           /* 학년 · 영역 카드 · 게임 카드 (0.3초) */
+  --dur-rise: 200ms;
+  --dur-rise-lg: 300ms;
+  /* 옛 이름(다른 곳이 쓰면 새 값으로 이어진다) */
+  --edge-sm: var(--key-shadow);
+  --edge: var(--key-shadow);
+  --sheet: var(--flat-shadow);
+  --lift: var(--flat-shadow);
 
   /* 움직임 */
   --dur-1: 120ms;
@@ -95,6 +121,27 @@
   --focus: var(--butter);
   --shadow: var(--lift);
   color-scheme: light;
+}
+/* 움직임 줄이기: 떠오르지 않는다(그림자 · 색 변화만 남는다) */
+@media (prefers-reduced-motion: reduce) {
+  :root { --rise-key: 0px; --rise-card: 0px; --rise-big: 0px; }
+}
+/* ?fx=low · 코어 2개 이하(가벼운 모드 — 앱 뿌리 .edu-app에 붙는다): 떠오르지 않고, 흐림 없는 그림자만 (plan-ui-depth 3-5 ④의 안전판) */
+.fx-low {
+  --rise-key: 0px; --rise-card: 0px; --rise-big: 0px;
+  --key-shadow: 0 1px 0 rgb(30 33 64 / 18%);
+  --key-shadow-up: 0 1px 0 rgb(30 33 64 / 18%), 0 0 0 1px rgb(30 33 64 / 6%);
+  --key-shadow-down: 0 0 0 transparent;
+  --pri-shadow: 0 1px 0 rgb(24 48 143 / 45%);
+  --pri-shadow-up: 0 1px 0 rgb(24 48 143 / 45%), 0 0 0 1px rgb(24 48 143 / 15%);
+  --pri-shadow-down: 0 0 0 transparent;
+  --flat-shadow: 0 0 0 transparent;
+  --float: 0 0 0 1px rgb(30 33 64 / 10%), 0 2px 0 rgb(30 33 64 / 12%);
+  --edge-sm: var(--key-shadow);
+  --edge: var(--key-shadow);
+  --sheet: var(--flat-shadow);
+  --lift: var(--flat-shadow);
+  --shadow: var(--lift);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -159,7 +206,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .brand-mark {
   width: 36px; height: 36px; flex: none; border-radius: 10px;
   display: grid; place-items: center;
-  border: 2px solid var(--ink); background: var(--butter); box-shadow: 0 2px 0 var(--ink);
+  border: 2px solid transparent; background: var(--butter);
   font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1;
 }
 .topbar-title { font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.2; }
@@ -171,13 +218,14 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .actions { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
 .actions-start { justify-content: flex-start; }
 
-/* ── 버튼: 두꺼운 종이 키 (잉크 테두리 + 아래 그림자, 누르면 내려앉음) ── */
+/* ── 버튼: 채운 면 + 은은한 그림자 (올리면 살짝 떠오름, 누르면 면이 진해지며 제자리에 앉음 — spec-grade6 15-45) ──
+   테두리 2px는 자리 · 크기를 그대로 두려고 남기고 색만 투명하게(면 색이 테두리 자리까지 칠해진다) */
 .btn {
   min-height: var(--tap);
   padding: 8px 22px;
   border-radius: 14px;
-  border: 2px solid var(--ink);
-  background: var(--paper);
+  border: 2px solid transparent;
+  background: var(--key-face);
   color: var(--ink);
   font-family: var(--font-display);
   font-weight: 700;
@@ -187,18 +235,19 @@ button, input, textarea, select { font: inherit; color: inherit; }
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: var(--edge-sm);
+  box-shadow: var(--key-shadow);
   cursor: pointer;
   text-decoration: none;
-  transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-2);
+  transition: transform var(--dur-rise) var(--ease-out), background-color var(--dur-2);
 }
-.btn:hover:not([disabled]) { transform: translateY(-1px); box-shadow: var(--edge); background-color: #fff; }
-.btn:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
-.btn:focus-visible { box-shadow: var(--edge-sm), 0 0 0 7px var(--butter); }
-.btn[disabled] { cursor: not-allowed; color: var(--ink-2); background: var(--paper-3); border-style: dashed; box-shadow: none; }
-.btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: 0 4px 0 var(--primary-edge); }
-.btn-primary:hover:not([disabled]) { background-color: #2f52dc; box-shadow: 0 5px 0 var(--primary-edge); }
-.btn-primary:focus-visible { box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 7px var(--butter); }
+.btn:hover:not([disabled]) { transform: translateY(var(--rise-key)); box-shadow: var(--key-shadow-up); background-color: var(--key-face-up); }
+.btn:active:not([disabled]) { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
+.btn:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+.btn[disabled] { cursor: not-allowed; color: var(--ink-2); background: var(--paper-3); border: 2px dashed var(--cut-line); box-shadow: none; }
+.btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: var(--pri-shadow); }
+.btn-primary:hover:not([disabled]) { background-color: var(--primary-up); box-shadow: var(--pri-shadow-up); }
+.btn-primary:active:not([disabled]) { background-color: var(--primary-edge); box-shadow: var(--pri-shadow-down); }
+.btn-primary:focus-visible { box-shadow: var(--pri-shadow), 0 0 0 7px var(--butter); }
 .btn-lg { min-height: 60px; padding: 12px 34px; font-size: 1.4rem; border-radius: 18px; }
 .btn-small { min-height: var(--tap); padding: 6px 16px; font-size: 1rem; }
 .btn .icon { width: 1.1em; height: 1.1em; }
@@ -206,38 +255,32 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 12px; border-radius: 999px;
-  background: var(--paper); border: 1.5px solid var(--line);
+  background: var(--label); border: 1.5px solid transparent;
   color: var(--ink-2); font-size: var(--fs-xs); font-weight: 800; line-height: 1.45;
 }
-.chip-ink { border: 2px solid var(--ink); color: var(--ink); }
-.chip-butter { background: var(--butter-soft); border-color: #e9c96a; color: var(--butter-ink); }
-.chip-primary { background: var(--primary-soft); border-color: #b9c6f5; color: var(--primary-edge); }
+/* 칩 · 꼬리표는 납작한 면(테두리 두께는 자리를 지키려고 남기고 색만 투명) */
+.chip-ink { border: 2px solid transparent; color: var(--ink); }
+.chip-butter { background: var(--butter-soft); color: var(--butter-ink); }
+.chip-primary { background: var(--primary-soft); color: var(--primary-edge); }
 .chip-lg { padding: 6px 14px; font-size: 1rem; }
 .chip .star { width: 1.25em; height: 1.25em; }
 
 /* ── 종이 판 ─────────────────────────── */
-/* 정보 판: 옅은 선 + 부드러운 그림자 */
+/* 정보 판: 흰 면 + 옅은 선 (그림자는 아주 옅게) */
 .panel {
   background: var(--paper);
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--flat-line);
   border-radius: var(--radius-lg);
   padding: 18px 20px;
-  box-shadow: var(--lift);
+  box-shadow: var(--flat-shadow);
 }
 .panel ul, .panel ol { margin: 0; padding-left: 1.4em; }
 .panel-error { background: var(--wrong-bg); border-color: var(--wrong); color: var(--wrong); font-weight: 700; }
-/* 종이 한 장(작업 지시서·증명서): 잉크 테두리 + 비스듬한 단단한 그림자 */
-.sheet { position: relative; background: var(--paper); border: 2px solid var(--ink); border-radius: var(--radius-lg); box-shadow: var(--sheet); }
-/* 마스킹 테이프 */
-.tape::before {
-  content: ''; position: absolute; top: -11px; left: 50%; width: 92px; height: 22px;
-  transform: translateX(-50%) rotate(-3deg);
-  background: rgb(255 213 79 / 78%);
-  border-left: 2px dotted rgb(255 255 255 / 60%); border-right: 2px dotted rgb(255 255 255 / 60%);
-  pointer-events: none;
-}
+/* 종이 한 장(작업 지시서·증명서·차시 판): 흰 면 + 옅은 선 (그림자는 아주 옅게) */
+.sheet { position: relative; background: var(--paper); border: 2px solid var(--flat-line); border-radius: var(--radius-lg); box-shadow: var(--flat-shadow); }
+/* 마스킹 테이프(.tape): "차분한 면"에서는 그리지 않는다(15-45 — 시안 C). 클래스는 app.js · rewards-view.js에 그대로 남는다 */
 /* 까닭 쪽지: 틀림은 벽돌색, 맞음은 초록 (늘 ✓ ✗ 아이콘·글자와 함께) */
-.note { position: relative; padding: 12px 14px; border-radius: 4px 14px 14px 14px; border: 2px solid var(--ink); background: var(--paper-2); }
+.note { position: relative; padding: 12px 14px; border-radius: 4px 14px 14px 14px; border: 2px solid transparent; background: var(--paper-2); }
 .note-wrong { background: var(--wrong-bg); }
 .note-correct { background: var(--correct-bg); }
 .note-title { display: flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; margin-bottom: 2px; }
@@ -259,7 +302,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .order-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .order-kind {
   font-family: var(--font-display); font-weight: 700; font-size: 0.98rem; line-height: 1.5;
-  color: var(--stamp); border: 2px solid var(--stamp); border-radius: 8px; padding: 0 8px; transform: rotate(-3deg);
+  color: var(--stamp); border: 2px solid var(--stamp); border-radius: 8px; padding: 0 8px;
 }
 .order-counter { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); }
 
@@ -294,7 +337,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .title-chips .chip { padding: 5px 12px; }
 .eyebrow {
   display: inline-flex; gap: 8px; align-items: center;
-  padding: 4px 14px; border: 2px solid var(--ink); border-radius: 999px; background: var(--paper);
+  padding: 4px 14px; border: 2px solid transparent; border-radius: 999px; background: var(--label);
   color: var(--ink); font-size: var(--fs-sm); font-weight: 700; line-height: 1.4;
 }
 .title-main { font-size: var(--fs-3xl); line-height: 1.1; letter-spacing: -0.01em; }
@@ -306,7 +349,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .hero-mat {
   position: absolute; inset: 10px 10px 30px 20px; overflow: hidden;
   display: grid; place-items: center;
-  border-radius: 28px; border: 2px solid var(--ink);
+  border-radius: 28px; border: 2px solid transparent;
   background-color: var(--game-color);
   background-image:
     linear-gradient(var(--mat-line) 1px, transparent 1px),
@@ -314,7 +357,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
     linear-gradient(rgb(255 255 255 / 7%) 1px, transparent 1px),
     linear-gradient(90deg, rgb(255 255 255 / 7%) 1px, transparent 1px);
   background-size: 96px 96px, 96px 96px, 24px 24px, 24px 24px;
-  box-shadow: inset 0 0 0 6px rgb(0 0 0 / 8%), 8px 10px 0 rgb(30 33 64 / 12%);
+  box-shadow: inset 0 0 0 6px rgb(0 0 0 / 8%);
 }
 /* 매트 위쪽 눈금 */
 .hero-mat::after {
@@ -355,7 +398,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .howto-list li { display: flex; gap: 12px; align-items: flex-start; }
 .howto-no {
   width: 34px; height: 34px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  border: 2px solid var(--ink); background: var(--butter); font-family: var(--font-display); font-weight: 700;
+  border: 2px solid transparent; background: var(--butter); font-family: var(--font-display); font-weight: 700;
 }
 
 /* ── 단계 선택 (단계 지도) ─────────────── */
@@ -379,17 +422,17 @@ button, input, textarea, select { font: inherit; color: inherit; }
   position: relative; width: 100%; height: 100%;
   display: flex; flex-direction: column; align-items: stretch; gap: 6px;
   padding: 14px 16px; text-align: left; cursor: pointer;
-  border-radius: 18px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
-  box-shadow: var(--edge);
-  transition: transform var(--dur-1) var(--ease-out);
+  border-radius: 18px; border: 2px solid var(--card-line); background: var(--paper); color: var(--ink);
+  box-shadow: var(--key-shadow);
+  transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
-.stage-card:hover:not([disabled]) { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
-.stage-card:active:not([disabled]) { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-.stage-card:focus-visible { box-shadow: var(--edge), 0 0 0 7px var(--butter); }
+.stage-card:hover:not([disabled]) { transform: translateY(var(--rise-card)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
+.stage-card:active:not([disabled]) { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.stage-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
 .stage-top { display: flex; align-items: center; gap: 10px; }
 .stage-medal {
   width: 42px; height: 42px; flex: none; border-radius: 50%; display: grid; place-items: center;
-  border: 2px solid var(--ink); background: var(--butter);
+  border: 2px solid transparent; background: var(--butter-soft);
   font-family: var(--font-display); font-weight: 700; font-size: 1.3rem;
 }
 .stage-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -402,23 +445,25 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .stage-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; }
 .stage-card.is-done .stage-medal { background: var(--correct-bg); }
 .stage-card.is-done .stage-state { color: var(--correct); }
-.stage-card.is-now { border-color: var(--primary); box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
-.stage-card.is-now:hover { box-shadow: 0 6px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
-.stage-card.is-now:focus-visible { box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 7px var(--butter); }
+/* 지금 할 곳: 파랑 테(2px + 안쪽 1px) — 고리 · 덧붙은 두께 없이 */
+.stage-card.is-now { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow); }
+.stage-card.is-now:hover:not([disabled]) { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow-up); }
+.stage-card.is-now:active:not([disabled]) { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow-down); }
+.stage-card.is-now:focus-visible { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow), 0 0 0 7px var(--butter); }
 .stage-card.is-now .stage-medal { background: var(--primary); color: #fff; }
 .stage-card.is-now .stage-state { color: var(--primary); }
-.stage-card[disabled] { cursor: not-allowed; background: var(--paper-3); border-style: dashed; box-shadow: none; }
-.stage-card[disabled] .stage-medal { background: var(--paper-2); color: var(--ink-2); }
+.stage-card[disabled] { cursor: not-allowed; background: var(--paper-2); border: 2px dashed var(--cut-line); box-shadow: none; }
+.stage-card[disabled] .stage-medal { background: var(--paper-3); color: var(--ink-2); }
 .stage-card[disabled] .stage-thumb { opacity: 0.55; }
 .stage-lock { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); display: inline-flex; gap: 4px; align-items: center; }
 .flag {
   position: absolute; top: -14px; right: 14px; z-index: 2;
-  padding: 1px 10px; border: 2px solid var(--ink); border-radius: 8px; background: var(--butter);
-  font-family: var(--font-display); font-weight: 700; font-size: 0.95rem; transform: rotate(3deg);
+  padding: 1px 10px; border: 2px solid transparent; border-radius: 8px; background: var(--primary); color: #fff;
+  font-family: var(--font-display); font-weight: 700; font-size: 0.95rem;
 }
 .go-pill {
   display: inline-flex; align-items: center; gap: 4px; padding: 2px 12px;
-  border: 2px solid var(--ink); border-radius: 999px; background: var(--primary); color: #fff;
+  border: 2px solid transparent; border-radius: 999px; background: var(--primary); color: #fff;
   font-family: var(--font-display); font-weight: 700; font-size: 1rem;
 }
 .go-pill .icon { width: 0.9em; height: 0.9em; }
@@ -439,8 +484,8 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .play-loading {
   position: fixed; left: 50%; top: 50%; z-index: 50; transform: translate(-50%, -50%);
   display: inline-flex; align-items: center; gap: 12px; margin: 0; padding: 12px 20px;
-  border: 2px solid var(--ink); border-radius: var(--radius); background: var(--paper); color: var(--ink);
-  box-shadow: var(--lift); font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg);
+  border: 2px solid transparent; border-radius: var(--radius); background: var(--paper); color: var(--ink);
+  box-shadow: var(--float); font-family: var(--font-display); font-weight: 700; font-size: var(--fs-lg);
   pointer-events: none; animation: toast-in var(--dur-2) var(--ease-out);
 }
 .play-loading-dots { display: inline-flex; gap: 5px; }
@@ -499,7 +544,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .field label { font-size: 0.95rem; color: var(--ink-2); }
 .input {
   min-height: var(--tap); padding: 8px 12px;
-  border: 2px solid var(--ink); border-radius: var(--radius-sm); background: #fff;
+  border: 2px solid var(--card-line); border-radius: var(--radius-sm); background: #fff;
 }
 .btn.is-confirm { background: var(--wrong-bg); color: var(--wrong); border-color: var(--wrong); }
 
@@ -513,9 +558,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .toast-host.is-below { bottom: auto; }
 .toast {
   display: inline-flex; gap: 10px; align-items: center;
-  padding: 10px 18px 10px 10px; border-radius: 16px; border: 2px solid var(--ink);
+  padding: 10px 18px 10px 10px; border-radius: 16px; border: 2px solid transparent;
   background: var(--ink); color: #fff; font-weight: 700; line-height: 1.4;
-  box-shadow: 0 4px 0 rgb(30 33 64 / 25%);
+  box-shadow: var(--float);
   animation: toast-in var(--dur-2) var(--ease-out);
 }
 .toast-icon {
@@ -549,7 +594,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rank-slot { display: contents; }
 .rank-chip {
   position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 14px 0 5px; flex: none;
-  border-radius: 999px; background: var(--paper); border: 2px solid var(--ink);
+  border-radius: 999px; background: var(--label); border: 2px solid transparent;
   font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.2; white-space: nowrap;
 }
 .rank-seal { width: 28px; height: 28px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--stamp); color: #fff; }
@@ -563,11 +608,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rank-seal-big { background: var(--butter-soft); }
 
 /* 점수 막대 (연출: --from 비율에서 채우기) */
-.xp-bar { display: block; width: 100%; height: 14px; border-radius: 999px; border: 2px solid var(--ink); background: var(--paper-2); overflow: hidden; }
+.xp-bar { display: block; width: 100%; height: 14px; border-radius: 999px; border: 2px solid transparent; background: #e6dece; overflow: hidden; }
 .xp-fill {
   display: block; height: 100%; min-width: 0; transform-origin: left center;
   background: repeating-linear-gradient(-45deg, var(--butter) 0 10px, var(--star) 10px 20px);
-  border-right: 2px solid var(--ink);
+  border-right: 2px solid transparent;
 }
 .xp-fill[style*="width: 0%"] { border-right: 0; }
 
@@ -586,7 +631,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .meta-box {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 0;
   min-height: var(--tap); padding: 3px 14px; border-radius: 12px;
-  background: var(--paper); border: 1.5px solid var(--line); line-height: 1.2;
+  background: var(--label); border: 1.5px solid transparent; line-height: 1.2;
 }
 .meta-box small { font-size: var(--fs-xs); font-weight: 800; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .meta-box b { font-family: var(--font-display); font-weight: 700; font-size: 1.2rem; }
@@ -613,7 +658,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
    켜도 꺼도 칸의 폭과 높이가 같아, 제목·목표 글의 자리와 머리 높이가 달라지지 않는다 */
 .meta-timer { display: inline-grid; padding: 0; border: 0; background: none; }
 .meta-timer > * { grid-area: 1 / 1; }
-.timer-toggle[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary-edge); color: var(--primary-edge); }
+.timer-toggle[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-edge); box-shadow: var(--key-shadow-down); }
 .timer-label { display: inline-flex; align-items: center; gap: 8px; transition: transform var(--dur-1) var(--ease-out); }
 .timer-toggle[aria-pressed="true"] .timer-label { transform: translateY(-11px) scale(0.74); }
 .timer-clock { position: relative; z-index: 1; align-self: end; justify-self: center; margin-bottom: 4px; line-height: 1.1; pointer-events: none; }
@@ -638,13 +683,13 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .free-space-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .free-space-card {
   width: 100%; display: flex; align-items: center; gap: 18px; padding: 12px 22px 12px 12px; text-align: left; cursor: pointer;
-  border-radius: 18px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); box-shadow: var(--edge);
-  transition: transform var(--dur-1) var(--ease-out);
+  border-radius: 18px; border: 2px solid var(--card-line); background: var(--paper); color: var(--ink); box-shadow: var(--key-shadow);
+  transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
-.free-space-card:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
-.free-space-card:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-.free-space-card:focus-visible { box-shadow: var(--edge), 0 0 0 7px var(--butter); }
-.free-space-art { width: 112px; height: 76px; flex: none; display: grid; place-items: center; padding: 4px; border-radius: 12px; border: 2px solid var(--ink); background: var(--mat); }
+.free-space-card:hover { transform: translateY(var(--rise-card)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
+.free-space-card:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.free-space-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+.free-space-art { width: 112px; height: 76px; flex: none; display: grid; place-items: center; padding: 4px; border-radius: 12px; border: 2px solid transparent; background: var(--mat); }
 .free-space-art > svg { width: 100%; height: 100%; }
 .free-space-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .free-space-title { font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; line-height: 1.25; }
@@ -660,16 +705,17 @@ button, input, textarea, select { font: inherit; color: inherit; }
   position: relative; width: 100%;
   display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px 12px;
   padding: 12px 16px 14px; text-align: left; cursor: pointer;
-  border-radius: 18px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink);
-  box-shadow: var(--edge);
-  transition: transform var(--dur-1) var(--ease-out);
+  border-radius: 18px; border: 2px solid var(--card-line); background: var(--paper); color: var(--ink);
+  box-shadow: var(--key-shadow);
+  transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
-.area-card:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
-.area-card:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-.area-card:focus-visible { box-shadow: var(--edge), 0 0 0 7px var(--butter); }
-.area-card.is-now { border-color: var(--primary); box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
-.area-card.is-now:hover { box-shadow: 0 6px 0 var(--primary-edge), 0 0 0 4px var(--primary-soft); }
-.area-card.is-now:focus-visible { box-shadow: 0 4px 0 var(--primary-edge), 0 0 0 7px var(--butter); }
+.area-card:hover { transform: translateY(var(--rise-big)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
+.area-card:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.area-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+.area-card.is-now { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow); }
+.area-card.is-now:hover { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow-up); }
+.area-card.is-now:active { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow-down); }
+.area-card.is-now:focus-visible { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow), 0 0 0 7px var(--butter); }
 .area-art { width: 56px; height: 56px; flex: none; display: grid; place-items: center; }
 .area-art > svg { width: 100%; height: 100%; }
 .area-title { font-family: var(--font-display); font-weight: 700; font-size: 1.32rem; line-height: 1.2; }
@@ -682,7 +728,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .area-meta .chip { padding: 1px 10px; white-space: nowrap; }
 .area-meta .icon { width: 1.05em; height: 1.05em; }
 /* 차시가 아직 없는 영역: "준비 중" 카드 — 누를 수 없다. 점선 테두리 + 회색 종이 + 자물쇠와 글자(색만으로 구분하지 않는다, 잠긴 단계 카드와 같은 모습) */
-.area-card[disabled] { cursor: not-allowed; background: var(--paper-3); border-style: dashed; box-shadow: none; transform: none; }
+.area-card[disabled] { cursor: not-allowed; background: var(--paper-2); border: 2px dashed var(--cut-line); box-shadow: none; transform: none; }
 .area-card[disabled] .area-art { opacity: 0.55; }
 .chip-soon { background: var(--paper-2); color: var(--ink-2); }
 /* 학년 카드(처음 화면): 영역 카드와 같은 모습에 학년 이름을 크게 */
@@ -707,10 +753,10 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .hero > .screen-foot { grid-column: 1 / -1; }
 /* 저작권 글: 본문보다 작고 차분하게(옅은 잉크 — 바탕과 대비 4.5:1 넘음) */
 .screen-copyright { margin: 0; font-size: var(--fs-xs); font-weight: 600; line-height: 1.4; color: var(--ink-2); text-align: center; }
-/* [선생님용 안내]: 학생이 먼저 누를 곳이 아니라 작고 덜 띄게(옅은 종이 · 옅은 잉크 테두리·글자 · 얕은 그림자). 누르는 높이는 48px 그대로 */
-.btn-teacher { padding: 4px 14px; font-size: 0.95rem; background: var(--paper-2); color: var(--ink-2); border-color: var(--ink-2); box-shadow: 0 2px 0 var(--ink-2); }
-.btn-teacher:hover:not([disabled]) { box-shadow: 0 3px 0 var(--ink-2); }
-.btn-teacher:focus-visible { box-shadow: 0 2px 0 var(--ink-2), 0 0 0 7px var(--butter); }
+/* [선생님용 안내]: 학생이 먼저 누를 곳이 아니라 작고 덜 띄게(옅은 종이 · 옅은 선 · 흐린 글자 · 은은한 그림자). 누르는 높이는 48px 그대로 */
+.btn-teacher { padding: 4px 14px; font-size: 0.95rem; background: var(--paper-2); color: var(--ink-2); border-color: var(--card-line); }
+.btn-teacher:hover:not([disabled]) { background-color: var(--paper); }
+.btn-teacher:active:not([disabled]) { background-color: var(--paper-3); }
 
 /* ── 학년 고르기(학년이 있는 게임의 처음 화면 — spec-grade6 15-15 시안 A "큰 두 칸") ──
    맨 위 띠 한 줄(← 처음으로 · 게임 이름 · 윗줄 글) → "공부할 학년을 골라요" → 큰 학년 카드(남는 높이를 채운다 — 크롬북 380px까지) → 내 공방 한 줄 · [놀이 방법]·[학습 기록] → 맨 아래 줄.
@@ -723,7 +769,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .grade-pick .grade-card { grid-template-columns: 168px minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto 1fr auto; gap: 0; padding: 0; overflow: hidden; border-radius: 24px; align-items: start; }
 .grade-num {
   grid-column: 1; grid-row: 1 / -1; align-self: stretch; display: grid; place-items: center;
-  border-right: 2px solid var(--ink); background: var(--face-1); color: var(--ink);
+  border-right: 2px solid transparent; background: var(--face-1); color: var(--ink);
   font-family: var(--font-display); font-weight: 700; font-size: 8.5rem; line-height: 1;
 }
 .grade-cards > li:nth-child(2) .grade-num { background: var(--face-2); }
@@ -755,7 +801,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   /* 태블릿 세로: 학년 카드 둘을 나란히, 큰 숫자는 카드 위 색 띠 */
   .grade-pick .grade-cards { min-height: 420px; max-height: 660px; }
   .grade-pick .grade-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto 1fr auto; }
-  .grade-num { grid-column: 1 / -1; grid-row: 1; min-height: clamp(200px, 22vh, 270px); border-right: 0; border-bottom: 2px solid var(--ink); font-size: 10.5rem; }
+  .grade-num { grid-column: 1 / -1; grid-row: 1; min-height: clamp(200px, 22vh, 270px); border-right: 0; border-bottom: 2px solid transparent; font-size: 10.5rem; }
   .grade-pick .grade-card .area-title { grid-column: 1 / -1; padding: 22px 24px 0; }
   .grade-pick .grade-card .area-line { grid-column: 1 / -1; padding: 8px 24px 0; }
   .grade-pick .grade-card .area-meta { grid-column: 1; padding: 12px 0 22px 24px; }
@@ -771,7 +817,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .grade-ask { font-size: 1.5rem; text-align: left; }
   .grade-pick .grade-cards { flex: none; min-height: 0; max-height: none; grid-template-columns: minmax(0, 1fr); gap: 22px; }
   .grade-pick .grade-card { grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: 1fr auto auto 1fr auto; min-height: 168px; }
-  .grade-num { grid-column: 1; grid-row: 1 / -1; min-height: 0; border-bottom: 0; border-right: 2px solid var(--ink); font-size: 5.2rem; }
+  .grade-num { grid-column: 1; grid-row: 1 / -1; min-height: 0; border-bottom: 0; border-right: 2px solid transparent; font-size: 5.2rem; }
   .grade-pick .grade-card .area-title { grid-column: 2; font-size: 2rem; padding: 0 16px; }
   .grade-pick .grade-card .area-line { grid-column: 2; font-size: 1rem; padding: 4px 16px 0; }
   .grade-pick .grade-card .area-meta { grid-column: 2; padding: 10px 16px 14px; }
@@ -782,21 +828,21 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .screen-foot > .screen-copyright { grid-column: 1; grid-row: 2; }
   .screen-foot > .btn-teacher { grid-column: 1; grid-row: 1; justify-self: center; }
 }
-/* 단계 지도: 영역 탭(role="tablist"). 지금 보는 영역은 눌린 키 모양(내려앉고 그림자 없음) + 잉크 바탕 흰 글자 — 색만으로 구분하지 않는다 */
+/* 단계 지도: 영역 탭(role="tablist"). 지금 보는 영역은 파랑 면 흰 글자 + 눌린 그림자(떠오르지 않음) — 색만으로 구분하지 않는다(aria-selected · 그림자 · 그림 칸) */
 .area-tabs { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .area-tab {
   min-height: var(--tap); display: inline-flex; align-items: center; gap: 8px;
-  padding: 4px 18px 4px 8px; border-radius: 14px; border: 2px solid var(--ink);
-  background: var(--paper); color: var(--ink); cursor: pointer;
+  padding: 4px 18px 4px 8px; border-radius: 14px; border: 2px solid transparent;
+  background: var(--key-face); color: var(--ink); cursor: pointer;
   font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; line-height: 1.2;
-  box-shadow: var(--edge-sm);
-  transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-2);
+  box-shadow: var(--key-shadow);
+  transition: transform var(--dur-rise) var(--ease-out), background-color var(--dur-2);
 }
-.area-tab:hover { transform: translateY(-1px); box-shadow: var(--edge); background-color: #fff; }
-.area-tab:active { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); }
-.area-tab:focus-visible { box-shadow: var(--edge-sm), 0 0 0 7px var(--butter); }
-.area-tab.is-current, .area-tab.is-current:hover { transform: translateY(3px); box-shadow: 0 0 0 var(--ink); background-color: var(--ink); color: var(--on-primary); cursor: default; }
-.area-tab.is-current:focus-visible { box-shadow: 0 0 0 7px var(--butter); }
+.area-tab:hover { transform: translateY(var(--rise-key)); box-shadow: var(--key-shadow-up); background-color: var(--key-face-up); }
+.area-tab:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
+.area-tab:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+.area-tab.is-current, .area-tab.is-current:hover, .area-tab.is-current:active { transform: none; box-shadow: var(--pri-shadow-down); background-color: var(--primary); color: var(--on-primary); cursor: default; }
+.area-tab.is-current:focus-visible { box-shadow: var(--pri-shadow-down), 0 0 0 7px var(--butter); }
 .area-tab-art { width: 42px; height: 34px; flex: none; display: grid; place-items: center; border-radius: 8px; background: var(--paper); }
 .area-tab-art > svg { width: 100%; height: 100%; }
 .area-panel { display: flex; flex-direction: column; gap: var(--sp-4); }
@@ -1151,15 +1197,22 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .intro-block:nth-child(4) { left: 60%; width: 38px; animation-duration: 25s; animation-delay: 2.6s; --spin: -60deg; --top: var(--face-4); --left: var(--face-5); --right: var(--stamp); }
 .intro-block:nth-child(5) { left: 77%; width: 28px; animation-duration: 20s; animation-delay: 8s; --spin: 45deg; --top: var(--primary-soft); --left: var(--face-2); --right: var(--primary); }
 .intro-block:nth-child(6) { left: 91%; width: 24px; animation-duration: 24s; animation-delay: 13s; --spin: -55deg; --top: var(--face-3); --left: var(--face-7); --right: var(--correct); }
-/* [입장하기]: 두껍고 반짝이는 금빛 버튼 + 파란 테 + 짙은 남색 테두리와 아래 그림자. 숨 쉬는 움직임은 안쪽 층에만(버튼 자리는 그대로).
+/* [입장하기]: 노란 면 + 파란 테 + 은은한 그림자, 올리면 살짝 떠오름 (spec-grade6 15-45 — 아래로 덧붙은 남색 두께 · 잉크 외곽선 없음).
+   숨 쉬는 움직임은 안쪽 층에만(버튼 자리는 그대로).
    자리: 면의 가운데가 --btn-x·--btn-y (꽉 채우기 = 화면 아래 가운데, 카드 = 카드 아래 가장자리에 걸침).
    크기: 면 높이 --btn-h(글자 = 높이 × 0.51)·최소 폭 --btn-w(= 높이 × INTRO_BUTTON_WIDTH 3.2)와 큰 화면 배율 --btn-s(= 1px × 배율 1~1.35, core/intro-fit.js introButtonScale — spec-grade6 15-11).
    글자 양옆 안쪽 여백은 최소 0.6em — 폭은 늘 최소 폭이 정한다(2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아": 글자는 크게, 버튼은 작게).
-   테·바깥 여백·반짝임·잉크 테두리·아래 그림자·흐린 그림자·누르기/올리기 거리·초점 후광의 px는 모두 --bs(= --btn-s)를 곱한 크기 자체다
-   (transform: scale이 아니다 — 글자가 흐려지지 않게). 배율 1이면 지금까지와 같은 px */
+   테·바깥 여백·반짝임·그림자·올리기 거리·초점 후광의 px는 모두 --bs(= --btn-s)를 곱한 크기 자체다
+   (transform: scale이 아니다 — 글자가 흐려지지 않게). 배율 1이면 지금까지와 같은 px. 흐림 반경은 배율 1.35에서도 20px 이하(14 × 1.35 = 18.9) */
 .intro-foot { position: absolute; left: var(--btn-x, 50%); top: var(--btn-y, 90%); transform: translate(-50%, -50%); pointer-events: none; }
 .intro-enter {
   --bs: var(--btn-s, 1px);
+  --enter-line: var(--primary);   /* 파란 테 */
+  --enter-face: linear-gradient(180deg, #ffe27e 0%, var(--butter) 55%, #ffcc33 100%);   /* 노란 면 — 위가 조금 밝게 */
+  --enter-face-down: linear-gradient(180deg, #ffd65a 0%, #ffc72a 100%);
+  --enter-shadow: 0 calc(2 * var(--bs)) calc(4 * var(--bs)) rgb(16 32 110 / 30%), 0 calc(8 * var(--bs)) calc(14 * var(--bs)) calc(-4 * var(--bs)) rgb(16 32 110 / 45%);
+  --enter-shadow-up: 0 calc(3 * var(--bs)) calc(5 * var(--bs)) rgb(16 32 110 / 22%), 0 calc(12 * var(--bs)) calc(14 * var(--bs)) calc(-4 * var(--bs)) rgb(16 32 110 / 50%);
+  --enter-shadow-down: 0 calc(1 * var(--bs)) calc(2 * var(--bs)) rgb(16 32 110 / 40%);
   pointer-events: auto; position: relative; display: inline-grid; padding: calc(8 * var(--bs)); margin: 0;
   border: 0; border-radius: 999px; background: none; color: var(--ink); cursor: pointer;
   font-family: var(--font-display); font-weight: 700; -webkit-tap-highlight-color: transparent;
@@ -1171,13 +1224,13 @@ button, input, textarea, select { font: inherit; color: inherit; }
   min-width: var(--btn-w, calc(var(--btn-h, 80px) * 3.2)); min-height: var(--btn-h, 80px); padding: calc(2 * var(--bs)) 0.6em 0;
   border: calc(6 * var(--bs)) solid transparent; border-radius: 999px;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 72%) 0%, rgb(255 255 255 / 18%) 46%, rgb(255 255 255 / 0%) 47%) padding-box,
-    linear-gradient(180deg, var(--butter-soft) 0%, var(--butter) 50%, var(--star) 100%) padding-box,
-    linear-gradient(180deg, var(--face-2) 0%, var(--primary) 55%, var(--primary-edge) 100%) border-box;
-  box-shadow: 0 0 0 calc(3 * var(--bs)) var(--ink), 0 calc(7 * var(--bs)) 0 calc(3 * var(--bs)) var(--ink), 0 calc(14 * var(--bs)) calc(26 * var(--bs)) rgb(30 33 64 / 40%);
+    linear-gradient(180deg, rgb(255 255 255 / 30%) 0%, rgb(255 255 255 / 0%) 55%) padding-box,
+    var(--enter-face) padding-box,
+    linear-gradient(var(--enter-line), var(--enter-line)) border-box;
+  box-shadow: var(--enter-shadow);
   color: var(--ink); font-size: calc(var(--btn-h, 80px) * 0.51); line-height: 1; letter-spacing: 0.08em; white-space: nowrap;
-  text-shadow: 0 calc(2 * var(--bs)) 0 rgb(255 255 255 / 70%);
-  transition: transform var(--dur-1) var(--ease-out);
+  text-shadow: 0 calc(1 * var(--bs)) 0 rgb(255 255 255 / 55%);
+  transition: transform var(--dur-rise) var(--ease-out);
 }
 /* 버튼 위 작은 반짝임 */
 .intro-enter-face::after {
@@ -1188,16 +1241,29 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 .intro-enter:hover .intro-enter-face {
   transform: translateY(calc(-2 * var(--bs)));
-  box-shadow: 0 0 0 calc(3 * var(--bs)) var(--ink), 0 calc(9 * var(--bs)) 0 calc(3 * var(--bs)) var(--ink), 0 calc(16 * var(--bs)) calc(28 * var(--bs)) rgb(30 33 64 / 40%);
+  box-shadow: var(--enter-shadow-up);
 }
+/* 누르면: 면이 조금 진해지고 제자리에 앉는다(아래 두께 없음) */
 .intro-enter:active .intro-enter-face {
-  transform: translateY(calc(5 * var(--bs)));
-  box-shadow: 0 0 0 calc(3 * var(--bs)) var(--ink), 0 calc(2 * var(--bs)) 0 calc(3 * var(--bs)) var(--ink), 0 calc(6 * var(--bs)) calc(12 * var(--bs)) rgb(30 33 64 / 35%);
+  transform: none; transition-duration: var(--dur-1);
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 12%) 0%, rgb(255 255 255 / 0%) 55%) padding-box,
+    var(--enter-face-down) padding-box,
+    linear-gradient(var(--enter-line), var(--enter-line)) border-box;
+  box-shadow: var(--enter-shadow-down);
 }
-/* 초점: 잉크 테두리 바깥에 노랑 후광 + 잉크 선 (하늘 위에서도 보이게) */
+/* 초점: 파란 테 바깥에 노랑 후광 + 잉크 선 (하늘 위에서도 보이게) */
 .intro-enter:focus-visible .intro-enter-face {
-  box-shadow: 0 0 0 calc(3 * var(--bs)) var(--ink), 0 calc(7 * var(--bs)) 0 calc(3 * var(--bs)) var(--ink), 0 0 0 calc(9 * var(--bs)) var(--butter), 0 0 0 calc(12 * var(--bs)) var(--ink);
+  box-shadow: var(--enter-shadow), 0 0 0 calc(9 * var(--bs)) var(--butter), 0 0 0 calc(12 * var(--bs)) var(--ink);
 }
+/* 움직임 줄이기 · ?fx=low: 떠오르지 않는다(그림자만 바뀐다). ?fx=low는 흐림 없는 그림자만 */
+.screen-intro.is-still .intro-enter:hover .intro-enter-face, .fx-low .intro-enter:hover .intro-enter-face { transform: none; }
+.fx-low .intro-enter {
+  --enter-shadow: 0 calc(1 * var(--bs)) 0 rgb(16 32 110 / 40%);
+  --enter-shadow-up: 0 calc(1 * var(--bs)) 0 rgb(16 32 110 / 40%), 0 0 0 calc(1 * var(--bs)) rgb(16 32 110 / 20%);
+  --enter-shadow-down: 0 0 0 transparent;
+}
+@media (prefers-reduced-motion: reduce) { .intro-enter:hover .intro-enter-face { transform: none; } }
 
 /* 움직임: 제목 그림이 풀리면(.is-titled) 제목이 떨어지고 부제가 톡, [입장하기]는 그때(늦어도 1.5초 뒤 — .is-ready) 올라온다.
    그 전에는 하늘색 바탕과 반짝임(+ 받아진 배경)만 보인다 */
