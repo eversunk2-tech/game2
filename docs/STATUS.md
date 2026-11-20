@@ -1,6 +1,6 @@
 # 지금 상태 (STATUS)
 
-> 마지막으로 고친 날: **2026-11-20**(디자인 15-45 — Build 차례 2). 일이 한 고비 넘을 때마다 이 문서를 고친다.
+> 마지막으로 고친 날: **2026-11-20**(디자인 15-45 — 재검토 도중 일시정지). 일이 한 고비 넘을 때마다 이 문서를 고친다.
 > 규칙은 [CLAUDE.md](../CLAUDE.md)와 [common-rules.md](games/net-workshop/common-rules.md), 예전 경위와 "끝난 것" 목록은 [HANDOFF.md](HANDOFF.md)에 있다.
 
 ## 1. 한눈에
@@ -12,8 +12,20 @@
 | 사이트 | `origin/main`이 두 곳에 자동 배포된다: **GitHub Pages** `https://eversunk2-tech.github.io/game2/`(하위 경로) · **Cloudflare Pages** `https://solid-figure.pages.dev/`(맨 위 경로). 학생 기록은 주소마다 따로(반에는 한 주소만) |
 | `origin/main`(사이트) | 코드 **`2608765`**(자유 쌓기 "더 큰 판" `571cddc` 2026-11-09 + 전체 화면 안내 글 고침 15-41 B-5, 2026-11-10 올림 — 배포 성공 · 두 사이트 확인 · CI 통과) + 이 문서 정리 |
 | 이 컴퓨터의 `main` | `origin/main`과 같음 |
-| 지금 도는 것 | **디자인 Build 차례 2(15-45, 2026-11-20~ — 사용자가 차례 1 시안을 "이대로 넣기", [입장하기] "위가 조금 밝은 노랑 + 파란 테 6px")**: CSS 마무리 · 검사 · 테스트 셋 → 그다음 Review [review-brief-ui-depth.md](games/net-workshop/review-brief-ui-depth.md)(5584~5585). 차례 1 내용 — 사용자가 고른 "C 차분한 면 + 모든 메뉴 버튼에 은은한 그림자 · 올리면 살짝 떠오름(모두의 배움터처럼) · 받침 두께 없음 · [입장하기] 노랑 + 파란 테두리"를 모든 화면에 입힌 시안 → 사용자 확인 → "계속". 지침 [build-brief-ui-depth.md](games/net-workshop/build-brief-ui-depth.md), 작업 폴더 `.worktrees/design` · 포트 5581~5583(Review 5584~5585). Plan [plan-ui-depth.md](games/net-workshop/plan-ui-depth.md) 끝(시안 그림 `.worktrees/_saved-scratchpad-2026-11-19/plan-depth/`). / 원기둥은 **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")** 그대로 — "이어서"를 기다림. 15-43 위임은 사용자가 돌아와 끝남. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
+| 지금 도는 것 | **없음 — 디자인 15-45 일시정지(2026-11-20 14:44, 사용자 "일시정지해줘")**: 고치기 라운드 재검토 도중 멈춤. 무엇이 커밋됐고 "이어서"면 무엇을 하는지는 **2-0절**. / 원기둥은 **일시정지(2026-11-19 03:22, 사용자 "일시정지해줘")** 그대로 — "이어서"를 기다림. 15-43 위임은 사용자가 돌아와 끝남. 원기둥 G3a 고치기의 전체 검사 도중 멈춤(2절 맨 끝). G3b 지침 [build-brief-g3b.md](games/net-workshop/build-brief-g3b.md) · [review-brief-g3b.md](games/net-workshop/review-brief-g3b.md)는 써 두었고(`2962e09`) 아직 맡기지 않음 |
 | 멈춤 | 없음(원기둥은 15-43으로 재개). 재시동으로 scratchpad가 비어 `.worktrees/_saved-scratchpad-2026-11-09/`의 `build-g3a/` · `review-g3a/` · `plan-cylinder/`를 되돌려 놓음 |
+
+## 2-0. 진행 중인 일 — 버튼 · 메뉴 디자인 15-44 · 15-45 (2026-11-19~)
+
+- 사용자 요청 15-44(버튼 · 메뉴 아래 · 옆에 덧붙는 두께를 없애고 사람 디자이너 방식으로) → Plan [plan-ui-depth.md](games/net-workshop/plan-ui-depth.md)(`d8e15ba`) → 사용자 결정 15-45("C 차분한 면 + 모든 메뉴 버튼에 은은한 그림자 · 올리면 살짝 떠오름(모두의 배움터처럼) · 받침 두께 없음 · [입장하기] 노랑 + 파란 테두리", 범위 "버튼 · 카드 같은 틀만", 모눈 바탕 그대로) → Build 차례 1 시안 → 사용자 "이대로 넣기", [입장하기] "위가 조금 밝은 노랑 + 파란 테 6px" → 차례 2.
+- 지침: [build-brief-ui-depth.md](games/net-workshop/build-brief-ui-depth.md) · [review-brief-ui-depth.md](games/net-workshop/review-brief-ui-depth.md) · 고치기 [build-fix-brief-ui-depth.md](games/net-workshop/build-fix-brief-ui-depth.md) · 재검토 [review-fix-brief-ui-depth.md](games/net-workshop/review-fix-brief-ui-depth.md). 작업 폴더 `.worktrees/design` · `track/design`, 포트 Build 5581~5583 · Review 5584~5585.
+- Build 차례 2 `f288155` → Review [review-ui-depth.md](games/net-workshop/review-ui-depth.md)(`45bc8a9`) **"수정 필요 — 반드시 R4"**(학습 기록 "한 번 더 누르면 지워져요" 버튼이 마우스 올림 4.34 · 누름 3.70으로 글자 대비 4.5 밑), 고치면 좋음 R1(떠오른 만큼 아래 끝 2~4px가 안 눌림) · R2(토큰 없는 색 2개), 참고 R3(가장자리 대비 실제 값 — 아래 1.35~1.63, 옆 1.07~1.16. 사용자에게 바로잡아 알림).
+- 고치기 Build(`ae8658f2771de4aef`) 끝: **`track/design` `229e5d2`**(base.css · hub.css · style.css · cuboid.css, 검사 `ui-depth.spec.js` +171 · `net-workshop-blocks-big.spec.js` +3). Build 보고: 확인 · 틀린 보기 올림 4.95 · 누름 4.63(새 토큰 `--wrong-bg-down`), 올린 동안만 투명 `::before`를 아래로 늘려 아래 끝 1~5px 누름 O, `--track` · `--answer-up`, 학년 · 게임 카드는 overflow 자르기 대신 색 칸 · 표지에 모서리 반지름(시안과 최대 7/255), 단위 433 · 브라우저 634(보통 · 글꼴 흉내) 실패 0, CPU 4 · 8 · 12배 통과. blocks-big 검사에 "벌림 재기 앞에 마우스를 띠 밖으로" 한 줄을 더함(떠오른 이웃 버튼의 늘린 누르는 자리가 scrollHeight에 잡혀 "글자 잘림"으로 나와서).
+- **일시정지(2026-11-20 14:44, 사용자 "일시정지해줘")**: 재검토 중이던 Review(`ad09133679affd070` — 코디네이터가 멈춤, 이어 맡기기 가능)를 멈춤. 남은 서버 · 실행 없음(5581~5585 · 5330 비어 있음, Playwright · 서버 프로세스 0 — 확인함).
+  - 커밋된 것: `track/design` `229e5d2`, 작업 트리 깨끗함(Review는 결과 파일에 아직 쓰지 않음). `main`에는 안 합침. `main` 작업 폴더에 **커밋 안 한 문서 고침 3개**(`docs/design/spec.md` 2-4 · 3 · 6절, `docs/engine.md`, `common-rules.md` — 새 디자인 규칙. 합칠 때 함께 커밋).
+  - Review가 잰 것(scratchpad `review-depth/re/`, 결과 파일에는 아직 안 씀): 브라우저 보통 634 통과 · 172 건너뜀 · 실패 0(21.4분), 새 · 고친 검사 CPU 4 · 8 · 12배 각 11 통과, 새 검사 ③ · ④가 고치기 전 `45bc8a9`에서 실패함(③ 확인 버튼 올림 4.34, ④ 보통 버튼 아래 끝 1px). **글꼴 흉내는 도중에 끊김**(멈출 때 서버가 내려가 생긴 짧은 실패는 값 실패 아님). 대비 · 누르는 자리 침범 · 자리 크기 측정 파일(`out/textcontrast-fix` · `encroach-fix-*` · `layout-fix-all`)은 있으나 판단 전.
+  - **살펴보던 것**: blocks-big에 더한 한 줄을 빼면 `229e5d2`에서 "820×1180 벌림"이 실패하고(기대 1 · 받은 3), 고치기 전 `45bc8a9`에서는 통과함 — 늘린 누르는 자리가 그 검사의 넘침 재기에 잡히는 것. 검사를 약하게 만든 것인지, 다른 곳(앱 · 다른 검사)에도 영향이 있는지 Review가 판단하던 중.
+  - "이어서"면: 같은 Review에게 "`229e5d2` 재검토를 이어서 — 끊긴 글꼴 흉내 전체를 처음부터, blocks-big 한 줄 판단 마무리, 남은 측정 판단, 결과 파일 재검토 절"로 이어 맡김 → 통과면 합치기 · 문서 3개 커밋 · 전체 테스트(5330) · 올림 · 두 사이트 확인. "수정 필요"면 같은 Build에게 고치기.
 
 ## 2. 진행 중인 일 — 원기둥 G3 (2026-11-07~)
 
