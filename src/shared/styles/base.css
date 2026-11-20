@@ -83,6 +83,9 @@
   --flat-line: var(--line);   /* 읽는 판의 옅은 선 */
   --cut-line: #c9bfa9;        /* 비활성 · 잠김의 점선 */
   --label: #ebe4d4;           /* 칩 · 꼬리표의 납작한 면 — 잉크 12.31 · 흐린 글자 5.84 */
+  --track: #e6dece;           /* 점수 막대 · 도감 막대의 바탕(review R2) */
+  --answer-up: #f3f6ff;       /* 흰 답 버튼을 올렸을 때 — 잉크 14.43 (review R2) */
+  --wrong-bg-down: #fce0d2;   /* 벽돌 글자 버튼(확인 · 틀린 보기)을 눌렀을 때 — 벽돌 글자 4.63 (review R4) */
   --key-shadow: 0 1px 2px rgb(30 33 64 / 12%), 0 2px 6px -1px rgb(30 33 64 / 12%);
   --key-shadow-up: 0 2px 3px rgb(30 33 64 / 8%), 0 6px 16px -4px rgb(30 33 64 / 18%);
   --key-shadow-down: 0 1px 1px rgb(30 33 64 / 14%);
@@ -94,6 +97,7 @@
   --rise-key: -2px;           /* 버튼 · 탭 · 답 버튼이 떠오르는 거리 (0.2초) */
   --rise-card: -3px;          /* 단계 카드 · 자유 공간 카드 (0.3초) */
   --rise-big: -4px;           /* 학년 · 영역 카드 · 게임 카드 (0.3초) */
+  --rise-pad: 2px;            /* 떠오를 때 늘리는 누르는 자리에 더하는 테두리 몫(아래 .btn:hover::before) — 떠오르지 않으면 0 */
   --dur-rise: 200ms;
   --dur-rise-lg: 300ms;
   /* 옛 이름(다른 곳이 쓰면 새 값으로 이어진다) */
@@ -124,11 +128,11 @@
 }
 /* 움직임 줄이기: 떠오르지 않는다(그림자 · 색 변화만 남는다) */
 @media (prefers-reduced-motion: reduce) {
-  :root { --rise-key: 0px; --rise-card: 0px; --rise-big: 0px; }
+  :root { --rise-key: 0px; --rise-card: 0px; --rise-big: 0px; --rise-pad: 0px; }
 }
 /* ?fx=low · 코어 2개 이하(가벼운 모드 — 앱 뿌리 .edu-app에 붙는다): 떠오르지 않고, 흐림 없는 그림자만 (plan-ui-depth 3-5 ④의 안전판) */
 .fx-low {
-  --rise-key: 0px; --rise-card: 0px; --rise-big: 0px;
+  --rise-key: 0px; --rise-card: 0px; --rise-big: 0px; --rise-pad: 0px;
   --key-shadow: 0 1px 0 rgb(30 33 64 / 18%);
   --key-shadow-up: 0 1px 0 rgb(30 33 64 / 18%), 0 0 0 1px rgb(30 33 64 / 6%);
   --key-shadow-down: 0 0 0 transparent;
@@ -241,8 +245,19 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: transform var(--dur-rise) var(--ease-out), background-color var(--dur-2);
 }
 .btn:hover:not([disabled]) { transform: translateY(var(--rise-key)); box-shadow: var(--key-shadow-up); background-color: var(--key-face-up); }
-.btn:active:not([disabled]) { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
+.btn:active:not([disabled]) { transform: translateY(0); box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
 .btn:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+/* 떠오른 만큼 아래 가장자리의 누르는 자리를 남긴다(review R1 — 모양은 그대로): 올린 동안만 투명한 ::before를 떠오른 거리만큼 아래로 늘린다.
+   그 끝은 쉴 때의 아래 끝과 같다(이웃의 자리로 넘어가지 않는다). 올린 동안 · 누르는 동안은 늘 transform이 있어(누름은 translateY(0)) 그 요소가
+   절대 위치의 기준이 되므로 position을 바꾸지 않는다 — 자리 · 크기 그대로. z-index: -1(그 요소 안의 층)이라 글자 · 그림은 그대로 그 위에서 눌린다.
+   테두리 2px 바깥까지: bottom = 떠오르는 거리(음수) − 2px(--rise-pad). 떠오르지 않으면(움직임 줄이기 · ?fx=low) 둘 다 0 — 상자 밖으로 늘리지 않는다. 누르는 동안(:active — 제자리로 내려오는 0.12초 동안에도 마우스 밑을 지키도록)에도 그대로 둔다.
+   떠오르지 않는 켠 도구(transform: none)에는 게임 CSS가 만들지 않는다 */
+.btn:hover:not([disabled])::before, .area-tab:not(.is-current):hover::before,
+.stage-card:hover:not([disabled])::before, .free-space-card:hover::before, .area-card:not([disabled]):hover::before {
+  content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: 0; bottom: calc(var(--rise-key) - var(--rise-pad));
+}
+.stage-card:hover:not([disabled])::before, .free-space-card:hover::before { bottom: calc(var(--rise-card) - var(--rise-pad)); }
+.area-card:not([disabled]):hover::before { bottom: calc(var(--rise-big) - var(--rise-pad)); }
 .btn[disabled] { cursor: not-allowed; color: var(--ink-2); background: var(--paper-3); border: 2px dashed var(--cut-line); box-shadow: none; }
 .btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: var(--pri-shadow); }
 .btn-primary:hover:not([disabled]) { background-color: var(--primary-up); box-shadow: var(--pri-shadow-up); }
@@ -427,7 +442,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
 .stage-card:hover:not([disabled]) { transform: translateY(var(--rise-card)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
-.stage-card:active:not([disabled]) { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.stage-card:active:not([disabled]) { transform: translateY(0); box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
 .stage-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
 .stage-top { display: flex; align-items: center; gap: 10px; }
 .stage-medal {
@@ -547,6 +562,9 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border: 2px solid var(--card-line); border-radius: var(--radius-sm); background: #fff;
 }
 .btn.is-confirm { background: var(--wrong-bg); color: var(--wrong); border-color: var(--wrong); }
+/* 벽돌 글자 확인 버튼은 올리고 눌러도 벽돌 계열 면(옅은 파랑 면 위에서는 글자 대비 4.34 · 3.70 — review R4): 올림 4.95 · 누름 4.63 */
+.btn.is-confirm:hover:not([disabled]) { background-color: var(--wrong-bg); }
+.btn.is-confirm:active:not([disabled]) { background-color: var(--wrong-bg-down); }
 
 /* ── 피드백: 말풍선 쪽지 (ui/feedback.js) ───── */
 .toast-host {
@@ -608,7 +626,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .rank-seal-big { background: var(--butter-soft); }
 
 /* 점수 막대 (연출: --from 비율에서 채우기) */
-.xp-bar { display: block; width: 100%; height: 14px; border-radius: 999px; border: 2px solid transparent; background: #e6dece; overflow: hidden; }
+.xp-bar { display: block; width: 100%; height: 14px; border-radius: 999px; border: 2px solid transparent; background: var(--track); overflow: hidden; }
 .xp-fill {
   display: block; height: 100%; min-width: 0; transform-origin: left center;
   background: repeating-linear-gradient(-45deg, var(--butter) 0 10px, var(--star) 10px 20px);
@@ -687,7 +705,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
 .free-space-card:hover { transform: translateY(var(--rise-card)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
-.free-space-card:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.free-space-card:active { transform: translateY(0); box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
 .free-space-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
 .free-space-art { width: 112px; height: 76px; flex: none; display: grid; place-items: center; padding: 4px; border-radius: 12px; border: 2px solid transparent; background: var(--mat); }
 .free-space-art > svg { width: 100%; height: 100%; }
@@ -710,7 +728,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2), background-color var(--dur-2);
 }
 .area-card:hover { transform: translateY(var(--rise-big)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
-.area-card:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
+.area-card:active { transform: translateY(0); box-shadow: var(--key-shadow-down); background-color: var(--primary-soft); transition-duration: var(--dur-1); }
 .area-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
 .area-card.is-now { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow); }
 .area-card.is-now:hover { box-shadow: inset 0 0 0 1px var(--primary), var(--key-shadow-up); }
@@ -766,10 +784,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
 .title-band .title-main { font-size: 1.9rem; line-height: 1.1; }
 .grade-ask { font-size: 1.9rem; line-height: 1.2; text-align: center; margin-top: 4px; }
 .grade-pick .grade-cards { flex: 1 1 auto; min-height: 200px; max-height: 380px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; margin: 0; }
-.grade-pick .grade-card { grid-template-columns: 168px minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto 1fr auto; gap: 0; padding: 0; overflow: hidden; border-radius: 24px; align-items: start; }
+/* 학년 카드는 잘라 내기(overflow) 없이 색 칸이 카드 모서리(24 − 테두리 2 = 22px)를 따라 둥글다 — 올렸을 때 아래로 늘린 누르는 자리(R1)가 잘리지 않게 */
+.grade-pick .grade-card { grid-template-columns: 168px minmax(0, 1fr) auto; grid-template-rows: 1fr auto auto 1fr auto; gap: 0; padding: 0; border-radius: 24px; align-items: start; }
 .grade-num {
   grid-column: 1; grid-row: 1 / -1; align-self: stretch; display: grid; place-items: center;
-  border-right: 2px solid transparent; background: var(--face-1); color: var(--ink);
+  border-right: 2px solid transparent; border-radius: 22px 0 0 22px; background: var(--face-1); color: var(--ink);
   font-family: var(--font-display); font-weight: 700; font-size: 8.5rem; line-height: 1;
 }
 .grade-cards > li:nth-child(2) .grade-num { background: var(--face-2); }
@@ -801,7 +820,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   /* 태블릿 세로: 학년 카드 둘을 나란히, 큰 숫자는 카드 위 색 띠 */
   .grade-pick .grade-cards { min-height: 420px; max-height: 660px; }
   .grade-pick .grade-card { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto 1fr auto; }
-  .grade-num { grid-column: 1 / -1; grid-row: 1; min-height: clamp(200px, 22vh, 270px); border-right: 0; border-bottom: 2px solid transparent; font-size: 10.5rem; }
+  .grade-num { grid-column: 1 / -1; grid-row: 1; min-height: clamp(200px, 22vh, 270px); border-right: 0; border-bottom: 2px solid transparent; border-radius: 22px 22px 0 0; font-size: 10.5rem; }
   .grade-pick .grade-card .area-title { grid-column: 1 / -1; padding: 22px 24px 0; }
   .grade-pick .grade-card .area-line { grid-column: 1 / -1; padding: 8px 24px 0; }
   .grade-pick .grade-card .area-meta { grid-column: 1; padding: 12px 0 22px 24px; }
@@ -817,7 +836,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   .grade-ask { font-size: 1.5rem; text-align: left; }
   .grade-pick .grade-cards { flex: none; min-height: 0; max-height: none; grid-template-columns: minmax(0, 1fr); gap: 22px; }
   .grade-pick .grade-card { grid-template-columns: 100px minmax(0, 1fr); grid-template-rows: 1fr auto auto 1fr auto; min-height: 168px; }
-  .grade-num { grid-column: 1; grid-row: 1 / -1; min-height: 0; border-bottom: 0; border-right: 2px solid transparent; font-size: 5.2rem; }
+  .grade-num { grid-column: 1; grid-row: 1 / -1; min-height: 0; border-bottom: 0; border-right: 2px solid transparent; border-radius: 22px 0 0 22px; font-size: 5.2rem; }
   .grade-pick .grade-card .area-title { grid-column: 2; font-size: 2rem; padding: 0 16px; }
   .grade-pick .grade-card .area-line { grid-column: 2; font-size: 1rem; padding: 4px 16px 0; }
   .grade-pick .grade-card .area-meta { grid-column: 2; padding: 10px 16px 14px; }
@@ -839,7 +858,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
   transition: transform var(--dur-rise) var(--ease-out), background-color var(--dur-2);
 }
 .area-tab:hover { transform: translateY(var(--rise-key)); box-shadow: var(--key-shadow-up); background-color: var(--key-face-up); }
-.area-tab:active { transform: none; box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
+.area-tab:active { transform: translateY(0); box-shadow: var(--key-shadow-down); background-color: var(--key-face-down); transition-duration: var(--dur-1); }
 .area-tab:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
 .area-tab.is-current, .area-tab.is-current:hover, .area-tab.is-current:active { transform: none; box-shadow: var(--pri-shadow-down); background-color: var(--primary); color: var(--on-primary); cursor: default; }
 .area-tab.is-current:focus-visible { box-shadow: var(--pri-shadow-down), 0 0 0 7px var(--butter); }

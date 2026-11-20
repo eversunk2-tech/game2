@@ -121,6 +121,9 @@
 .edge-opt-mark:empty { display: none; }
 .edge-opt-mark .icon { width: 1.1em; height: 1.1em; stroke-width: 3; }
 .edge-opt.is-wrong { border-style: dashed; border-color: var(--wrong); color: var(--wrong); background: var(--wrong-bg); }
+/* 다시 고를 수 있는 틀린 보기: 올리고 눌러도 벽돌 계열 면(옅은 파랑 면 위에서는 벽돌 글자 대비 4.34 · 3.70 — review R4와 같은 까닭) */
+.edge-opt.is-wrong:hover:not([disabled]) { background-color: var(--wrong-bg); }
+.edge-opt.is-wrong:active:not([disabled]) { background-color: var(--wrong-bg-down); }
 .edge-opt.is-right,
 .edge-opt.is-right[disabled] { border-style: solid; border-color: var(--correct); color: var(--correct); background: var(--correct-bg); box-shadow: var(--key-shadow-down); }
 
@@ -301,7 +304,7 @@
 /* 도감 보기가 매트를 덮는 동안: 아래 도구 띠 · 보기 조작판을 숨긴다 */
 .free-mat.is-dex-open .mat-tools,
 .free-mat.is-dex-open .view-pad { visibility: hidden; }
-.dex-meter { position: relative; flex: 1; height: 14px; border-radius: 999px; border: 2px solid transparent; background: #e6dece; margin-bottom: 14px; }
+.dex-meter { position: relative; flex: 1; height: 14px; border-radius: 999px; border: 2px solid transparent; background: var(--track); margin-bottom: 14px; }
 .dex-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 999px; background: var(--butter); }
 .dex-meter-mark { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); }
 .dex-meter-mark small { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); font-size: 0.7rem; font-weight: 800; line-height: 1; white-space: nowrap; color: var(--ink-2); }

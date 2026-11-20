@@ -358,6 +358,9 @@ async function checkBigScreen(browser, w, h) {
   expect([lp.slotOut, lp.slotOver, lp.clip, lp.stripOver, lp.scrollX, lp.scrollY], `${tag} 위ㆍ앞ㆍ옆`).toEqual([0, 0, 0, 0, 0, 0]);
   await page.locator('.blk-free-views').click();
   await page.locator('.blk-free-apart').click();
+  // 마우스를 띠 밖으로: 누른 뒤 글자 폭이 바뀌어 마우스 밑에 온 이웃 버튼이 떠오르면, 그 버튼의 아래로 늘린 누르는 자리(투명 ::before — review-ui-depth R1)가
+  // 버튼의 넘침(scrollHeight)으로 잡힌다. 여기서 보는 것은 글자가 잘리는지라 마우스를 치우고 잰다(보는 것은 그대로)
+  await page.mouse.move(1, 1);
   await settled(page);
   expect((await board(page)).out, `${tag} 벌림`).toBe(0);
   lp = await layout(page);

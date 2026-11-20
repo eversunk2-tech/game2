@@ -6,7 +6,11 @@
  * ② 누를 수 있는 것은 쉴 때 은은한 그림자(흐림 있음)가 있고, 마우스를 올리면 버튼 · 탭은 2px · 단계 카드는 3px · 학년 / 영역 카드는 4px 떠오르며 그림자가 바뀐다.
  *    움직이는 것은 transform뿐(그림자는 전환하지 않는다), 누르면 면이 진해지고 제자리. 읽는 판의 그림자는 아주 옅다(흐림 2px 이하).
  *    움직임 줄이기 · ?fx=low에서는 떠오르지 않는다. ?fx=low는 흐림 없는 그림자만(plan 3-5 ④의 안전판).
- * 기대값은 기획서 문장(15-45 · 지침 1~9)만 보고 적었다 — 저장소 CSS의 값을 읽어 와 견주지 않는다.
+ * ③ 색 글자(벽돌 · 초록 · 파랑 · 흐린 글자)를 쓰는 누르는 것은 쉼 · 올림 · 누름 모두 글자 대비 4.5(큰 글자 3) 이상 — 올림 · 누름의 옅은 파랑 면이
+ *    벽돌 글자를 덮어 4.34 · 3.70이 되었던 확인 버튼(review-ui-depth R4)과 같은 일이 다시 생기지 않게.
+ * ④ 떠오른 만큼 아래 가장자리가 마우스 밑에서 빠져도(review R1) 아래 끝 1~4px에서 누르면 눌린다 — 늘린 누르는 자리는 쉴 때의 아래 끝까지만(틈 · 이웃을 덮지 않는다),
+ *    가만히 둔 동안 오르내리지 않는다.
+ * 기대값은 기획서 문장(15-45 · 지침 1~9 · 수정 지침)만 보고 적었다 — 저장소 CSS의 값을 읽어 와 견주지 않는다.
  */
 import { expect, test } from '@playwright/test';
 import { collectErrors, fileUrl } from './helpers.js';
@@ -233,3 +237,168 @@ for (const [mode, label] of [['motion', '움직임 켬'], ['reduce', '움직임 
     await context.close();
   });
 }
+
+/**
+ * 누르는 것 하나의 글자 대비: 그 요소와 안쪽의 글자를 품은 요소마다, 계산된 글자색 vs 그 자리의 면 색(글자 요소에서 위로 올라가며 반투명 면을 합성 — 다 투명하면 흰 바탕).
+ * 큰 글자(24px 이상, 굵게 18.66px 이상)는 3, 그 밖은 4.5(WCAG). → [{ text, ratio, need }]
+ */
+const textContrast = (locator) => locator.evaluate((host) => {
+  const parse = (c) => c.match(/[\d.]+/g).map(Number);
+  const lin = (v) => { const t = v / 255; return t <= 0.03928 ? t / 12.92 : ((t + 0.055) / 1.055) ** 2.4; };
+  const lum = ([r, g, b]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  const texts = [host, ...host.querySelectorAll('*')].filter((el) => [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim())
+    && getComputedStyle(el).visibility !== 'hidden' && el.getBoundingClientRect().width > 0);
+  return texts.map((el) => {
+    let [r, g, b, a] = [0, 0, 0, 0];
+    for (let p = el; p && a < 1; p = p.parentElement) {
+      const [pr, pg, pb, pa = 1] = parse(getComputedStyle(p).backgroundColor);
+      r += pr * pa * (1 - a); g += pg * pa * (1 - a); b += pb * pa * (1 - a); a += pa * (1 - a);
+    }
+    r += 255 * (1 - a); g += 255 * (1 - a); b += 255 * (1 - a);
+    const cs = getComputedStyle(el);
+    const [x, y] = [lum(parse(cs.color).slice(0, 3)), lum([r, g, b])].sort((p, q) => q - p);
+    const size = parseFloat(cs.fontSize);
+    return { text: `${el.textContent.trim().slice(0, 12)} ${cs.color} / rgb(${[r, g, b].map(Math.round).join(', ')})`, ratio: (x + 0.05) / (y + 0.05), need: size >= 24 || (Number(cs.fontWeight) >= 700 && size >= 18.66) ? 3 : 4.5 };
+  });
+});
+/** 쉼 · 올림 · 누름의 글자 대비를 모두 기준 이상인지(누름은 다른 곳에서 놓아 누르기를 끝내지 않는다) */
+async function expectStatesReadable(page, locator, name) {
+  await page.mouse.move(2, 2);
+  const rest = await textContrast(locator);
+  const box = await locator.boundingBox();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  const hover = await textContrast(locator);
+  await page.mouse.down();
+  const press = await textContrast(locator);
+  await page.mouse.move(2, 2);
+  await page.mouse.up();
+  expect(rest.length, `${name}: 글자가 있다`).toBeGreaterThan(0);
+  for (const [state, list] of [['쉼', rest], ['올림', hover], ['누름', press]]) {
+    for (const t of list) expect(t.ratio, `${name} ${state}: ${t.text} (기준 ${t.need})`).toBeGreaterThanOrEqual(t.need);
+  }
+}
+
+test('③ 색 글자를 쓰는 누르는 것(확인 · 틀린 보기 · 바른 답 · 마친 단계 · 켠 시간 재기 · 선생님용 안내): 쉼 · 올림 · 누름 모두 글자 대비 4.5(큰 글자 3) 이상', async ({ browser }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '마우스 올림은 크롬북 화면에서 확인');
+  test.setTimeout(90_000); // 화면 6곳 + 직육면체 틀린 보기를 찾는 몇 번 — 이 맥에서 약 8초, CPU 12배에서 약 40초
+  // 움직임 줄이기: 면 색이 바로 바뀌어(전환 0초) 올림 · 누름의 색을 기다리지 않고 잰다
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: 'reduce' });
+  // 마친 단계 카드("마쳤어요" 초록 글자)가 보이게: 정육면체 1단계 별 3개를 저장해 둔다
+  await context.addInitScript(() => {
+    if (!sessionStorage.getItem('__ui-depth-seed')) {
+      localStorage.setItem('edu:net-workshop:stars', JSON.stringify({ 'cube-judge': 3 }));
+      sessionStorage.setItem('__ui-depth-seed', '1');
+    }
+  });
+  const page = await context.newPage();
+  const errors = collectErrors(page);
+  // 학습 기록 → [기록 모두 지우기] 한 번 → "한 번 더 누르면 지워져요"(벽돌 글자 16px — review R4)
+  await page.goto(fileUrl(FILE, '?intro=0&seed=1&sound=off'));
+  await page.getByRole('button', { name: '학습 기록' }).click();
+  const clear = page.getByRole('button', { name: '기록 모두 지우기' });
+  await clear.scrollIntoViewIfNeeded();
+  await clear.click();
+  const confirm = page.locator('.btn.is-confirm');
+  await expect(confirm).toBeVisible();
+  await expectStatesReadable(page, confirm, '확인 버튼');
+  await expect(confirm).toBeVisible(); // 누르기를 다른 곳에서 놓아 지우지 않았다
+  // 선생님용 안내(흐린 글자) · 마친 단계 카드(초록 "마쳤어요" · 흐린 목표 글)
+  await page.goto(fileUrl(FILE, '?intro=0&seed=1&sound=off'));
+  await expectStatesReadable(page, page.locator('.btn-teacher'), '선생님용 안내');
+  await page.goto(fileUrl(FILE, '?intro=0&area=cube&seed=1&sound=off'));
+  await expectStatesReadable(page, page.locator('.stage-card.is-done').first(), '마친 단계 카드');
+  // 직육면체 "만나는 선분"의 틀린 보기(벽돌 글자 · 다시 고를 수 있다)
+  let wrong = null;
+  for (let seed = 1; seed <= 12 && !wrong; seed++) {
+    await page.goto(fileUrl(FILE, `?unlock=all&seed=${seed}&sound=off&stage=cuboid-edge`));
+    await page.locator('.edge-opt').first().click();
+    if (await page.locator('.edge-opt.is-wrong:not([disabled])').count()) wrong = page.locator('.edge-opt.is-wrong:not([disabled])').first();
+  }
+  expect(wrong, '틀린 보기를 만들었다').not.toBeNull();
+  await expectStatesReadable(page, wrong, '틀린 보기');
+  // 쌓기나무 "이쪽에서 보면?": 틀리게 답하면 바른 답(초록 글자)이 누를 수 있는 채로 남는다
+  await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=blocks-scene'));
+  const choices = page.locator('.blk-choice');
+  await expect(choices.first()).toBeVisible();
+  const n = await choices.count();
+  for (let i = 0; i < n && !(await page.locator('.blk-choice.is-answer').count()); i++) {
+    if (i > 0) await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=blocks-scene'));
+    await page.locator('.blk-choice').nth(i).click();
+    await expect(page.locator('.reason')).toBeVisible();
+  }
+  const answer = page.locator('.blk-choice.is-answer:not([disabled])');
+  await expect(answer).toHaveCount(1);
+  await expectStatesReadable(page, answer, '바른 답');
+  // 켠 시간 재기(파랑 글자)
+  await page.goto(fileUrl(FILE, '?unlock=all&seed=1&sound=off&stage=prism-count'));
+  await page.locator('.timer-toggle').click();
+  await expect(page.locator('.timer-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expectStatesReadable(page, page.locator('.timer-toggle'), '켠 시간 재기');
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+/** 떠오르는 누르는 것: [이름, 주소, 선택자, 떠오르는 거리] — 아래 끝 k px(1~4)에서 누를 때 */
+const EDGE = [
+  ['보통 버튼', '?intro=0&seed=1&sound=off', '.hero-more .btn >> nth=0', 2],
+  ['학년 카드', '?intro=0&seed=1&sound=off', '.grade-card >> nth=0', 4],
+  ['영역 카드', '?intro=0&grade=6&seed=1&sound=off', '.screen-grade .area-card >> nth=1', 4],
+  ['영역 탭', '?intro=0&area=prism&unlock=all&seed=1&sound=off', '.area-tab:not(.is-current)', 2],
+  ['단계 카드', '?intro=0&area=prism&unlock=all&seed=1&sound=off', '.stage-card:not([disabled]) >> nth=1', 3],
+  ['자유 공간 카드', '?intro=0&area=blocks&seed=1&sound=off', '.free-space-card', 3],
+  ['답 버튼', '?unlock=all&seed=1&sound=off&stage=cube-judge', '.answer-btn >> nth=0', 2],
+  ['보기 조작판(사이 4px)', '?unlock=all&seed=1&sound=off&stage=blocks-free', '.view-up', 2],
+  ['도구 띠 버튼(사이 3px)', '?unlock=all&seed=1&sound=off&stage=blocks-free', '.blk-free-pad', 2],
+];
+
+test('④ 떠오르는 누르는 것의 아래 끝 1~4px에서 눌러도 눌린다(움직임 켬) — 늘린 누르는 자리는 쉴 때의 아래 끝까지(그 밑의 틈 · 이웃을 덮지 않음), 가만히 둔 동안 오르내리지 않는다', async ({ browser }, testInfo) => {
+  test.skip(testInfo.project.name !== 'chromebook', '마우스 올림은 크롬북 화면에서 확인(태블릿은 올림이 없다)');
+  test.setTimeout(120_000); // 9가지 × 아래 끝 4곳 — 이 맥에서 약 20초, CPU 12배에서 약 80초
+  const context = await browser.newContext({ viewport: { width: 1366, height: 768 }, reducedMotion: 'no-preference' });
+  const page = await context.newPage();
+  const errors = collectErrors(page);
+  let opened = '';
+  for (const [name, query, sel, rise] of EDGE) {
+    if (query !== opened) {
+      await page.mouse.move(2, 2);
+      await page.goto(fileUrl(FILE, query));
+      await expect(page.locator(sel).first()).toBeVisible({ timeout: 20_000 });
+      await animationsDone(page);
+      opened = query;
+    }
+    const el = page.locator(sel).first();
+    // click을 세기만 하고 앱에는 넘기지 않는다(화면이 바뀌지 않게)
+    await el.evaluate((e) => {
+      e.__clicks = 0;
+      if (!e.__counting) e.addEventListener('click', (ev) => { e.__clicks += 1; ev.preventDefault(); ev.stopImmediatePropagation(); }, true);
+      e.__counting = true;
+    });
+    await page.mouse.move(2, 2);
+    await settle(el);
+    const b = await el.boundingBox(); // 쉴 때의 상자
+    for (const k of [1, 2, 3, 4]) {
+      await page.mouse.move(2, 2);
+      await settle(el);
+      // 아래에서 다가가 아래 끝 k px 안쪽에 둔다 → 떠오름이 끝날 때까지
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height + 24);
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height - k, { steps: 6 });
+      await settle(el);
+      const dy = await el.evaluate((e) => new DOMMatrixReadOnly(getComputedStyle(e).transform).m42);
+      expect(dy, `${name} 아래 끝 ${k}px: 떠 있다`).toBeCloseTo(-rise, 1);
+      // 가만히 둔 동안 오르내리지 않는다(0.25초 동안 5번)
+      const ys = [];
+      for (let i = 0; i < 5; i++) { ys.push(await el.evaluate((e) => new DOMMatrixReadOnly(getComputedStyle(e).transform).m42)); await page.waitForTimeout(50); }
+      expect(new Set(ys).size, `${name} 아래 끝 ${k}px: 오르내림 ${ys}`).toBe(1);
+      if (k === 1) {
+        // 늘린 누르는 자리는 쉴 때의 아래 끝까지: 그 바로 밑(1 · 2px)은 그 요소가 아니다
+        const covers = await el.evaluate((e, { x, y }) => [1, 2].map((d) => { const hit = document.elementFromPoint(x, y + d); return Boolean(hit && (hit === e || e.contains(hit))); }), { x: b.x + b.width / 2, y: b.y + b.height - 0.5 });
+        expect(covers, `${name}: 쉴 때의 아래 끝 밑 1 · 2px을 덮지 않는다`).toEqual([false, false]);
+      }
+      await page.mouse.down();
+      await page.mouse.up();
+      expect(await el.evaluate((e) => e.__clicks), `${name} 아래 끝 ${k}px에서 눌러도 눌린다`).toBe(k);
+    }
+  }
+  expect(errors).toEqual([]);
+  await context.close();
+});

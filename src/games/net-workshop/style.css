@@ -374,7 +374,7 @@
 .q-prompt { font-family: var(--font-display); font-weight: 700; font-size: 1.55rem; line-height: 1.3; }
 .answer-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .answer-btn { position: relative; min-height: 64px; padding: 6px 10px; flex-direction: column; gap: 2px; font-size: 1.25rem; background: var(--paper); border-color: var(--card-line); }
-.answer-btn:hover:not([disabled]) { background-color: #f3f6ff; border-color: var(--primary); }
+.answer-btn:hover:not([disabled]) { background-color: var(--answer-up); border-color: var(--primary); }
 .answer-btn:active:not([disabled]) { background-color: var(--primary-soft); }
 .answer-sym { display: inline-flex; color: var(--stamp); }
 .answer-sym .icon { width: 1.45em; height: 1.45em; stroke-width: 3; }
@@ -910,3 +910,9 @@
 .screen-intro .intro-bg { background-image: url('./img/intro-bg.jpg'); }
 .screen-intro .intro-logo { background-image: var(--intro-logo-img); }
 .screen-intro .intro-shine { mask-image: var(--intro-logo-img); }
+
+/* 떠오르지 않는 켠 도구(blocks/blocks.css — 켠 것은 transform: none)에는 아래로 늘린 누르는 자리(base.css .btn:hover::before — review R1)를 만들지 않는다.
+   transform이 없으면 그 가상 요소의 기준이 위쪽의 자리 잡힌 상자(매트 · 띠)가 되어 넓게 덮을 수 있다 */
+.blk-mode[aria-pressed="true"]:hover::before,
+.blk-free-strip .btn[aria-expanded="true"]:hover::before, .blk-free-strip .btn[aria-pressed="true"]:hover::before,
+.blk-free-colors .btn[aria-pressed="true"]:hover::before { content: none; }
