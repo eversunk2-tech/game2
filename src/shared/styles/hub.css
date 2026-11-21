@@ -8,45 +8,47 @@
 
 .hub-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 24px; align-items: end; }
 .hub-header .eyebrow { justify-self: start; }
-.eyebrow .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--tangerine); border: 1.5px solid var(--ink); }
+.eyebrow .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: var(--tangerine); border: 1.5px solid transparent; }
 .hub-header h1 { font-size: clamp(2.2rem, 4.4vw, 3.3rem); line-height: 1.1; }
 .hub-header .lead { grid-column: 1; font-size: 1.08rem; max-width: none; }
 .hub-promises { grid-row: 1 / span 3; grid-column: 2; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .hub-promises .chip { padding: 6px 14px; font-size: 0.9rem; }
 
 .hub-filter { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.hub-filter .chip { min-height: var(--tap); padding: 6px 16px; font-size: 0.95rem; cursor: pointer; border-color: var(--ink); color: var(--ink); }
-.hub-filter .chip[aria-pressed="true"] { background: var(--ink); color: #fff; }
+.hub-filter .chip { min-height: var(--tap); padding: 6px 16px; font-size: 0.95rem; cursor: pointer; background: var(--key-face); color: var(--ink); box-shadow: var(--key-shadow); }
+.hub-filter .chip[aria-pressed="true"] { background: var(--primary); color: #fff; box-shadow: var(--pri-shadow-down); }
 
 .hub-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 22px; }
 .hub-card {
-  position: relative; height: 100%; overflow: hidden;
+  position: relative; height: 100%;
   display: grid; grid-template-columns: 210px minmax(0, 1fr);
-  border-radius: var(--radius-lg); border: 2px solid var(--ink); background: var(--paper);
-  box-shadow: 0 5px 0 var(--ink); color: inherit; text-decoration: none;
-  transition: transform var(--dur-1) var(--ease-out);
+  border-radius: var(--radius-lg); border: 2px solid var(--card-line); background: var(--paper);
+  box-shadow: var(--key-shadow); color: inherit; text-decoration: none;
+  transition: transform var(--dur-rise-lg) var(--ease-out), border-color var(--dur-2);
 }
-.hub-card:hover { transform: translateY(-3px); box-shadow: 0 8px 0 var(--ink); }
-.hub-card:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
-.hub-card:focus-visible { box-shadow: 0 5px 0 var(--ink), 0 0 0 7px var(--butter); }
+.hub-card:hover { transform: translateY(var(--rise-big)); box-shadow: var(--key-shadow-up); border-color: var(--primary); }
+.hub-card:active { transform: translateY(0); box-shadow: var(--key-shadow-down); transition-duration: var(--dur-1); }
+.hub-card:focus-visible { box-shadow: var(--key-shadow), 0 0 0 7px var(--butter); }
+/* 떠오른 만큼 아래 가장자리의 누르는 자리를 남긴다(review R1 — base.css .btn:hover::before와 같은 방법). 카드는 잘라 내기 없이 표지가 모서리(22 − 2 = 20px)를 따라 둥글다 */
+.hub-card:hover::before { content: ''; position: absolute; z-index: -1; left: 0; right: 0; top: 0; bottom: calc(var(--rise-big) - var(--rise-pad)); }
 
 /* 표지: 게임 색 + 매트 모눈, 그 위에 cover.svg(없으면 첫 글자 종이) */
 .hub-cover {
   position: relative; overflow: hidden; display: grid; place-items: center; padding: 16px;
-  border-right: 2px solid var(--ink);
+  border-right: 2px solid transparent; border-radius: 20px 0 0 20px;
   background-color: var(--game-color);
   background-image: linear-gradient(rgb(255 255 255 / 14%) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 14%) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 .hub-cover > svg { width: 100%; max-width: 172px; height: auto; }
 .cover-paper {
-  width: 104px; height: 104px; display: grid; place-items: center; transform: rotate(-4deg);
-  border: 2px solid var(--ink); border-radius: 8px; background: var(--paper); box-shadow: 5px 6px 0 rgb(0 0 0 / 22%);
+  width: 104px; height: 104px; display: grid; place-items: center;
+  border: 2px solid transparent; border-radius: 8px; background: var(--paper);
   font-family: var(--font-display); font-weight: 700; font-size: 3.6rem; line-height: 1;
 }
 .status-ribbon {
   position: absolute; top: 14px; left: -34px; width: 140px; transform: rotate(-40deg);
-  text-align: center; background: var(--butter); border-block: 2px solid var(--ink);
+  text-align: center; background: var(--butter); border-block: 2px solid transparent;
   font-family: var(--font-display); font-weight: 700; font-size: 0.85rem; line-height: 1.5;
 }
 
@@ -79,7 +81,7 @@
 @media (max-width: 560px) {
   .hub { padding: 16px 16px 28px; gap: 18px; }
   .hub-card { grid-template-columns: 1fr; }
-  .hub-cover { border-right: 0; border-bottom: 2px solid var(--ink); height: 150px; }
+  .hub-cover { border-right: 0; border-bottom: 2px solid transparent; border-radius: 20px 20px 0 0; height: 150px; }
   .hub-cover > svg { max-width: 150px; max-height: 118px; }
   .opt-list { grid-template-columns: 1fr; }
 }

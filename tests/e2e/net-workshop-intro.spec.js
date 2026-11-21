@@ -465,7 +465,7 @@ test('차시가 하나뿐인 영역(정육면체·직육면체)의 단계 지도
   await expect(page.locator('.lesson-no')).toHaveText(['2차시']);
 });
 
-test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입장하기]의 남색 글자와 금빛 바탕(위 · 가운데 · 아래 색)', async ({ page }) => {
+test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입장하기]의 남색 글자와 노란 바탕(쉴 때 · 누를 때 면의 모든 색)', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
   const ratios = await page.evaluate(() => {
@@ -481,30 +481,107 @@ test('대비 4.5:1: 부제의 흰 글자와 그 둘레의 남색 테두리, [입
       const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
       return (x + 0.05) / (y + 0.05);
     };
-    // CSS 변수(토큰)의 색을 rgb()로
+    // 면의 그러데이션(쉴 때 --enter-face · 누를 때 --enter-face-down — spec-grade6 15-45)에 든 색을 모두 rgb()로: 그 값을 시험 상자의 배경 그림에 넣어 계산된 값을 읽는다
     const probe = document.createElement('span');
     document.body.append(probe);
-    const color = (v) => {
-      probe.style.color = v;
-      return getComputedStyle(probe).color;
+    const stops = (v) => {
+      probe.style.backgroundImage = v;
+      return getComputedStyle(probe).backgroundImage.match(/rgba?\([^)]*\)/g) ?? [];
     };
+    const host = getComputedStyle(document.querySelector('.intro-enter'));
     const text = getComputedStyle(document.querySelector('.intro-ribbon-text')).fill;
     const edge = getComputedStyle(document.querySelector('.intro-ribbon-edge')).stroke;
     const ink = getComputedStyle(document.querySelector('.intro-enter-face')).color;
-    const out = { 부제: ratio(text, edge), ...Object.fromEntries(['--butter-soft', '--butter', '--star'].map((v) => [`버튼 ${v}`, ratio(ink, color(`var(${v})`))])) };
+    const out = { 부제: ratio(text, edge) };
+    for (const [name, v] of [['쉴 때', '--enter-face'], ['누를 때', '--enter-face-down']]) {
+      const colors = stops(host.getPropertyValue(v));
+      out[`${name} 면의 색 수`] = colors.length;
+      colors.forEach((c, i) => { out[`버튼 ${name} ${i + 1}번째 색 ${c}`] = ratio(ink, c); });
+    }
     probe.remove();
     return out;
   });
-  for (const [what, r] of Object.entries(ratios)) expect(r, what).toBeGreaterThanOrEqual(4.5);
-  // 버튼 바탕이 정말 그 세 색의 금빛 그러데이션이다(위 반짝임 + 금빛 + 파란 테)
+  // 면은 두 색 이상의 그러데이션(쉴 때 위 · 가운데 · 아래 셋, 누를 때 둘)이고, 그 모든 색에서 글자 대비 4.5 이상
+  expect(ratios['쉴 때 면의 색 수']).toBe(3);
+  expect(ratios['누를 때 면의 색 수']).toBe(2);
+  for (const [what, r] of Object.entries(ratios)) if (!what.endsWith('색 수')) expect(r, what).toBeGreaterThanOrEqual(4.5);
+  // 버튼 바탕은 세 겹이다(위의 옅은 빛 + 노란 면 + 파란 테) — 면의 색 · 테의 색은 아래 "[입장하기] 모양" 검사가 본다
   expect(await page.locator('.intro-enter-face').evaluate((el) => getComputedStyle(el).backgroundImage.split('linear-gradient').length - 1)).toBe(3);
+});
+
+/** 계산된 색 "rgb(…)"의 색상(도) · 채도 · 밝기(0~1) */
+const hsl = (c) => {
+  const [r, g, b] = c.match(/[\d.]+/g).slice(0, 3).map((v) => Number(v) / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  if (d === 0) return { h: 0, s: 0, l };
+  const s = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4);
+  return { h: (h + 360) % 360, s, l };
+};
+/** 계산된 box-shadow를 하나씩: { color, inset, x, y, blur, spread } */
+const parseShadows = (shadow) => (!shadow || shadow === 'none' ? [] : shadow.split(/,(?![^(]*\))/).map((p) => {
+  const color = (p.match(/rgba?\([^)]*\)/) || [''])[0];
+  const n = p.replace(color, '').match(/-?[\d.]+px/g)?.map(parseFloat) ?? [];
+  return { color, inset: /inset/.test(p), x: n[0] ?? 0, y: n[1] ?? 0, blur: n[2] ?? 0, spread: n[3] ?? 0 };
+}));
+
+test('[입장하기] 모양(spec-grade6 15-45 "노란색 계통에 파란 테두리, 입체 받침 디자인은 하지 않기"): 면은 노랑 계열, 테는 파랑 계열, 쉴 때 · 올릴 때 · 누를 때 모두 아래로 덧붙은 두께(흐림 없는 그림자)와 잉크 외곽선이 없다', async ({ page }, testInfo) => {
+  test.skip(isTouch(testInfo), '마우스 올림은 크롬북 화면에서 확인');
+  const errors = collectErrors(page);
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(fileUrl(FILE, '?seed=1&sound=off'));
+  await introReady(page);
+  await page.evaluate(() => document.activeElement?.blur());
+  const look = () => page.locator('.intro-enter-face').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    const layers = cs.backgroundImage.split(/,\s*(?=linear-gradient)/);
+    return { layers, shadow: cs.boxShadow, borderWidth: parseFloat(cs.borderTopWidth), borderColor: cs.borderTopColor };
+  });
+  const box = await page.locator('.intro-enter-face').boundingBox();
+  const states = { 쉴때: await look() };
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  states.올림 = await look();
+  await page.mouse.down();
+  states.누름 = await look();
+  await page.mouse.move(4, 300);
+  await page.mouse.up();
+  for (const [name, s] of Object.entries(states)) {
+    expect(s.layers, name).toHaveLength(3);
+    // 둘째 겹(면): 모든 색이 노랑 계열(색상 40~58°, 채도 0.8 이상, 밝기 0.55 이상)
+    const face = s.layers[1].match(/rgba?\([^)]*\)/g);
+    expect(face.length, `${name} 면 색`).toBeGreaterThanOrEqual(2);
+    for (const c of face) {
+      const { h, s: sat, l } = hsl(c);
+      expect([h >= 40 && h <= 58, sat >= 0.8, l >= 0.55], `${name} 면 ${c} → 색상 ${h.toFixed(1)} 채도 ${sat.toFixed(2)} 밝기 ${l.toFixed(2)}`).toEqual([true, true, true]);
+    }
+    // 셋째 겹(테 — border-box): 모든 색이 파랑 계열(색상 215~235°, 채도 0.5 이상), 테 두께 6px(배율 1)
+    const line = s.layers[2].match(/rgba?\([^)]*\)/g);
+    for (const c of line) {
+      const { h, s: sat } = hsl(c);
+      expect([h >= 215 && h <= 235, sat >= 0.5], `${name} 테 ${c} → 색상 ${h.toFixed(1)} 채도 ${sat.toFixed(2)}`).toEqual([true, true]);
+    }
+    expect(s.borderWidth, `${name} 테 두께`).toBe(6);
+    expect(s.borderColor, `${name} 테 자리는 투명(파랑은 border-box 배경)`).toBe('rgba(0, 0, 0, 0)');
+    // 바깥 그림자는 모두 흐림이 있다(흐림 0인 덧붙은 두께 없음) · 잉크 외곽선(퍼짐만 있는 잉크 그림자) 없음
+    const outer = parseShadows(s.shadow).filter((x) => !x.inset);
+    expect(outer.length, `${name} 그림자 ${s.shadow}`).toBeGreaterThan(0);
+    for (const x of outer) {
+      expect(x.blur, `${name} 흐림 없는 그림자(덧붙은 두께) ${s.shadow}`).toBeGreaterThan(0);
+      expect(x.color.startsWith('rgb(30, 33, 64'), `${name} 잉크 그림자 ${s.shadow}`).toBe(false);
+    }
+  }
+  expect(errors).toEqual([]);
 });
 
 /**
  * 큰 화면에서 [입장하기]도 커진다(spec-grade6 15-11 — selectio game과 같게). 기대값은 기획서 문장만으로 짠 독립 계산:
  * 배율 s = min(화면 CSS 폭 ÷ 1280, 화면 CSS 높이 ÷ 800)을 1~1.35로 묶은 값, 면 높이 = (화면 높이의 9.7%·폭의 14.7% 가운데 작은 값을 52~77로 묶어 반올림) × s,
  * 면 폭 = 높이 × 3.2, 글자 = 면 높이 × 0.51(2026-10-17 사용자 요청 "글자 크기에 비해 여백이 너무 많은거 같아" — 높이 약 8%·폭 약 18% 작게, 글자 약 12% 크게),
- * 테 6·바깥 여백 8·반짝임 18·잉크 테두리 3·아래 그림자 7·흐린 그림자 14/26·올리기 −2·누르기 +5·초점 후광 9/12(px) × s
+ * 테 6·바깥 여백 8·반짝임 18·은은한 그림자(쉴 때 닿는 0 2 4 + 퍼짐 0 8 14 −4 · 올릴 때 0 3 5 + 0 12 14 −4 · 누를 때 0 1 2)·올리기 −2·누르기 0(제자리)·초점 후광 9/12(px) × s
+ * (그림자 · 누르기는 spec-grade6 15-45 — 잉크 테두리 3 · 아래 덧붙은 두께 7을 뺐다. 움직임 줄이기에서는 올려도 떠오르지 않는다 — 떠오르는 거리 −2 × s는 끝의 움직임 켠 화면에서 잰다)
  */
 const growScale = (w, h) => Math.min(1.35, Math.max(1, Math.min(w / 1280, h / 800)));
 const baseButtonHeight = (w, h) => Math.round(Math.min(77, Math.max(52, Math.min(0.097 * h, 0.147 * w))));
@@ -515,7 +592,7 @@ const near = (got, want, tol) => got.length === want.length && got.every((v, i) 
 const HAND = [1675, 1378, 1795, 1442];
 const area = (a, b) => Math.max(0, Math.min(a.r, b.r) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.b, b.b) - Math.max(a.y, b.y));
 
-test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·올리기/누르기 거리·초점 후광이 함께 커지고(1920×1080에서 332.6×103.95px), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안에서 다 보이게 될 때만)', async ({ browser }, testInfo) => {
+test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글자·테·여백·반짝임·그림자·초점 후광이 함께 커지고(1920×1080에서 332.6×103.95px), 움직임 줄이기에서는 올려도 떠오르지 않고 누르면 제자리(움직임을 켜면 −2 × s 떠오름), 초점 후광까지 화면 안, 두 아이의 머리·제목·부제·소리 버튼과 겹침 0. 소녀의 손을 가리면 왼쪽으로만 조금(한도 안에서 다 보이게 될 때만)', async ({ browser }, testInfo) => {
   test.skip(isTouch(testInfo), '여러 크기를 한 번에 잰다');
   test.setTimeout(120_000); // 10개 화면 × (열기 + 그림 풀기 + 잼) — 이 맥에서 약 3초, CPU 12배에서 약 15초
   let shape1 = null; // 배율 1(1280×800)의 면 폭 ÷ 높이: 큰 화면에서도 같은 모양(폭도 s배)
@@ -560,7 +637,7 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
     expect(Math.abs(look.pad - 8 * s), `${at} 바깥 여백 ${look.pad}`).toBeLessThan(0.02);
     expect(Math.abs(look.spark - 18 * s), `${at} 반짝임 ${look.spark}`).toBeLessThan(0.05);
     expect(look.focusVisible, `${at} 초점 표시`).toBe(true);
-    expect(near(shadowLengths(look.shadow), [0, 0, 0, 3, 0, 7, 0, 3, 0, 0, 0, 9, 0, 0, 0, 12].map((v) => v * s), 0.02), `${at} 잉크 테두리·아래 그림자·초점 후광 ${look.shadow}`).toBe(true);
+    expect(near(shadowLengths(look.shadow), [0, 2, 4, 0, 0, 8, 14, -4, 0, 0, 0, 9, 0, 0, 0, 12].map((v) => v * s), 0.02), `${at} 은은한 그림자·초점 후광 ${look.shadow}`).toBe(true);
     expect(look.transform, `${at} 크기는 transform이 아니라 크기 자체`).toBe('none');
     // 자리: 면 + 초점 후광(12px × s)이 화면 안, 화면 밑과의 틈은 지금 규칙 그대로, 스크롤 0
     const halo = 12 * s;
@@ -593,7 +670,7 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
       expect(area(centered, hand), `${at} 가운데 자리는 손을 가린다(옮겨야 하는 화면)`).toBeGreaterThan(0);
       expect(area(shown, hand), `${at} 옮긴 뒤 손이 다 보인다`).toBeLessThan(1);
     }
-    // 올리기·누르기: 움직이는 거리와 그림자도 s배 (초점을 빼고 잰다 — 초점 후광이 그림자를 덮으므로)
+    // 올리기·누르기: 그림자도 s배, 움직임 줄이기에서는 떠오르지 않고 누르면 제자리 (초점을 빼고 잰다 — 초점 후광이 그림자를 덮으므로)
     await page.evaluate(() => document.activeElement.blur());
     await page.mouse.move(m.button.x + m.button.w / 2, m.button.y + m.button.h / 2);
     await settled();
@@ -602,17 +679,64 @@ test('큰 화면의 [입장하기](움직임 줄이기): 배율 s만큼 면·글
       return { dy: new DOMMatrixReadOnly(cs.transform).m42, shadow: cs.boxShadow };
     });
     const hover = await faceNow();
-    expect(Math.abs(hover.dy - -2 * s), `${at} 올리기 ${hover.dy}`).toBeLessThan(0.02);
-    expect(near(shadowLengths(hover.shadow), [0, 0, 0, 3, 0, 9, 0, 3, 0, 16, 28, 0].map((v) => v * s), 0.02), `${at} 올린 그림자 ${hover.shadow}`).toBe(true);
+    expect(Math.abs(hover.dy), `${at} 움직임 줄이기에서 올려도 떠오르지 않는다 ${hover.dy}`).toBeLessThan(0.02);
+    expect(near(shadowLengths(hover.shadow), [0, 3, 5, 0, 0, 12, 14, -4].map((v) => v * s), 0.02), `${at} 올린 그림자 ${hover.shadow}`).toBe(true);
     await page.mouse.down();
     await settled();
     const down = await faceNow();
-    expect(Math.abs(down.dy - 5 * s), `${at} 누르기 ${down.dy}`).toBeLessThan(0.02);
-    expect(near(shadowLengths(down.shadow), [0, 0, 0, 3, 0, 2, 0, 3, 0, 6, 12, 0].map((v) => v * s), 0.02), `${at} 누른 그림자 ${down.shadow}`).toBe(true);
+    expect(Math.abs(down.dy), `${at} 누르면 제자리(아래로 내려앉는 두께 없음) ${down.dy}`).toBeLessThan(0.02);
+    expect(near(shadowLengths(down.shadow), [0, 1, 2, 0].map((v) => v * s), 0.02), `${at} 누른 그림자 ${down.shadow}`).toBe(true);
     // 버튼 밖에서 놓으면 들어가지 않는다(인트로 그대로) — 다음 화면을 열지 않고 끝낸다
     await page.mouse.move(4, h / 2);
     await page.mouse.up();
     await expect(page.locator('.screen-intro')).toBeVisible();
+    expect(errors, at).toEqual([]);
+    await context.close();
+  }
+});
+
+test('[입장하기] 올리면 살짝 떠오름(spec-grade6 15-45): 움직임을 켠 화면에서 올리면 면만 −2 × s 떠오르고(transform만 0.2초) 누르면 제자리, ?fx=low에서는 떠오르지 않고 흐림 없는 그림자만', async ({ browser }, testInfo) => {
+  test.skip(isTouch(testInfo), '마우스 올림은 크롬북 화면에서 확인');
+  test.setTimeout(60_000); // 세 화면 × (열기 + 그림 풀기 + 올림 · 누름) — 이 맥에서 약 4초
+  for (const [w, h, fx] of [[1280, 800, ''], [1920, 1080, ''], [1366, 768, 'low']]) {
+    const at = `${w}×${h}${fx ? ' ?fx=low' : ''}`;
+    const s = growScale(w, h);
+    const context = await browser.newContext({ viewport: { width: w, height: h }, reducedMotion: 'no-preference' });
+    const page = await context.newPage();
+    const errors = collectErrors(page);
+    await page.goto(fileUrl(FILE, `?seed=1&sound=off${fx ? `&fx=${fx}` : ''}`));
+    await introReady(page);
+    await page.evaluate(() => document.activeElement?.blur());
+    // 면 자체의 전환(올림 · 누름)이 끝날 때까지 — 숨 쉬기 · 반짝임은 다른 층(.intro-enter-pulse · ::after)의 끝없는 움직임이라 기다리지 않는다
+    const faceSettled = () => page.waitForFunction(() => document.querySelector('.intro-enter-face').getAnimations().every((a) => a.playState !== 'running'));
+    const faceNow = () => page.locator('.intro-enter-face').evaluate((el) => {
+      const cs = getComputedStyle(el);
+      return { dy: new DOMMatrixReadOnly(cs.transform).m42, shadow: cs.boxShadow, props: el.getAnimations().map((a) => a.transitionProperty).filter(Boolean) };
+    });
+    const rest = await faceNow();
+    const box = await page.locator('.intro-enter-face').boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const moving = await faceNow(); // 올린 바로 뒤: 움직이는 것은 transform뿐
+    await faceSettled();
+    const hover = await faceNow();
+    await page.mouse.down();
+    await faceSettled();
+    const down = await faceNow();
+    await page.mouse.move(4, h / 2);
+    await page.mouse.up();
+    await expect(page.locator('.screen-intro')).toBeVisible();
+    expect(moving.props.every((p) => p === 'transform'), `${at} 전환하는 속성 ${moving.props}`).toBe(true);
+    if (fx) {
+      expect([rest.dy, hover.dy, down.dy], `${at} 떠오르지 않는다`).toEqual([0, 0, 0]);
+      for (const x of [...parseShadows(rest.shadow), ...parseShadows(hover.shadow)]) expect(x.blur, `${at} 흐림 없는 그림자만 ${rest.shadow} / ${hover.shadow}`).toBe(0);
+    } else {
+      expect(Math.abs(rest.dy), `${at} 쉴 때`).toBeLessThan(0.02);
+      expect(Math.abs(hover.dy - -2 * s), `${at} 올리면 −2 × ${s} 떠오름 ${hover.dy}`).toBeLessThan(0.02);
+      expect(near(shadowLengths(hover.shadow), [0, 3, 5, 0, 0, 12, 14, -4].map((v) => v * s), 0.02), `${at} 올린 그림자 ${hover.shadow}`).toBe(true);
+      expect(Math.abs(down.dy), `${at} 누르면 제자리 ${down.dy}`).toBeLessThan(0.02);
+      // 흐림 반경은 20px 이하(plan-ui-depth 3-5 ④ · build-brief-ui-depth 9)
+      for (const x of [...parseShadows(rest.shadow), ...parseShadows(hover.shadow), ...parseShadows(down.shadow)]) expect(x.blur, `${at} 흐림 ${x.blur}`).toBeLessThanOrEqual(20);
+    }
     expect(errors, at).toEqual([]);
     await context.close();
   }

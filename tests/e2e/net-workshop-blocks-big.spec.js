@@ -232,7 +232,7 @@ test('메뉴 ②(결정 4 · 15-40): 보통 판 띠 맨 아래(크롬북) · 띠
     expect(m.last, `${w}×${h}`).toBe(true);
     expect(m.big.height, `${w}×${h}`).toBeGreaterThanOrEqual(48);
     expect(m.border).toBe('solid'); // 점선은 이 앱에서 "지금은 누를 수 없음"
-    expect(m.bg).not.toBe(m.toolBg); // 쌓기 도구(흰 바탕)와 다른 바탕(노랑)
+    expect(m.bg).not.toBe(m.toolBg); // 쌓기 도구(옅은 파랑 면 — spec-grade6 15-45)와 다른 바탕(노랑)
     expect(m.tight, `${w}×${h}`).toBe(false); // 넘치지 않는 창의 보통 판은 그대로(15-40)
     const [padR, padB, edge] = m.stripPad;
     if (w > 1000) {
@@ -358,6 +358,9 @@ async function checkBigScreen(browser, w, h) {
   expect([lp.slotOut, lp.slotOver, lp.clip, lp.stripOver, lp.scrollX, lp.scrollY], `${tag} 위ㆍ앞ㆍ옆`).toEqual([0, 0, 0, 0, 0, 0]);
   await page.locator('.blk-free-views').click();
   await page.locator('.blk-free-apart').click();
+  // 마우스를 띠 밖으로: 누른 뒤 글자 폭이 바뀌어 마우스 밑에 온 이웃 버튼이 떠오르면, 그 버튼의 아래로 늘린 누르는 자리(투명 ::before — review-ui-depth R1)가
+  // 버튼의 넘침(scrollHeight)으로 잡힌다. 여기서 보는 것은 글자가 잘리는지라 마우스를 치우고 잰다(보는 것은 그대로)
+  await page.mouse.move(1, 1);
   await settled(page);
   expect((await board(page)).out, `${tag} 벌림`).toBe(0);
   lp = await layout(page);
