@@ -350,13 +350,13 @@ h('div', { dataset: { value: 3 }, 'aria-label': '3번 카드' });
 
 `innerHTML`은 쓰지 않는다.
 
-**기본 부품 클래스** ("종이 공방": 잉크 테두리 + 아래 단단한 그림자 = 누를 수 있는 것, 옅은 선 + 부드러운 그림자 = 읽을 정보)
+**기본 부품 클래스** ("종이 공방" — 2026-11-20 개정: 채운 면 + 은은한 그림자, 올리면 살짝 떠오름 = 누를 수 있는 것, 흰 면 + 옅은 선 = 읽을 정보. 잉크 테두리 · 덧붙은 두께는 쓰지 않는다)
 
 | 클래스 | 모습 |
 | --- | --- |
-| `btn`, `btn-primary`, `btn-lg`, `btn-small` | 두꺼운 종이 버튼(누르면 내려앉음). 비활성은 점선 + 회색 종이 |
+| `btn`, `btn-primary`, `btn-lg`, `btn-small` | 옅은 파랑 면(주 버튼은 파랑 면) + 은은한 그림자, 올리면 2px 떠오름, 누르면 면이 진해지며 제자리. 비활성은 점선 + 옅은 종이 |
 | `panel` | 정보 판(옅은 선, 부드러운 그림자) |
-| `sheet`, `tape` | 종이 한 장(잉크 테두리, 비스듬한 그림자), 위쪽 가운데 마스킹 테이프 |
+| `sheet`, `tape` | 종이 한 장(흰 면 + 옅은 선, 아주 옅은 그림자), 위쪽 가운데 마스킹 테이프 |
 | `note`, `note-wrong`, `note-correct`, `note-title`, `note-text`, `note-tip` | 까닭 쪽지(벽돌색·초록, ✓✗ 아이콘·글자와 함께). `ctx.ui.note()`가 만든다 |
 | `order`, `order-head`, `order-kind`, `order-counter` | 작업 지시서(테이프 붙은 문제 판, 주문 도장 + 문제 번호). `ctx.ui.order()`가 만든다 |
 | `bonus-note` | 노랑 점선 보너스 쪽지. `ctx.ui.bonus()`가 만든다 |
@@ -366,7 +366,7 @@ h('div', { dataset: { value: 3 }, 'aria-label': '3번 카드' });
 
 **토큰**: 색 `--paper-bg` `--paper` `--paper-2` `--paper-3` `--ink` `--ink-2` `--line` `--primary` `--primary-edge` `--primary-soft` `--butter` `--butter-soft` `--correct(-bg)` `--wrong(-bg)` `--stamp` `--star` `--mat` `--face-1`~`--face-8`(색종이), `--game-color`(game.json `color`) ·
 글꼴 `--font`(본문, 기기 글꼴) `--font-display`(제목·버튼·숫자) · 크기 `--fs-xs`~`--fs-3xl` · 간격 `--sp-1`~`--sp-7` · 모서리 `--radius-sm` `--radius` `--radius-lg` ·
-그림자 `--edge-sm` `--edge`(누를 수 있는 것) `--sheet` `--lift`(정보 판) · 움직임 `--dur-1`~`--dur-4` `--ease-out` `--ease-pop` · 누르는 곳 `--tap`(48px).
+깊이 `--key-face(-up/-down)` `--key-shadow(-up/-down)` `--pri-shadow(-up/-down)`(누를 수 있는 것) `--rise-key` `--rise-card` `--rise-big`(올리면 떠오르는 거리) `--flat-shadow`(정보 판) `--float`(뜨는 것) — 옛 이름 `--edge-sm` `--edge` `--sheet` `--lift`도 새 값으로 이어짐 · 움직임 `--dur-1`~`--dur-4` `--ease-out` `--ease-pop` · 누르는 곳 `--tap`(48px).
 옛 이름(`--bg` `--surface` `--surface-2` `--text` `--text-muted` `--border` `--primary-strong` `--focus` `--shadow`)도 새 값으로 그대로 쓸 수 있다.
 값과 대비: [docs/design/spec.md 2절](design/spec.md).
 
